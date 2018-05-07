@@ -77,24 +77,90 @@ sub _register_server ($$) {
   my ($self, $name) = @_;
   $self->{servers}->{$name} ||= do {
     my $port = find_listenable_port;
-    my $listen_url = Web::URL->parse_string ("http://0:$port");
-    my $client_url = Web::URL->parse_string ("$name.server.test");
-    #XXX $proxy_data->{register}->("$name.server.test" => $listen_url);
-    {listen_url => $listen_url, client_url => $client_url};
+    my $local_url = Web::URL->parse_string ("http://0:$port");
+
+    my $data = {local_url => $local_url};
+
+    if ($name eq 'proxy') {
+      my $docker_url = Web::URL->parse_string ("http://dockerhost:$port");
+      $data->{local_envs} = {
+        http_proxy => $local_url->get_origin->to_ascii,
+      };
+      $data->{docker_envs} = {
+        http_proxy => $docker_url->get_origin->to_ascii,
+      };
+    } else {
+      my $client_url = Web::URL->parse_string ("http://$name.server.test");
+      $data->{client_url} = $client_url;
+      $self->{proxy_map}->{"$name.server.test"} = $local_url;
+    }
+    
+    $data;
   };
 } # _register_server
 
-sub _listen_url ($$) {
+sub _client_url ($$) {
   my ($self, $name) = @_;
   $self->_register_server ($name);
-  return $self->{servers}->{$name}->{listen_url};
-} # _listen_url
+  return $self->{servers}->{$name}->{client_url} // die "No |$name| client URL";
+} # _client_url
 
-sub _listen_hostport ($$) {
+sub _local_url ($$) {
   my ($self, $name) = @_;
   $self->_register_server ($name);
-  return $self->{servers}->{$name}->{listen_url}->hostport;
-} # _listen_hostport
+  return $self->{servers}->{$name}->{local_url};
+} # _local_url
+
+sub _set_local_envs ($$$) {
+  my ($self, $name, $dest) = @_;
+  $self->_register_server ($name);
+  my $envs = $self->{servers}->{$name}->{local_envs} // die "No |$name| envs";
+  $dest->{$_} = $envs->{$_} for keys %$envs;
+} # _set_local_envs
+
+use AnyEvent;
+use AnyEvent::Socket;
+use Web::Transport::ProxyServerConnection;
+sub _proxy ($%) {
+  my ($self, %args) = @_;
+  return Promise->resolve->then (sub {
+    my $cv = AE::cv;
+    $cv->begin;
+
+    my $map = $self->{proxy_map};
+    my $lurl = $self->_local_url ('proxy');
+    my $server = tcp_server $lurl->host->to_ascii, $lurl->port, sub {
+      $cv->begin;
+      my $con = Web::Transport::ProxyServerConnection->new_from_aeargs_and_opts
+          (\@_, {
+            handle_request => sub {
+              my $args = $_[0];
+              my $url = $args->{request}->{url};
+              my $mapped = $map->{$url->host->to_ascii};
+              if (defined $mapped) {
+                $args->{client_options}->{server_connection}->{url} = $mapped;
+                return $args;
+              } else {
+                warn "proxy: ERROR: Unknown host in <@{[$url->stringify]}>\n";
+                my $body = 'Host not registered: |'.$url->host->to_ascii.'|';
+                return {response => {
+                  status => 504,
+                  status_text => $body,
+                  headers => [['content-type', 'text/plain;charset=utf-8']],
+                  body => $body,
+                }} unless $args{allow_forwarding};
+              }
+              return $args;
+            }, # handle_request
+          });
+      $con->closed->finally (sub { $cv->end });
+    }; # $server
+
+    my $stop = sub { $cv->end; undef $server };
+    $args{signal}->manakai_onabort ($stop);
+    return [{}, $stop, Promise->from_cv ($cv)];
+  });
+} # _proxy
 
 sub _docker ($%) {
   my ($self, %args) = @_;
@@ -122,7 +188,7 @@ sub _docker ($%) {
             '/data'
           ],
           ports => [
-            $self->_listen_hostport ('storage') . ":9000",
+            $self->_local_url ('storage')->hostport . ":9000",
           ],
         },
       },
@@ -159,7 +225,7 @@ sub _docker ($%) {
       })->catch (sub { return 0 });
     } timeout => 60*3;
   })->then (sub {
-    return wait_for_http $self->_listen_url ('storage'), $args{signal};
+    return wait_for_http $self->_local_url ('storage'), $args{signal};
   })->then (sub {
     return [$storage_data, $stop, undef];
   })->catch (sub {
@@ -175,7 +241,7 @@ sub _app ($%) {
   my $sarze = Promised::Command->new
       ([$RootPath->child ('perl'),
         $RootPath->child ('bin/sarze.pl'),
-        $self->_listen_url ('app')->port]);
+        $self->_local_url ('app')->port]);
   $sarze->propagate_signal (1);
   # XXX abortsignal
 
@@ -205,9 +271,7 @@ sub _app ($%) {
 
               # XXX envs_for_docker in docker mode
 #              $sarze->envs->{no_proxy} = 'localhost'; # for accounts server
-#              $sarze->envs->{$_} = $proxy_data->{envs_for_test}->{$_}
-#                  for keys %{$proxy_data->{envs_for_test}};
-
+    $self->_set_local_envs ('proxy' => $sarze->envs);
     $sarze->envs->{APP_CONFIG} = $self->_path ('app-config.json');
     return $self->_write_json ('app-config.json', $config);
   })->then (sub {
@@ -216,7 +280,7 @@ sub _app ($%) {
     my $ac = AbortController->new;
     $sarze->wait->then (sub { $ac->abort });
     return wait_for_http
-        (Web::URL->parse_string ('/robots.txt', $self->_listen_url ('app')),
+        (Web::URL->parse_string ('/robots.txt', $self->_local_url ('app')),
          $ac->signal);
   })->then (sub {
     return [$data, sub { $sarze->send_signal ('TERM') }, $sarze->wait];
@@ -234,12 +298,17 @@ sub run ($%) {
 
   ## Return a promise resolved into a hash reference of:
   ##   data
-  ##     app_listen_url Web::URL of the main application server.
+  ##     app_client_url Web::URL of the main application server for clients.
+  ##     app_local_url Web::URL the main application server is listening.
+  ##     local_envs   Environment variables setting proxy for /this/ host.
   ##   stop           CODE to stop the servers.
   ##   done           Promise fulfilled after the servers' shutdown.
   ## or rejected.
 
-  my $self = bless {data_root_path => $args{data_root_path}}, $class;
+  my $self = bless {
+    proxy_map => {},
+    data_root_path => $args{data_root_path},
+  }, $class;
   unless (defined $args{data_root_path}) {
     my $tempdir = tempdir (CLEANUP => 1);
     $self->{data_root_path} = path ($tempdir);
@@ -247,6 +316,8 @@ sub run ($%) {
   }
 
   my $servers = {
+    _proxy => {
+    },
     _docker => {
       #stack_name
     },
@@ -304,7 +375,9 @@ sub run ($%) {
     die $error // "Stopped" if $stopped;
 
     my $data = {};
-    $data->{app_listen_url} = $self->_listen_url ('app');
+    $data->{app_local_url} = $self->_local_url ('app');
+    $data->{app_client_url} = $self->_client_url ('app');
+    $self->_set_local_envs ('proxy', $data->{local_envs} = {});
 
     return {data => $data, stop => $stop, done => Promise->all (\@done)};
   })->catch (sub {

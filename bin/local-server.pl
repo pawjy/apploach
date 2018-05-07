@@ -26,7 +26,7 @@ ServerSet->run (
 )->then (sub {
   my $v = $_[0];
   warn sprintf "\n\nURL: <%s>\n\n",
-      $v->{data}->{app_listen_url}->stringify;
+      $v->{data}->{app_local_url}->stringify;
   
   return $v->{done};
 })->to_cv->recv;
