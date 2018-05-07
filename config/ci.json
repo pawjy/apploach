@@ -1,0 +1,7 @@
+{
+  "travisci": {
+    "pmbp": "latest",
+    "merger": 1,
+    "notifications": "suika"
+  }
+}
