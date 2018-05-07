@@ -1,0 +1,24 @@
+
+- "../../modules/wanage" build tests mp datetime
+- "../../modules/charclass" build tests
+- "../../modules/ooutils" build tests classdiamondgenerator classregistry objectcachesmethod operationresponse
+- "../../modules/json-functions-xs" build tests
+- "../../modules/web-encodings" build tests
+- "../../modules/web-url" build tests
+- "../../modules/web-encodings.2" build tests
+- "../../modules/dongry" build tests dbi datetime mp
+- "../../modules/json-functions-xs.2" build tests
+- "../../modules/ooutils.2" build tests classdiamondgenerator classregistry objectcachesmethod operationresponse
+- "../../modules/json-ps" build tests
+- "../../modules/temma" build tests pathclass
+- "../../modules/web-dom" build tests
+- "../../modules/web-markup" build tests tests-json
+- "../../t_deps/modules/promised-command" build tests
+- "../../t_deps/modules/promise" build tests
+- "../../t_deps/modules/streams" build tests
+- "../../modules/web-resource" build tests
+- "../../modules/promise" build tests
+- "../../modules/web-url.2" build tests
+- "../../modules/web-datetime" build tests
+- "../../modules/anyevent-mysql-client" build tests
+- "../../t_deps/modules/promised-file" build tests
