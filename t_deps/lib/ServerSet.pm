@@ -73,10 +73,16 @@ sub _write_json ($$$) {
   return $self->_write_file ($_[1], perl2json_bytes $_[2]);
 } # _write_json
 
-sub _register_server ($$) {
-  my ($self, $name) = @_;
+sub _set_port ($$$) {
+  my ($self, $name, $port) = @_;
+  die "Can't set |$name| port anymore" if defined $self->{servers}->{$name};
+  $self->_register_server ($name, $port);
+} # _set_port
+
+sub _register_server ($$;$) {
+  my ($self, $name, $port) = @_;
   $self->{servers}->{$name} ||= do {
-    my $port = find_listenable_port;
+    $port //= find_listenable_port;
     my $local_url = Web::URL->parse_string ("http://0:$port");
 
     my $data = {local_url => $local_url};
@@ -311,7 +317,6 @@ sub run ($%) {
   ##     app_client_url Web::URL of the main application server for clients.
   ##     app_local_url Web::URL the main application server is listening.
   ##     local_envs   Environment variables setting proxy for /this/ host.
-  ##   stop           CODE to stop the servers.
   ##   done           Promise fulfilled after the servers' shutdown.
   ## or rejected.
 
@@ -325,6 +330,8 @@ sub run ($%) {
     $self->{_tempdir} = $tempdir;
   }
 
+  $self->_set_port ('app', $args{app_port});
+
   my $servers = {
     _proxy => {
     },
@@ -332,7 +339,7 @@ sub run ($%) {
       #stack_name
     },
     _app => {
-      app_port => $args{app_port},
+      port => $args{app_port},
     },
   }; # $servers
 
