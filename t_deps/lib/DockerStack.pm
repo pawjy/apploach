@@ -194,6 +194,7 @@ sub _start_dockers ($) {
         (map { ('-v', $_) } @{$d->{volumes} or []}),
         (map { ('-p', $_) } @{$d->{ports} or []}),
         (map { ('--user', $_) } grep { defined $_ } ($d->{user})),
+        (map { ('-e', $_ . '=' . $d->{environment}->{$_}) } keys %{$d->{environment} or {}}),
       ],
     );
     $docker->propagate_signal ($propagate);

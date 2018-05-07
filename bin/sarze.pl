@@ -3,8 +3,8 @@ use warnings;
 use Path::Tiny;
 use Sarze;
 
-my $host = '0';
-my $port = shift or die "Usage: $0 port";
+my $host = shift;
+my $port = shift or die "Usage: $0 host port";
 
 Sarze->run (
   hostports => [

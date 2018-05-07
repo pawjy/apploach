@@ -10,6 +10,7 @@ use Promised::File;
 use Promised::Command::Signals;
 use JSON::PS;
 use DockerStack;
+use Web::Host;
 use Web::URL;
 use Web::Transport::BasicClient;
 
@@ -57,6 +58,30 @@ sub wait_for_http ($$) {
   } timeout => 60, interval => 0.3, signal => $signal;
 } # wait_for_http
 
+my @KeyChar = ('0'..'9', 'A'..'Z', 'a'..'z', '_');
+sub random_string ($) {
+  my $n = shift;
+  my $key = '';
+  $key .= $KeyChar[rand @KeyChar] for 1..$n;
+  return $key;
+} # random_string
+
+sub mysql_dsn ($) {
+  my $v = $_[0];
+  return 'dbi:mysql:' . join ';', map {
+    if (UNIVERSAL::isa ($v->{$_}, 'Web::Host')) {
+      $_ . '=' . $v->{$_}->to_ascii;
+    } else {
+      $_ . '=' . $v->{$_};
+    }
+  } keys %$v;
+} # mysql_dsn
+
+sub _key ($$) {
+  my ($self, $name) = @_;
+  return $self->{keys}->{$name} ||= random_string (30);
+} # _key
+
 sub _path ($$) {
   return $_[0]->{data_root_path}->child ($_[1]);
 } # _path
@@ -73,17 +98,20 @@ sub _write_json ($$$) {
   return $self->_write_file ($_[1], perl2json_bytes $_[2]);
 } # _write_json
 
-sub _set_port ($$$) {
-  my ($self, $name, $port) = @_;
-  die "Can't set |$name| port anymore" if defined $self->{servers}->{$name};
-  $self->_register_server ($name, $port);
-} # _set_port
+sub _set_hostport ($$$$) {
+  my ($self, $name, $host, $port) = @_;
+  die "Can't set |$name| hostport anymore"
+      if defined $self->{servers}->{$name};
+  $self->_register_server ($name, $host, $port);
+} # _set_hostport
 
-sub _register_server ($$;$) {
-  my ($self, $name, $port) = @_;
+sub _register_server ($$;$$) {
+  my ($self, $name, $host, $port) = @_;
   $self->{servers}->{$name} ||= do {
     $port //= find_listenable_port;
-    my $local_url = Web::URL->parse_string ("http://0:$port");
+    $host //= Web::Host->parse_string ('127.0.0.1');
+    my $local_url = Web::URL->parse_string
+        ("http://".$host->to_ascii.":$port");
 
     my $data = {local_url => $local_url};
 
@@ -163,22 +191,62 @@ sub _proxy ($%) {
     }; # $server
 
     $args{signal}->manakai_onabort (sub { $cv->end; undef $server });
-    return [{}, Promise->from_cv ($cv)];
+    return [undef, Promise->from_cv ($cv)];
   });
 } # _proxy
 
 sub _docker ($%) {
   my ($self, %args) = @_;
   my $stack;
-  my $storage_data = {};
+  my $data = {};
+  my $my_cnf = join "\n", '[mysqld]',
+      'user=mysql',
+      #'skip-networking',
+      'bind-address=0.0.0.0',
+      'port=3306',
+      'innodb_lock_wait_timeout=2',
+      'max_connections=1000',
+      #'sql_mode=', # old default
+      #'sql_mode=NO_ENGINE_SUBSTITUTION,STRICT_TRANS_TABLES', # 5.6 default
+  ;
   return Promise->all ([
     Promised::File->new_from_path ($self->_path ('minio_config'))->mkpath,
     Promised::File->new_from_path ($self->_path ('minio_data'))->mkpath,
+    $self->_write_file ('my.cnf', $my_cnf),
   ])->then (sub {
-    $storage_data->{aws4} = [undef, undef, undef, 's3'];
+    $data->{storage}->{aws4} = [undef, undef, undef, 's3'];
 
+    $data->{mysqld}->{local_dsn_options} = {
+      user => $self->_key ('mysql_user'),
+      password => $self->_key ('mysql_password'),
+      host => $self->_local_url ('mysqld')->host,
+      port => $self->_local_url ('mysqld')->port,
+      dbname => $args{mysql_database},
+    };
+    $data->{mysqld}->{docker_dsn_options} = {
+      %{$data->{mysqld}->{local_dsn_options}},
+      host => Web::Host->parse_string ('dockerhost'),
+    };
+    $data->{mysqld}->{local_dsn} = mysql_dsn $data->{mysqld}->{local_dsn_options};
+    $data->{mysqld}->{docker_dsn} = mysql_dsn $data->{mysqld}->{docker_dsn_options};
+    
     $stack = DockerStack->new ({
       services => {
+        mysqld => {
+          image => 'mysql/mysql-server',
+          volumes => [
+            $self->_path ('my.cnf')->absolute . ':/etc/my.cnf',
+          ],
+          ports => [
+            $self->_local_url ('mysqld')->hostport . ':3306',
+          ],
+          environment => {
+            MYSQL_USER => $self->_key ('mysql_user'),
+            MYSQL_PASSWORD => $self->_key ('mysql_password'),
+            MYSQL_DATABASE => $args{mysql_database},
+            MYSQL_LOG_CONSOLE => 1,
+          },
+        },
         minio => {
           image => 'minio/minio',
           volumes => [
@@ -200,7 +268,7 @@ sub _docker ($%) {
     });
     $stack->propagate_signal (1);
     $stack->signal_before_destruction ('TERM');
-    $stack->stack_name ($args{stack_name} // __PACKAGE__);
+    $stack->stack_name ($args{docker_stack_name} // __PACKAGE__);
     $stack->use_fallback (1);
     my $out = '';
     $stack->logs (sub {
@@ -225,12 +293,12 @@ sub _docker ($%) {
     return promised_wait_until {
       return Promised::File->new_from_path ($config_path)->read_byte_string->then (sub {
         my $config = json_bytes2perl $_[0];
-        $storage_data->{aws4}->[0] = $config->{credential}->{accessKey};
-        $storage_data->{aws4}->[1] = $config->{credential}->{secretKey};
-        $storage_data->{aws4}->[2] = $config->{region};
-        return defined $storage_data->{aws4}->[0] &&
-               defined $storage_data->{aws4}->[1] &&
-               defined $storage_data->{aws4}->[2];
+        $data->{storage}->{aws4}->[0] = $config->{credential}->{accessKey};
+        $data->{storage}->{aws4}->[1] = $config->{credential}->{secretKey};
+        $data->{storage}->{aws4}->[2] = $config->{region};
+        return defined $data->{storage}->{aws4}->[0] &&
+               defined $data->{storage}->{aws4}->[1] &&
+               defined $data->{storage}->{aws4}->[2];
       })->catch (sub { return 0 });
     } timeout => 60*3, signal => $ac->signal;
   })->then (sub {
@@ -245,11 +313,12 @@ sub _docker ($%) {
     $args{signal}->manakai_onabort (sub {
       $s_s->($stack->stop);
     });
-    return [$storage_data, $r_s];
+    return [$data, $r_s];
   })->catch (sub {
     my $e = $_[0];
     $args{signal}->manakai_onabort (sub { });
-    return $stack->stop->then (sub { die $e });
+    return $stack->stop->then (sub { die $e }) if defined $stack;
+    die $e;
   });
 } # _docker
 
@@ -260,29 +329,21 @@ sub _app ($%) {
   my $sarze = Promised::Command->new
       ([$RootPath->child ('perl'),
         $RootPath->child ('bin/sarze.pl'),
+        $self->_local_url ('app')->host->to_ascii,
         $self->_local_url ('app')->port]);
   $sarze->propagate_signal (1);
 
-  my $data = {};
-
   return Promise->all ([
+    $args{receive_docker_data},
 #XXX    Promised::File->new_from_path ($args{config_template_path})->read_byte_string,
   ])->then (sub {
+    my ($docker_data) = @{$_[0]};
     my $config = {};
 
-=pod
-              
-    my $config = json_bytes2perl $_[0]->[4];
-
-              if (defined $mysqld_info) {
-                $config->{dsns} = $mysqld_info->{dsns};
-                $config->{alt_dsns} = $mysqld_info->{alt_dsns};
-              }
-
-=cut
-
-    # XXX envs_for_docker in docker mode
+    # XXX if docker mode
+    $config->{dsn} = $docker_data->{mysqld}->{local_dsn};
     $self->_set_local_envs ('proxy' => $sarze->envs);
+    
     $sarze->envs->{APP_CONFIG} = $self->_path ('app-config.json');
     return $self->_write_json ('app-config.json', $config);
   })->then (sub {
@@ -290,12 +351,12 @@ sub _app ($%) {
     return $sarze->run;
   })->then (sub {
     my $ac = AbortController->new;
-    $sarze->wait->then (sub { $ac->abort });
+    $sarze->wait->finally (sub { $ac->abort });
     return wait_for_http
         (Web::URL->parse_string ('/robots.txt', $self->_local_url ('app')),
          $ac->signal);
   })->then (sub {
-    return [$data, $sarze->wait];
+    return [undef, $sarze->wait];
   })->catch (sub {
     my $e = $_[0];
     $sarze->send_signal ('TERM');
@@ -310,6 +371,7 @@ sub run ($%) {
   ##   app_port       The port of the main application server.  Optional.
   ##   data_root_path Path::Tiny of the root of the server's data files.  A
   ##                  temporary directory (removed after shutdown) if omitted.
+  ##   mysql_database The database name in MySQL.  Optional.
   ##   signal         AbortSignal canceling the server set.  Optional.
 
   ## Return a promise resolved into a hash reference of:
@@ -330,23 +392,35 @@ sub run ($%) {
     $self->{_tempdir} = $tempdir;
   }
 
-  $self->_set_port ('app', $args{app_port});
+  $self->_set_hostport ('app', $args{app_host}, $args{app_port});
+  my $database = $args{mysql_database} // random_string (30);
 
   my $servers = {
-    _proxy => {
+    proxy => {
     },
-    _docker => {
-      #stack_name
+    docker => {
+      mysql_database => $database,
+      #docker_stack_name
     },
-    _app => {
+    app => {
       port => $args{app_port},
+      requires => ['docker'],
     },
   }; # $servers
 
   my $acs = {};
+  my $data_send = {};
+  my $data_receive = {};
   for (keys %$servers) {
     $acs->{$_} = AbortController->new;
     $servers->{$_}->{signal} = $acs->{$_}->signal;
+    for my $other (@{$servers->{$_}->{requires} or []}) {
+      die "Bad server |$other|" unless defined $servers->{$other};
+      unless (defined $data_send->{$other}) {
+        ($data_receive->{$other}, $data_send->{$other}) = promised_cv;
+      }
+      $servers->{$_}->{'receive_' . $other . '_data'} = $data_receive->{$other};
+    }
   }
 
   my @started;
@@ -367,9 +441,11 @@ sub run ($%) {
   push @signal, Promised::Command::Signals->add_handler (KILL => $stop);
 
   my $error;
-  for my $method (keys %$servers) {
-    my $started = $self->$method (%{$servers->{$method}})->then (sub {
+  for my $name (keys %$servers) {
+    my $method = '_' . $name;
+    my $started = $self->$method (%{$servers->{$name}})->then (sub {
       my ($data, $done) = @{$_[0]};
+      $data_send->{$name}->($data) if defined $data_send->{$name};
       push @done, $done;
       return undef;
     })->catch (sub {
@@ -378,7 +454,7 @@ sub run ($%) {
     });
     push @started, $started;
     push @done, $started;
-  } # $method
+  } # $name
 
   return Promise->all (\@started)->then (sub {
     die $error // "Stopped" if $stopped;
