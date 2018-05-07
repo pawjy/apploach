@@ -199,71 +199,110 @@ sub _docker ($%) {
   my ($self, %args) = @_;
   my $stack;
   my $data = {};
-  my $my_cnf = join "\n", '[mysqld]',
-      'user=mysql',
-      #'skip-networking',
-      'bind-address=0.0.0.0',
-      'port=3306',
-      'innodb_lock_wait_timeout=2',
-      'max_connections=1000',
-      #'sql_mode=', # old default
-      #'sql_mode=NO_ENGINE_SUBSTITUTION,STRICT_TRANS_TABLES', # 5.6 default
-  ;
-  return Promise->all ([
-    Promised::File->new_from_path ($self->_path ('minio_config'))->mkpath,
-    Promised::File->new_from_path ($self->_path ('minio_data'))->mkpath,
-    $self->_write_file ('my.cnf', $my_cnf),
-  ])->then (sub {
-    $data->{storage}->{aws4} = [undef, undef, undef, 's3'];
 
-    $data->{mysqld}->{local_dsn_options} = {
-      user => $self->_key ('mysql_user'),
-      password => $self->_key ('mysql_password'),
-      host => $self->_local_url ('mysqld')->host,
-      port => $self->_local_url ('mysqld')->port,
-      dbname => $args{mysql_database},
-    };
-    $data->{mysqld}->{docker_dsn_options} = {
-      %{$data->{mysqld}->{local_dsn_options}},
-      host => Web::Host->parse_string ('dockerhost'),
-    };
-    $data->{mysqld}->{local_dsn} = mysql_dsn $data->{mysqld}->{local_dsn_options};
-    $data->{mysqld}->{docker_dsn} = mysql_dsn $data->{mysqld}->{docker_dsn_options};
-    
+  my $servers = {
+    mysqld => {
+      prepare => sub {
+        my ($self, $data) = @_;
+        my $my_cnf = join "\n", '[mysqld]',
+            'user=mysql',
+            #'skip-networking',
+            'bind-address=0.0.0.0',
+            'port=3306',
+            'innodb_lock_wait_timeout=2',
+            'max_connections=1000',
+            #'sql_mode=', # old default
+            #'sql_mode=NO_ENGINE_SUBSTITUTION,STRICT_TRANS_TABLES', # 5.6 default
+        ;
+
+        $data->{local_dsn_options} = {
+          user => $self->_key ('mysql_user'),
+          password => $self->_key ('mysql_password'),
+          host => $self->_local_url ('mysqld')->host,
+          port => $self->_local_url ('mysqld')->port,
+          dbname => $args{mysql_database},
+        };
+        $data->{docker_dsn_options} = {
+          %{$data->{local_dsn_options}},
+          host => Web::Host->parse_string ('dockerhost'),
+        };
+        $data->{local_dsn} = mysql_dsn $data->{local_dsn_options};
+        $data->{docker_dsn} = mysql_dsn $data->{docker_dsn_options};
+        
+        return $self->_write_file ('my.cnf', $my_cnf);
+      }, # prepare
+      service => {
+        image => 'mysql/mysql-server',
+        volumes => [
+          $self->_path ('my.cnf')->absolute . ':/etc/my.cnf',
+        ],
+        ports => [
+          $self->_local_url ('mysqld')->hostport . ':3306',
+        ],
+        environment => {
+          MYSQL_USER => $self->_key ('mysql_user'),
+          MYSQL_PASSWORD => $self->_key ('mysql_password'),
+          MYSQL_DATABASE => $args{mysql_database},
+          MYSQL_LOG_CONSOLE => 1,
+        },
+      }, # service
+    }, # mysqld
+    storage => {
+      prepare => sub {
+        my ($self, $data) = @_;
+        $data->{aws4} = [undef, undef, undef, 's3'];
+        return Promise->all ([
+          Promised::File->new_from_path ($self->_path ('minio_config'))->mkpath,
+          Promised::File->new_from_path ($self->_path ('minio_data'))->mkpath,
+        ]);
+      }, # prepare
+      service => {
+        image => 'minio/minio',
+        volumes => [
+          $self->_path ('minio_config')->absolute . ':/config',
+          $self->_path ('minio_data')->absolute . ':/data',
+        ],
+        user => "$<:$>",
+        command => [
+          'server',
+          #'--address', "0.0.0.0:9000",
+          '--config-dir', '/config',
+          '/data'
+        ],
+        ports => [
+          $self->_local_url ('storage')->hostport . ":9000",
+        ],
+      }, # service
+      wait => sub {
+        my ($self, $data, $signal) = @_;
+        return Promise->resolve->then (sub {
+          my $config_path = $self->_path ('minio_config')->child ('config.json');
+          return promised_wait_until {
+            return Promised::File->new_from_path ($config_path)->read_byte_string->then (sub {
+              my $config = json_bytes2perl $_[0];
+              $data->{aws4}->[0] = $config->{credential}->{accessKey};
+              $data->{aws4}->[1] = $config->{credential}->{secretKey};
+              $data->{aws4}->[2] = $config->{region};
+              return defined $data->{aws4}->[0] &&
+                     defined $data->{aws4}->[1] &&
+                     defined $data->{aws4}->[2];
+            })->catch (sub { return 0 });
+          } timeout => 60*3, signal => $signal;
+        })->then (sub {
+          return wait_for_http $self->_local_url ('storage'), $signal;
+        });
+      }, # wait
+    }, # storage
+  }; # $servers
+  
+  return Promise->all ([
+    map {
+      ($servers->{$_} or sub { })->{prepare}->($self, $data->{$_} ||= {})
+    } keys %$servers,
+  ])->then (sub {
     $stack = DockerStack->new ({
       services => {
-        mysqld => {
-          image => 'mysql/mysql-server',
-          volumes => [
-            $self->_path ('my.cnf')->absolute . ':/etc/my.cnf',
-          ],
-          ports => [
-            $self->_local_url ('mysqld')->hostport . ':3306',
-          ],
-          environment => {
-            MYSQL_USER => $self->_key ('mysql_user'),
-            MYSQL_PASSWORD => $self->_key ('mysql_password'),
-            MYSQL_DATABASE => $args{mysql_database},
-            MYSQL_LOG_CONSOLE => 1,
-          },
-        },
-        minio => {
-          image => 'minio/minio',
-          volumes => [
-            $self->_path ('minio_config')->absolute . ':/config',
-            $self->_path ('minio_data')->absolute . ':/data',
-          ],
-          user => "$<:$>",
-          command => [
-            'server',
-            #'--address', "0.0.0.0:9000",
-            '--config-dir', '/config',
-            '/data'
-          ],
-          ports => [
-            $self->_local_url ('storage')->hostport . ":9000",
-          ],
-        },
+        map { $servers->{$_}->{service} } keys %$servers,
       },
     });
     $stack->propagate_signal (1);
@@ -284,30 +323,21 @@ sub _docker ($%) {
       die $_[0];
     });
   })->then (sub {
-    my $config_path = $self->_path ('minio_config')->child ('config.json');
-    my $ac = AbortController->new;
+    my $acs = [];
+    my $waits = [
+      map {
+        my $ac = AbortController->new;
+        ($servers->{$_}->{wait} or sub { })->($self, $data->{$_}, $ac->signal),
+      } keys %$servers,
+    ];
     $args{signal}->manakai_onabort (sub {
       $stack->stop;
-      $ac->abort;
+      $_->abort for @$acs;
     });
-    return promised_wait_until {
-      return Promised::File->new_from_path ($config_path)->read_byte_string->then (sub {
-        my $config = json_bytes2perl $_[0];
-        $data->{storage}->{aws4}->[0] = $config->{credential}->{accessKey};
-        $data->{storage}->{aws4}->[1] = $config->{credential}->{secretKey};
-        $data->{storage}->{aws4}->[2] = $config->{region};
-        return defined $data->{storage}->{aws4}->[0] &&
-               defined $data->{storage}->{aws4}->[1] &&
-               defined $data->{storage}->{aws4}->[2];
-      })->catch (sub { return 0 });
-    } timeout => 60*3, signal => $ac->signal;
-  })->then (sub {
-    my $ac = AbortController->new;
-    $args{signal}->manakai_onabort (sub {
-      $stack->stop;
-      $ac->abort;
+    return Promise->all ($waits)->catch (sub {
+      $_->abort for @$acs;
+      die $_[0];
     });
-    return wait_for_http $self->_local_url ('storage'), $ac->signal;
   })->then (sub {
     my ($r_s, $s_s) = promised_cv;
     $args{signal}->manakai_onabort (sub {
