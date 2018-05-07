@@ -1,0 +1,7 @@
+#!/bin/bash
+rootpath=$(cd `dirname $0` && pwd)
+cd $rootpath
+{{INSTALL}}
+perl local/bin/pmbp.pl --install-make && \
+make deps && \
+exec $rootpath/local/run-local-server

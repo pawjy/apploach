@@ -1,5 +1,3 @@
-# -*- Makefile -*-
-
 all:
 
 WGET = wget
@@ -14,7 +12,14 @@ updatenightly: local/bin/pmbp.pl
 
 ## ------ Setup ------
 
-deps: git-submodules pmbp-install
+deps: always
+	true # dummy for make -q
+	$(MAKE) git-submodules
+ifdef GAA
+else
+	$(MAKE) deps-local
+endif
+	$(MAKE) pmbp-install
 
 git-submodules:
 	$(GIT) submodule update --init
@@ -33,6 +38,16 @@ pmbp-install: pmbp-upgrade
             --create-perl-command-shortcut @perl \
             --create-perl-command-shortcut @prove
 
+deps-local: pmbp-install
+	./perl local/bin/pmbp.pl $(PMBP_OPTIONS) \
+            --install-commands "make git docker wget curl" \
+            --create-perl-command-shortcut @prove \
+            --create-perl-command-shortcut @local/run-local-server=perl\ bin/local-server.pl \
+            --create-bootstrap-script "src/lserver.in lserver"
+	chmod u+x ./lserver
+
+lserver: deps-local
+
 ## ------ Tests ------
 
 PROVE = ./prove
@@ -43,5 +58,7 @@ test-deps: deps
 
 test-main:
 	$(PROVE) t/*.t
+
+always:
 
 ## License: Public Domain.
