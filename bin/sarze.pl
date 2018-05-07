@@ -1,21 +1,19 @@
-Apploach
-~~~~~~~~
+use strict;
+use warnings;
+use Path::Tiny;
+use Sarze;
 
-* Local server
+my $host = '0';
+my $port = shift or die "Usage: $0 port";
 
-To run Apploach on your local environment:
+Sarze->run (
+  hostports => [
+    [$host, $port],
+  ],
+  psgi_file_name => path (__FILE__)->parent->child ('server.psgi'),
+)->to_cv->recv;
 
-  $ git clone https://github.com/wakaba/apploach
-  $ cd apploach
-  $ ./lserver
-
-Then, the server's URL is shown to the console.
-
-* Author
-
-Wakaba <wakaba@suikawiki.org>.
-
-* License
+=head1 LICENSE
 
 Copyright 2018 Wakaba <wakaba@suikawiki.org>.
 
@@ -32,3 +30,5 @@ Affero General Public License for more details.
 You should have received a copy of the GNU Affero General Public
 License along with this program.  If not, see
 <https://www.gnu.org/licenses/>.
+
+=cut

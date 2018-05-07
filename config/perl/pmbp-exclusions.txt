@@ -22,3 +22,4 @@
 - "../../modules/web-datetime" build tests
 - "../../modules/anyevent-mysql-client" build tests
 - "../../t_deps/modules/promised-file" build tests
+- "../../modules/streams" build tests

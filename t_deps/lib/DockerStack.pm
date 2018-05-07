@@ -34,6 +34,13 @@ sub logs ($;$) {
   };
 } # logs
 
+sub abort_signal ($;$) {
+  if (@_ > 1) {
+    $_[0]->{abort_signal} = $_[1];
+  }
+  return $_[0]->{abort_signal};
+} # abort_signal
+
 sub propagate_signal ($;$) {
   if (@_ > 1) {
     $_[0]->{propagate_signal} = $_[1];
@@ -66,7 +73,14 @@ sub start ($) {
   my $self = $_[0];
   
   return Promise->reject ("Already running") if $self->{running};
-  $self->{running} = 1;
+
+  my $running = {stop => sub {
+    return $self->stop;
+  }};
+  $self->{running} = $running;
+
+  my $signal = $self->abort_signal;
+  $signal->manakai_onabort (sub { $running->{stop}->() }) if defined $signal;
 
   my $method = '_start_docker_stack';
   return Promise->resolve->then (sub {
@@ -212,7 +226,7 @@ sub stop ($) {
   return Promise->resolve unless $self->{running};
 
   if (defined $self->{dockers}) {
-    return promised_cleanup {
+    return $self->{running}->{stop_dockers} ||= promised_cleanup {
       delete $self->{dockers};
       delete $self->{running};
     } Promise->all ([map {
@@ -223,7 +237,7 @@ sub stop ($) {
   my $stop_cmd = Promised::Command->new ([
     'docker', 'stack', 'rm', $self->stack_name,
   ]);
-  return promised_cleanup {
+  return $self->{running}->{stop_docker_stack} ||= promised_cleanup {
     delete $self->{signal_handlers};
     delete $self->{running};
   } $stop_cmd->run->then (sub {

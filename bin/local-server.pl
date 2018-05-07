@@ -22,10 +22,11 @@ my ($r_dw, $s_dw) = promised_cv;
 
 ServerSet->run (
   data_root_path => $LocalPath,
+  app_port => 6315,
 )->then (sub {
   my $v = $_[0];
-  #XXX warn sprintf "\n\nURL: <%s>\n\n";
-  warn "started";
+  warn sprintf "\n\nURL: <%s>\n\n",
+      $v->{data}->{app_listen_url}->stringify;
   
   return $v->{done};
 })->to_cv->recv;

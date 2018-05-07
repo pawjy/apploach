@@ -70,3 +70,10 @@
 	path = t_deps/modules/promised-file
 	url = https://github.com/wakaba/perl-promised-file
 	track = master
+[submodule "modules/streams"]
+	path = modules/streams
+	url = https://github.com/manakai/perl-streams
+	track = master
+[submodule "modules/ooutils"]
+	path = modules/ooutils
+	url = https://github.com/wakaba/perl-ooutils

@@ -3,12 +3,13 @@ use strict;
 use warnings;
 use Path::Tiny;
 use File::Temp qw(tempdir);
-use DockerStack;
+use AbortController;
 use Promise;
 use Promised::Flow;
 use Promised::File;
 use Promised::Command::Signals;
 use JSON::PS;
+use DockerStack;
 use Web::URL;
 use Web::Transport::BasicClient;
 
@@ -35,14 +36,15 @@ my $RootPath = path (__FILE__)->parent->parent->parent->absolute;
   } # find_listenable_port
 }
 
-sub wait_for_http ($) {
-  my ($url) = @_;
+sub wait_for_http ($$) {
+  my ($url, $signal) = @_;
   my $client = Web::Transport::BasicClient->new_from_url ($url, {
     last_resort_timeout => 1,
   });
   return promised_cleanup {
     return $client->close;
   } promised_wait_until {
+    die Promise::AbortError->new if $signal->aborted; # XXX abortsignal
     return (promised_timeout {
       return $client->request (url => $url)->then (sub {
         return not $_[0]->is_network_error;
@@ -52,7 +54,7 @@ sub wait_for_http ($) {
       $client = Web::Transport::BasicClient->new_from_url ($url);
       return 0;
     });
-  } timeout => 60, interval => 0.3;
+  } timeout => 60, interval => 0.3, signal => $signal;
 } # wait_for_http
 
 sub _path ($$) {
@@ -96,9 +98,8 @@ sub _listen_hostport ($$) {
 
 sub _docker ($%) {
   my ($self, %args) = @_;
-  # XXX abortsignal
   my $storage_data = {};
-  my $stop;
+  my $stop = sub { };
   return Promise->all ([
     Promised::File->new_from_path ($self->_path ('minio_config'))->mkpath,
     Promised::File->new_from_path ($self->_path ('minio_data'))->mkpath,
@@ -130,6 +131,7 @@ sub _docker ($%) {
     $stack->signal_before_destruction ('TERM');
     $stack->stack_name ($args{stack_name} // __PACKAGE__);
     $stack->use_fallback (1);
+    $stack->abort_signal ($args{signal});
     my $out = '';
     $stack->logs (sub {
       my $v = $_[0];
@@ -157,14 +159,85 @@ sub _docker ($%) {
       })->catch (sub { return 0 });
     } timeout => 60*3;
   })->then (sub {
-    return wait_for_http $self->_listen_url ('storage');
+    return wait_for_http $self->_listen_url ('storage'), $args{signal};
   })->then (sub {
     return [$storage_data, $stop, undef];
+  })->catch (sub {
+    my $e = $_[0];
+    return Promise->resolve->then ($stop)->then (sub { die $e });
   });
 } # _docker
 
+sub _app ($%) {
+  my ($self, %args) = @_;
+
+  # XXX docker mode
+  my $sarze = Promised::Command->new
+      ([$RootPath->child ('perl'),
+        $RootPath->child ('bin/sarze.pl'),
+        $self->_listen_url ('app')->port]);
+  $sarze->propagate_signal (1);
+  # XXX abortsignal
+
+  my $data = {};
+
+  return Promise->all ([
+#XXX    Promised::File->new_from_path ($args{config_template_path})->read_byte_string,
+  ])->then (sub {
+    my $config = {};
+
+=pod
+              
+    my $config = json_bytes2perl $_[0]->[4];
+
+              if (defined $mysqld_info) {
+                $config->{dsns} = $mysqld_info->{dsns};
+                $config->{alt_dsns} = $mysqld_info->{alt_dsns};
+              }
+              if (defined $accounts_info) {
+                $config->{accounts_url} = $accounts_info->{url}->stringify;
+                $config->{accounts_key} = $accounts_info->{key};
+                $config->{accounts_context} = $accounts_info->{context};
+                $config->{accounts_servers} = $accounts_info->{servers};
+              }
+
+=cut
+
+              # XXX envs_for_docker in docker mode
+#              $sarze->envs->{no_proxy} = 'localhost'; # for accounts server
+#              $sarze->envs->{$_} = $proxy_data->{envs_for_test}->{$_}
+#                  for keys %{$proxy_data->{envs_for_test}};
+
+    $sarze->envs->{APP_CONFIG} = $self->_path ('app-config.json');
+    return $self->_write_json ('app-config.json', $config);
+  })->then (sub {
+    return $sarze->run;
+  })->then (sub {
+    my $ac = AbortController->new;
+    $sarze->wait->then (sub { $ac->abort });
+    return wait_for_http
+        (Web::URL->parse_string ('/robots.txt', $self->_listen_url ('app')),
+         $ac->signal);
+  })->then (sub {
+    return [$data, sub { $sarze->send_signal ('TERM') }, $sarze->wait];
+  });
+} # _app
+
 sub run ($%) {
   my ($class, %args) = @_;
+
+  ## Arguments:
+  ##   app_port       The port of the main application server.  Optional.
+  ##   data_root_path Path::Tiny of the root of the server's data files.  A
+  ##                  temporary directory (removed after shutdown) if omitted.
+  ##   signal         AbortSignal canceling the server set.  Optional.
+
+  ## Return a promise resolved into a hash reference of:
+  ##   data
+  ##     app_listen_url Web::URL of the main application server.
+  ##   stop           CODE to stop the servers.
+  ##   done           Promise fulfilled after the servers' shutdown.
+  ## or rejected.
 
   my $self = bless {data_root_path => $args{data_root_path}}, $class;
   unless (defined $args{data_root_path}) {
@@ -173,44 +246,71 @@ sub run ($%) {
     $self->{_tempdir} = $tempdir;
   }
 
-  # XXX abortsignal
-  return Promise->all ([
-    $self->_docker (
+  my $servers = {
+    _docker => {
       #stack_name
-    ),
-  ])->then (sub {
-    my @server = @{$_[0]};
+    },
+    _app => {
+      app_port => $args{app_port},
+    },
+  }; # $servers
 
-    my @stopper;
-    my @ended;
-    for (@server) {
-      my ($data, $stop, $done) = @$_;
+  my $acs = {};
+  for (keys %$servers) {
+    $acs->{$_} = AbortController->new;
+    $servers->{$_}->{signal} = $acs->{$_}->signal;
+  }
+
+  my @started;
+  my @stopper;
+  my @done;
+  my @signal;
+  my $stopped;
+  my $stop = sub {
+    my $cancel = $_[0] || sub { };
+    $cancel->();
+    $stopped = 1;
+    @signal = ();
+    $_->abort for values %$acs;
+    my @s = @stopper;
+    @stopper = ();
+    return Promise->all ([map {
+      Promise->resolve->then ($_)->catch (sub { });
+    } @s]);
+  }; # $stop
+  
+  $args{signal}->manakai_onabort (sub { $stop->() }) if defined $args{signal};
+  push @signal, Promised::Command::Signals->add_handler (INT => $stop);
+  push @signal, Promised::Command::Signals->add_handler (TERM => $stop);
+  push @signal, Promised::Command::Signals->add_handler (KILL => $stop);
+
+  my $error;
+  for my $method (keys %$servers) {
+    my $started = $self->$method (%{$servers->{$method}})->then (sub {
+      my ($data, $stop, $done) = @{$_[0]};
       my ($r_s, $s_s) = promised_cv;
-      my $stopper = sub { $s_s->(($stop or sub { })->()) };
-      my $ended = Promise->all ([$done, $r_s]);
-      push @stopper, $stopper;
-      push @ended, $ended;
-    }
-    
-    my @signal;
-    my $stop = sub {
-      my $cancel = $_[0] || sub { };
-      $cancel->();
-      @signal = ();
-      return Promise->all ([map {
-        Promise->resolve->then ($_)->catch (sub { });
-      } @stopper]);
-    }; # $stop
+      push @stopper, sub { $s_s->(Promise->resolve->then ($stop)) };
+      push @done, $done, $r_s;
+      return undef;
+    })->catch (sub {
+      $error //= $_[0];
+      $stop->();
+    });
+    push @started, $started;
+    push @done, $started;
+  } # $method
 
-    push @signal, Promised::Command::Signals->add_handler (INT => $stop);
-    push @signal, Promised::Command::Signals->add_handler (TERM => $stop);
-    push @signal, Promised::Command::Signals->add_handler (KILL => $stop);
+  return Promise->all (\@started)->then (sub {
+    die $error // "Stopped" if $stopped;
 
-    return {stop => $stop, done => Promise->all ([map {
-      $_->catch (sub {
-        warn "$$: ERROR: $_[0]";
-      });
-    } @ended])};
+    my $data = {};
+    $data->{app_listen_url} = $self->_listen_url ('app');
+
+    return {data => $data, stop => $stop, done => Promise->all (\@done)};
+  })->catch (sub {
+    my $e = $_[0];
+    $stop->();
+    return Promise->all (\@done)->then (sub { die $e });
   });
 } # run
 
