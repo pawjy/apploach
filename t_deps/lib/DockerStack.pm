@@ -34,13 +34,6 @@ sub logs ($;$) {
   };
 } # logs
 
-sub abort_signal ($;$) {
-  if (@_ > 1) {
-    $_[0]->{abort_signal} = $_[1];
-  }
-  return $_[0]->{abort_signal};
-} # abort_signal
-
 sub propagate_signal ($;$) {
   if (@_ > 1) {
     $_[0]->{propagate_signal} = $_[1];
@@ -74,13 +67,7 @@ sub start ($) {
   
   return Promise->reject ("Already running") if $self->{running};
 
-  my $running = {stop => sub {
-    return $self->stop;
-  }};
-  $self->{running} = $running;
-
-  my $signal = $self->abort_signal;
-  $signal->manakai_onabort (sub { $running->{stop}->() }) if defined $signal;
+  $self->{running} = {};
 
   my $method = '_start_docker_stack';
   return Promise->resolve->then (sub {

@@ -156,23 +156,22 @@ sub _proxy ($%) {
       $con->closed->finally (sub { $cv->end });
     }; # $server
 
-    my $stop = sub { $cv->end; undef $server };
-    $args{signal}->manakai_onabort ($stop);
-    return [{}, $stop, Promise->from_cv ($cv)];
+    $args{signal}->manakai_onabort (sub { $cv->end; undef $server });
+    return [{}, Promise->from_cv ($cv)];
   });
 } # _proxy
 
 sub _docker ($%) {
   my ($self, %args) = @_;
+  my $stack;
   my $storage_data = {};
-  my $stop = sub { };
   return Promise->all ([
     Promised::File->new_from_path ($self->_path ('minio_config'))->mkpath,
     Promised::File->new_from_path ($self->_path ('minio_data'))->mkpath,
   ])->then (sub {
     $storage_data->{aws4} = [undef, undef, undef, 's3'];
 
-    my $stack = DockerStack->new ({
+    $stack = DockerStack->new ({
       services => {
         minio => {
           image => 'minio/minio',
@@ -197,7 +196,6 @@ sub _docker ($%) {
     $stack->signal_before_destruction ('TERM');
     $stack->stack_name ($args{stack_name} // __PACKAGE__);
     $stack->use_fallback (1);
-    $stack->abort_signal ($args{signal});
     my $out = '';
     $stack->logs (sub {
       my $v = $_[0];
@@ -206,13 +204,18 @@ sub _docker ($%) {
       $v .= "\x0A" unless $v =~ /\x0A\z/;
       $out .= $v;
     });
-    $stop = sub { return $stack->stop };
+    $args{signal}->manakai_onabort (sub { return $stack->stop });
     return $stack->start->catch (sub {
       warn $out;
       die $_[0];
     });
   })->then (sub {
     my $config_path = $self->_path ('minio_config')->child ('config.json');
+    my $ac = AbortController->new;
+    $args{signal}->manakai_onabort (sub {
+      $stack->stop;
+      $ac->abort;
+    });
     return promised_wait_until {
       return Promised::File->new_from_path ($config_path)->read_byte_string->then (sub {
         my $config = json_bytes2perl $_[0];
@@ -223,14 +226,24 @@ sub _docker ($%) {
                defined $storage_data->{aws4}->[1] &&
                defined $storage_data->{aws4}->[2];
       })->catch (sub { return 0 });
-    } timeout => 60*3;
+    } timeout => 60*3, signal => $ac->signal;
   })->then (sub {
-    return wait_for_http $self->_local_url ('storage'), $args{signal};
+    my $ac = AbortController->new;
+    $args{signal}->manakai_onabort (sub {
+      $stack->stop;
+      $ac->abort;
+    });
+    return wait_for_http $self->_local_url ('storage'), $ac->signal;
   })->then (sub {
-    return [$storage_data, $stop, undef];
+    my ($r_s, $s_s) = promised_cv;
+    $args{signal}->manakai_onabort (sub {
+      $s_s->($stack->stop);
+    });
+    return [$storage_data, $r_s];
   })->catch (sub {
     my $e = $_[0];
-    return Promise->resolve->then ($stop)->then (sub { die $e });
+    $args{signal}->manakai_onabort (sub { });
+    return $stack->stop->then (sub { die $e });
   });
 } # _docker
 
@@ -243,7 +256,6 @@ sub _app ($%) {
         $RootPath->child ('bin/sarze.pl'),
         $self->_local_url ('app')->port]);
   $sarze->propagate_signal (1);
-  # XXX abortsignal
 
   my $data = {};
 
@@ -260,21 +272,15 @@ sub _app ($%) {
                 $config->{dsns} = $mysqld_info->{dsns};
                 $config->{alt_dsns} = $mysqld_info->{alt_dsns};
               }
-              if (defined $accounts_info) {
-                $config->{accounts_url} = $accounts_info->{url}->stringify;
-                $config->{accounts_key} = $accounts_info->{key};
-                $config->{accounts_context} = $accounts_info->{context};
-                $config->{accounts_servers} = $accounts_info->{servers};
-              }
 
 =cut
 
-              # XXX envs_for_docker in docker mode
-#              $sarze->envs->{no_proxy} = 'localhost'; # for accounts server
+    # XXX envs_for_docker in docker mode
     $self->_set_local_envs ('proxy' => $sarze->envs);
     $sarze->envs->{APP_CONFIG} = $self->_path ('app-config.json');
     return $self->_write_json ('app-config.json', $config);
   })->then (sub {
+    $args{signal}->manakai_onabort (sub { $sarze->send_signal ('TERM') });
     return $sarze->run;
   })->then (sub {
     my $ac = AbortController->new;
@@ -283,7 +289,11 @@ sub _app ($%) {
         (Web::URL->parse_string ('/robots.txt', $self->_local_url ('app')),
          $ac->signal);
   })->then (sub {
-    return [$data, sub { $sarze->send_signal ('TERM') }, $sarze->wait];
+    return [$data, $sarze->wait];
+  })->catch (sub {
+    my $e = $_[0];
+    $sarze->send_signal ('TERM');
+    return $sarze->wait->then (sub { die $e });
   });
 } # _app
 
@@ -333,7 +343,6 @@ sub run ($%) {
   }
 
   my @started;
-  my @stopper;
   my @done;
   my @signal;
   my $stopped;
@@ -343,11 +352,6 @@ sub run ($%) {
     $stopped = 1;
     @signal = ();
     $_->abort for values %$acs;
-    my @s = @stopper;
-    @stopper = ();
-    return Promise->all ([map {
-      Promise->resolve->then ($_)->catch (sub { });
-    } @s]);
   }; # $stop
   
   $args{signal}->manakai_onabort (sub { $stop->() }) if defined $args{signal};
@@ -358,10 +362,8 @@ sub run ($%) {
   my $error;
   for my $method (keys %$servers) {
     my $started = $self->$method (%{$servers->{$method}})->then (sub {
-      my ($data, $stop, $done) = @{$_[0]};
-      my ($r_s, $s_s) = promised_cv;
-      push @stopper, sub { $s_s->(Promise->resolve->then ($stop)) };
-      push @done, $done, $r_s;
+      my ($data, $done) = @{$_[0]};
+      push @done, $done;
       return undef;
     })->catch (sub {
       $error //= $_[0];
@@ -379,7 +381,7 @@ sub run ($%) {
     $data->{app_client_url} = $self->_client_url ('app');
     $self->_set_local_envs ('proxy', $data->{local_envs} = {});
 
-    return {data => $data, stop => $stop, done => Promise->all (\@done)};
+    return {data => $data, done => Promise->all (\@done)};
   })->catch (sub {
     my $e = $_[0];
     $stop->();
