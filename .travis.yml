@@ -1,5 +1,4 @@
 {
-"stages": [{"name": "test"}, {"name": "deploy"}],
    "before_install" : "true",
    "env" : {
       "global" : {
@@ -12,6 +11,7 @@
    "install" : "make test-deps",
    "jobs" : {
       "include" : [
+      {"stage": "test"},
          {
             "before_install" : "true",
             "install" : "true",
