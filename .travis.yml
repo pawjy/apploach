@@ -1,5 +1,5 @@
 {
-"stages": ["test", "deploy"],
+"stages": [{"name": "test"}, {"name": "deploy"}],
    "before_install" : "true",
    "env" : {
       "global" : {
