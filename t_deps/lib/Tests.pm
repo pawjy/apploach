@@ -37,6 +37,7 @@ sub RUN () {
   my $ac = AbortController->new;
   my $v = ServerSet->run (
     signal => $ac->signal,
+    mysqld_database_name_suffix => '_test',
   )->to_cv->recv;
 
   note "Tests...";
