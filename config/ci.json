@@ -1,4 +1,5 @@
 {
+  "travisci": {},
   "circleci": {
     "pmbp": 1,
     "merger": 1,
