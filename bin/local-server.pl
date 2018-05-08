@@ -25,7 +25,7 @@ ServerSet->run (
   data_root_path => $LocalPath,
   app_host => Web::Host->parse_string ('0'),
   app_port => 6315,
-  mysql_database => 'apploach_local',
+  mysqld_database_name_suffix => '_local',
 )->then (sub {
   my $v = $_[0];
   warn sprintf "\n\nURL: <%s>\n\n",

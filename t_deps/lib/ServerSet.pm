@@ -84,8 +84,26 @@ sub mysql_dsn ($) {
 
 sub _key ($$) {
   my ($self, $name) = @_;
-  return $self->{keys}->{$name} ||= random_string (30);
+  die "Key |$name| is not ready"
+      if exists $self->{keys}->{$name} and not defined $self->{keys}->{$name};
+  return $self->{keys}->{$name} //= random_string (30);
 } # _key
+
+sub _set_persistent_key ($$) {
+  my ($self, $name) = @_;
+  return if defined $self->{keys}->{$name};
+  $self->{keys}->{$name} = undef;
+  my $path = $self->_path ('key-' . $name . '.txt');
+  my $file = Promised::File->new_from_path ($path);
+  return $file->read_byte_string->then (sub {
+    return $_[0];
+  }, sub {
+    my $v = random_string (30);
+    return $file->write_byte_string ($v)->then (sub { return $v });
+  })->then (sub {
+    $self->{keys}->{$name} = $_[0];
+  });
+} # _set_persistent_key
 
 sub _path ($$) {
   return $_[0]->{data_root_path}->child ($_[1]);
@@ -222,22 +240,23 @@ sub _docker ($%) {
         ;
 
         my @dsn = (
-          user => $self->_key ('mysql_user'),
-          password => $self->_key ('mysql_password'),
+          user => $self->_key ('mysqld_user'),
+          password => $self->_key ('mysqld_password'),
           host => $self->_local_url ('mysqld')->host,
           port => $self->_local_url ('mysqld')->port,
         );
         my @dbname = @{$args{mysqld_database_names}};
         @dbname = ('test') unless @dbname;
+        $data->{_dbname_suffix} = $args{mysqld_database_name_suffix} // '';
         for my $dbname (@dbname) {
           $data->{local_dsn_options}->{$dbname} = {
             @dsn,
-            dbname => $dbname,
+            dbname => $dbname . $data->{_dbname_suffix},
           };
           $data->{docker_dsn_options}->{$dbname} = {
             @dsn,
             host => $dockerhost,
-            dbname => $dbname,
+            dbname => $dbname . $data->{_dbname_suffix},
           };
           $data->{local_dsn}->{$dbname}
               = mysql_dsn $data->{local_dsn_options}->{$dbname};
@@ -261,11 +280,11 @@ sub _docker ($%) {
               $self->_local_url ('mysqld')->hostport . ':3306',
             ],
             environment => {
-              MYSQL_USER => $self->_key ('mysql_user'),
-              MYSQL_PASSWORD => $self->_key ('mysql_password'),
-              MYSQL_ROOT_PASSWORD => $self->_key ('mysql_root_password'),
+              MYSQL_USER => $self->_key ('mysqld_user'),
+              MYSQL_PASSWORD => $self->_key ('mysqld_password'),
+              MYSQL_ROOT_PASSWORD => $self->_key ('mysqld_root_password'),
               MYSQL_ROOT_HOST => $dockerhost->to_ascii,
-              MYSQL_DATABASE => $dbname[0],
+              MYSQL_DATABASE => $dbname[0] . $data->{_dbname_suffix},
               MYSQL_LOG_CONSOLE => 1,
             },
           };
@@ -285,7 +304,7 @@ sub _docker ($%) {
               hostname => $dsn->{host}->to_ascii,
               port => $dsn->{port},
               username => 'root',
-              password => $self->_key ('mysql_root_password'),
+              password => $self->_key ('mysqld_root_password'),
               database => 'mysql',
             )->then (sub {
               return 1;
@@ -296,17 +315,17 @@ sub _docker ($%) {
         })->then (sub {
           return $client->query (
             sprintf q{create user '%s'@'%s' identified by '%s'},
-                $self->_key ('mysql_user'), '%',
-                $self->_key ('mysql_password'),
+                $self->_key ('mysqld_user'), '%',
+                $self->_key ('mysqld_password'),
           );
         })->then (sub {
           return promised_for {
-            my $name = shift;
+            my $name = shift . $data->{_dbname_suffix};
             return $client->query ('create database if not exists ' . quote $name)->then (sub {
               return $client->query (
                 sprintf q{grant all on %s.* to '%s'@'%s'},
                     quote $name,
-                    $self->_key ('mysql_user'), '%',
+                    $self->_key ('mysqld_user'), '%',
               );
             });
           } $args{mysqld_database_names};
@@ -325,7 +344,7 @@ sub _docker ($%) {
       }, # wait
       cleanup => sub {
         my ($self, $data) = @_;
-        
+        return unless defined $data->{_data_path};
         my $cmd = Promised::Command->new ([
           'docker',
           'run',
@@ -505,7 +524,8 @@ sub run ($%) {
   ##   app_port       The port of the main application server.  Optional.
   ##   data_root_path Path::Tiny of the root of the server's data files.  A
   ##                  temporary directory (removed after shutdown) if omitted.
-  ##   mysql_database The database name in MySQL.  Optional.
+  ##   mysqld_database_name_suffix Name's suffix used in mysql database.
+  ##                  Optional.
   ##   signal         AbortSignal canceling the server set.  Optional.
 
   ## Return a promise resolved into a hash reference of:
@@ -526,21 +546,35 @@ sub run ($%) {
     $self->{_tempdir} = $tempdir;
   }
 
-  $self->_set_hostport ('app', $args{app_host}, $args{app_port});
-
   my $servers = {
     proxy => {
     },
     docker => {
-      mysqld_database_names => ['apploach', 'test1'],
+      mysqld_database_name_suffix => $args{mysqld_database_name_suffix},
+      mysqld_database_names => ['apploach'],
       mysqld_database_schema_path => $RootPath->child ('db'),
       #docker_stack_name
+      persistent_keys => [qw(
+        mysqld_user mysqld_password mysqld_root_password
+      )],
     },
     app => {
       port => $args{app_port},
       requires => ['docker'],
+      exposed_hostports => [['app', $args{app_host}, $args{app_port}]],
     },
   }; # $servers
+
+  my $registered = Promise->resolve->then (sub {
+    return Promise->all ([
+      (map {
+        $self->_set_hostport (@$_) for @{$_->{exposed_hostports} or []};
+      } values %$servers),
+      (map {
+        map { $self->_set_persistent_key ($_) } @{$_->{persistent_keys} or []};
+      } values %$servers),
+    ]);
+  });
 
   my $acs = {};
   my $data_send = {};
@@ -577,7 +611,9 @@ sub run ($%) {
   my $error;
   for my $name (keys %$servers) {
     my $method = '_' . $name;
-    my $started = $self->$method (%{$servers->{$name}})->then (sub {
+    my $started = $registered->then (sub {
+      return $self->$method (%{$servers->{$name}});
+    })->then (sub {
       my ($data, $done) = @{$_[0]};
       $data_send->{$name}->($data) if defined $data_send->{$name};
       push @done, $done;

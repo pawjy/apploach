@@ -18,17 +18,9 @@ sub run ($$$;%) {
     my @sql = grep { length } map { s/^\s+//; s/\s+$//; $_ } split /;/, $sqls;
     return unless @sql;
 
-    $db->execute ('select * from mysql.user', {}, source_name => 'master')->then (sub {
-
-
-                                                                                    use Data::Dumper;
-                                                                                    warn Dumper $_[0]->all->to_a;
-
-                                                                                  });
-    
     my $done = {};
     return $db->execute (q{
-      create table `__migration` (
+      create table if not exists `__migration` (
         `sql` varbinary(2048) not null,
         `timestamp` double not null,
         primary key (`sql`),
