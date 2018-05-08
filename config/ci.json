@@ -1,6 +1,7 @@
 {
   "travisci": {},
   "circleci": {
+    "docker-build": "quay.io/wakaba/apploach",
     "pmbp": 1,
     "merger": 1,
     "gaa": 1
