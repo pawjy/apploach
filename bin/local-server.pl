@@ -13,6 +13,7 @@ BEGIN {
 }
 
 use Promised::Flow;
+use Web::Host;
 use ServerSet;
 
 my $RootPath = path (__FILE__)->parent->parent->absolute;
@@ -22,7 +23,9 @@ my ($r_dw, $s_dw) = promised_cv;
 
 ServerSet->run (
   data_root_path => $LocalPath,
+  app_host => Web::Host->parse_string ('0'),
   app_port => 6315,
+  mysql_database => 'apploach_local',
 )->then (sub {
   my $v = $_[0];
   warn sprintf "\n\nURL: <%s>\n\n",

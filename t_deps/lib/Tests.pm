@@ -6,6 +6,7 @@ use lib glob path (__FILE__)->parent->parent->parent->child ('t_deps/lib');
 use lib glob path (__FILE__)->parent->parent->parent->child ('t_deps/modules/*/lib');
 use Carp;
 use JSON::PS;
+use AbortController;
 use Promise;
 use ServerSet;
 use CurrentTest;
@@ -33,7 +34,9 @@ our $ServerData;
 push @EXPORT, qw(RUN);
 sub RUN () {
   note "Servers...";
+  my $ac = AbortController->new;
   my $v = ServerSet->run (
+    signal => $ac->signal,
   )->to_cv->recv;
 
   note "Tests...";
@@ -41,7 +44,7 @@ sub RUN () {
   run_tests;
 
   note "Done";
-  $v->{stop}->();
+  $ac->abort;
   $v->{done}->to_cv->recv;
 } # RUN
 
