@@ -1,4 +1,5 @@
 {
+"stages": ["test", "deploy"],
    "before_install" : "true",
    "env" : {
       "global" : {
