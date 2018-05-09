@@ -12,12 +12,12 @@ Test {
       data => '{"a":5}',
       internal_data => '{"c":6}',
       author_account_id => $current->generate_id (uid1 => {}),
-      author_status => 1,
+      author_status => 14,
       target_owner_status => 2,
       admin_status => 3,
     }],
     [
-      'target',
+      'new_target',
       ['json', 'data'],
       ['json', 'internal_data'],
       'status',
@@ -28,7 +28,7 @@ Test {
       data => '{"a":5}',
       internal_data => '{"c":6}',
       author_account_id => $current->o ('uid1'),
-      author_status => 1,
+      author_status => 14,
       target_owner_status => 2,
       admin_status => 3,
     });
@@ -54,7 +54,7 @@ Test {
       is $c->{author_account_id}, $current->o ('uid1');
       is $c->{data}->{a}, 5;
       is $c->{internal_data}->{c}, 6;
-      is $c->{author_status}, 1;
+      is $c->{author_status}, 14;
       is $c->{target_owner_status}, 2;
       is $c->{admin_status}, 3;
       has_json_string $result, 'comment_id';

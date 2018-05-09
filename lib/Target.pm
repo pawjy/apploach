@@ -7,7 +7,16 @@ sub new ($%) {
   return bless {@_}, $class;
 } # new
 
+sub no_target ($) {
+  return $_[0]->{no_target};
+} # no_target
+
+sub not_found ($) {
+  return $_[0]->{not_found};
+} # not_found
+
 sub to_columns ($) {
+  die "Not available" unless defined $_[0]->{target_id};
   return (target_id => $_[0]->{target_id});
 } # to_columns
 

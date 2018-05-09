@@ -41,12 +41,25 @@ use Target;
 
 ## HTTP responses.  If there is no error, a JSON object is returned in
 ## |200| responses with name/value pairs specific to end points.
-## Likewise, many (but not all) errors are returned in |400| JSON
-## object responses with following name/value pair:
+## Likewise, many (but not all) errors are returned as Error
+## Responses.
+##
+## Created object responses.  HTTP responses representing some of
+## properties of the created object.
+##
+## List responses.  HTTP responses containing zero or more objects
+## with following name/value pair:
+##
+##   |objects| : JSON array : Objects.
+##
+## Error responses.  HTTP |400| responses whose JSON object responses
+## with following name/value pair:
 ##
 ##   |reason| : String : A short string describing the error.
 
 ## Data types.
+##
+## Boolean.  A Perl boolean.
 ##
 ## ID.  A non-zero 64-bit unsigned integer.
 ##
@@ -57,12 +70,9 @@ use Target;
 ##
 ## Key.  A non-empty ASCII string whose length is less than 4096.
 ##
-## Status.  A 8-bit unsigned integer representing the object's status
-## (e.g. "open", "closed", "public", "private", "banned", and so on).
-## The value |0| represents status is not specified or not applicable;
-## this value should not be used.  Semantics of the other values are
-## application-specific, though |1| should be used for "open" or
-## "public".
+## Status.  An integer representing the object's status (e.g. "open",
+## "closed", "public", "private", "banned", and so on).  It must be in
+## the range [2, 254].
 ##
 ## Timestamp.  A unix time, represented as a floating-point number.
 
@@ -106,12 +116,14 @@ sub app_id_columns ($) {
 
 sub status_columns ($) {
   my $self = $_[0];
-  my $app = $self->{app};
-  return (
-    author_status => $app->bare_param ('author_status') // $self->throw ({reason => 'Bad |author_status|'}),
-    target_owner_status => $app->bare_param ('target_owner_status') // $self->throw ({reason => 'Bad |target_owner_status|'}),
-    admin_status => $app->bare_param ('admin_status') // $self->throw ({reason => 'Bad |admin_status|'}),
-  );
+  my $w = {};
+  for (qw(author_status target_owner_status admin_status)) {
+    my $v = $self->{app}->bare_param ($_) // '';
+    return $self->throw ({reason => "Bad |$_|"})
+        unless $v =~ /\A[1-9][0-9]*\z/ and 1 < $v and $v < 255;
+    $w->{$_} = 0+$v;
+  }
+  return %$w;
 } # status_columns
 
 sub db ($) {
@@ -155,7 +167,9 @@ sub new_target ($) {
 
   my $target_key = $self->{app}->bare_param ('target_key');
   return $self->throw ({reason => 'Bad |target_key|'})
-      if not defined $target_key or 4095 < length $target_key;
+      if not defined $target_key or
+         not length $target_key or
+         4095 < length $target_key;
   my $target_key_sha = sha1_hex $target_key;
   
   return $self->db->select ('target', {
@@ -195,7 +209,8 @@ sub target ($) {
   my $self = $_[0];
 
   my $target_key = $self->{app}->bare_param ('target_key');
-  return undef if not defined $target_key or 4095 < length $target_key;
+  return Target->new (no_target => 1) if not defined $target_key;
+  return Target->new (not_found => 1) if 4095 < length $target_key;
   my $target_key_sha = sha1_hex $target_key;
   
   return $self->db->select ('target', {
@@ -205,7 +220,7 @@ sub target ($) {
   }, fields => ['target_id'], limit => 1, source_name => 'master')->then (sub {
     my $v = $_[0]->first;
     return Target->new (target_id => $v->{target_id}) if defined $v;
-    return undef;
+    return Target->new (not_found => 1);
   });
 } # target
 
@@ -224,16 +239,43 @@ sub run ($) {
 
   if ($self->{type} eq 'comment') {
     if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'list.json') {
-      # /{app_id}/comment/list.json
+      ## /{app_id}/comment/list.json - Get comments.
+      ##
+      ## Parameters.
+      ##
+      ##   Target : The thread of comments.
+      ##
+      ##   |comment_id| : ID : The comment's ID.  Either Target or
+      ##   |comment_id|, or both, is required.  If Target is
+      ##   specified, returned comments are limited to those for the
+      ##   Target.  If |comment_id| is specified, it is further
+      ##   limited to one with that |comment_id|.
+      ##
+      ##   |with_internal_data| : Boolean : Whether |internal_data|
+      ##   should be returned or not.
+      ##
+      ## List response of comments.
+      ##
+      ##   |comment_id| : ID : The comment's ID.
+      ##
+      ##   |author_account_id| : ID : The comment's ID.
+      ##
+      ##   |data| : JSON object : The comment's data.
+      ##
+      ##   |internal_data| : JSON object: The comment's internal data.
+      ##   Only when |with_internal_data| is true.
+      ##
+      ##   Statuses.
 
       return Promise->all ([
         $self->target,
       ])->then (sub {
-        my ($target) = @{$_[0]}; # or undef
-
+        my ($target) = @{$_[0]};
+        return [] if $target->not_found;
+        
         my $where = {
           ($self->app_id_columns),
-          (defined $target ? ($target->to_columns) : ()),
+          ($target->no_target ? () : ($target->to_columns)),
         };
         
         my $comment_id = $self->{app}->bare_param ('comment_id');
@@ -242,7 +284,7 @@ sub run ($) {
         } else {
           return $self->throw
               ({reason => 'Either target or |comment_id| is required'})
-              unless defined $target;
+              if $target->no_target;
         }
 
         # XXX status filter
@@ -253,17 +295,19 @@ sub run ($) {
           'data',
           ($self->{app}->bare_param ('with_internal_data') ? ('internal_data') : ()),
           'author_status', 'target_owner_status', 'admin_status',
-        ], source_name => 'master')->then (sub {
-          my $items = $_[0]->all->to_a;
-          for my $item (@$items) {
-            $item->{comment_id} .= '';
-            $item->{author_account_id} .= '';
-            $item->{data} = Dongry::Type->parse ('json', $item->{data});
-            $item->{internal_data} = Dongry::Type->parse ('json', $item->{internal_data})
-                if defined $item->{internal_data};
-          }
-          return $self->json ({items => $items});
+        ], source_name => 'master', order => ['timestamp', 'desc'])->then (sub {
+          return $_[0]->all->to_a;
         });
+      })->then (sub {
+        my $items = $_[0];
+        for my $item (@$items) {
+          $item->{comment_id} .= '';
+          $item->{author_account_id} .= '';
+          $item->{data} = Dongry::Type->parse ('json', $item->{data});
+          $item->{internal_data} = Dongry::Type->parse ('json', $item->{internal_data})
+              if defined $item->{internal_data};
+        }
+        return $self->json ({items => $items});
       });
     } elsif (@{$self->{path}} == 1 and $self->{path}->[0] eq 'post.json') {
       ## /{app_id}/comments/post.json - Add a new comment.
@@ -285,7 +329,7 @@ sub run ($) {
       ##   data, intended for storing private data such as author's IP
       ##   address.
       ##
-      ## Responses.
+      ## Created object response.
       ##
       ##   |comment_id| : ID : The comment's ID.
       ##
