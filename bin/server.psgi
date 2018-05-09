@@ -8,6 +8,8 @@ use Promise;
 use Promised::Flow;
 use JSON::PS;
 
+use Application;
+
 $ENV{LANG} = 'C';
 $ENV{TZ} = 'UTC';
 
@@ -27,6 +29,30 @@ sub main ($$) {
   if (@$path == 1 and $path->[0] eq 'robots.txt') {
     # /robots.txt
     return $app->send_plain_text ("User-agent: *\nDisallow: /");
+  }
+
+  if (@$path > 2 and $path->[0] =~ /\A[1-9][0-9]*\z/) {
+    my $auth = $app->http->get_request_header ('authorization') // '';
+    unless (defined $Config->{bearer} and
+            $auth eq 'Bearer ' . $Config->{bearer}) {
+      $app->http->set_response_header ('www-authenticate', 'Bearer');
+      return $app->throw_error (401);
+    }
+
+    my $app_id = 0+shift @$path;
+    my $type = shift @$path;
+    my $application = Application->new (
+      config => $Config,
+      app => $app,
+      path => $path,
+      app_id => $app_id,
+      type => $type,
+    );
+    return Promise->resolve->then (sub {
+      return $application->run;
+    })->finally (sub {
+      return $application->close;
+    });
   }
   
   return $app->throw_error (404);

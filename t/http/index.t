@@ -25,6 +25,73 @@ Test {
   });
 } n => 2, name => '/robots.txt';
 
+Test {
+  my $current = shift;
+  return $current->client->request (path => [
+    '0', 'comments', 'post.json',
+  ])->then (sub {
+    my $res = $_[0];
+    test {
+      is $res->status, 404;
+    } $current->c;
+  });
+} n => 1, name => '/0/comments/post.json';
+
+Test {
+  my $current = shift;
+  return $current->client->request (path => [
+    '354234', 'hoge', 'abc',
+  ])->then (sub {
+    my $res = $_[0];
+    test {
+      is $res->status, 401;
+      is $res->header ('www-authenticate'), 'Bearer';
+    } $current->c;
+  });
+} n => 2, name => '/{app_id}/ no autorization:';
+
+Test {
+  my $current = shift;
+  return $current->client->request (path => [
+    '354234', 'hoge', 'abc',
+  ], headers => {
+    'Authorization' => 'hoge',
+  })->then (sub {
+    my $res = $_[0];
+    test {
+      is $res->status, 401;
+      is $res->header ('www-authenticate'), 'Bearer';
+    } $current->c;
+  });
+} n => 2, name => '/{app_id}/ bad autorization:';
+
+Test {
+  my $current = shift;
+  return $current->client->request (path => [
+    '354234', 'hoge', 'abc',
+  ], headers => {
+    'authorization' => 'Bearer hoge',
+  })->then (sub {
+    my $res = $_[0];
+    test {
+      is $res->status, 401;
+      is $res->header ('www-authenticate'), 'Bearer';
+    } $current->c;
+  });
+} n => 2, name => '/{app_id}/ bad bearer';
+
+Test {
+  my $current = shift;
+  return $current->client->request (path => [
+    '354234', 'hoge', 'abc',
+  ], bearer => $current->bearer)->then (sub {
+    my $res = $_[0];
+    test {
+      is $res->status, 404;
+    } $current->c;
+  });
+} n => 1, name => '/{app_id}/ bearer ok';
+
 RUN;
 
 =head1 LICENSE

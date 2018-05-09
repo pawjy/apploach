@@ -488,11 +488,12 @@ sub _app ($%) {
 
   return Promise->all ([
     $args{receive_docker_data},
-#XXX    Promised::File->new_from_path ($args{config_template_path})->read_byte_string,
   ])->then (sub {
     my ($docker_data) = @{$_[0]};
     my $config = {};
 
+    $config->{bearer} = $self->_key ('app_bearer');
+    
     # XXX if docker mode
     $config->{dsn} = $docker_data->{mysqld}->{local_dsn}->{apploach};
     $self->_set_local_envs ('proxy' => $sarze->envs);
@@ -562,6 +563,7 @@ sub run ($%) {
       port => $args{app_port},
       requires => ['docker'],
       exposed_hostports => [['app', $args{app_host}, $args{app_port}]],
+      persistent_keys => [qw(app_bearer)],
     },
   }; # $servers
 
@@ -634,6 +636,7 @@ sub run ($%) {
     my $data = {};
     $data->{app_local_url} = $self->_local_url ('app');
     $data->{app_client_url} = $self->_client_url ('app');
+    $data->{app_bearer} = $self->_key ('app_bearer');
     $self->_set_local_envs ('proxy', $data->{local_envs} = {});
 
     return {data => $data, done => Promise->all (\@done)};
