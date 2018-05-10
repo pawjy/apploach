@@ -1,2 +1,9 @@
 {
+   "jobs" : {
+      "include" : [
+         {
+            "stage" : "test"
+         }
+      ]
+   }
 }
