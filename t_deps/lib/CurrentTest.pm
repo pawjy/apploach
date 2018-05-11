@@ -13,7 +13,7 @@ use Test::X1;
 
 use TestError;
 
-push our @CARP_NOT, qw(TestError);
+push our @CARP_NOT, qw(TestError Web::Transport::BasicClient);
 
 sub c ($) {
   return $_[0]->{c};
@@ -37,7 +37,7 @@ sub client ($) {
 
 sub o ($$) {
   my ($self, $name) = @_;
-  return $self->{o}->{$name} // die "No object |$name|";
+  return $self->{o}->{$name} // die new TestError ("No object |$name|");
 } # o
 
 sub set_o ($$$) {
@@ -76,9 +76,14 @@ sub _expand_reqs ($$$) {
     for my $name (keys %{$test->{p} or {}}) {
       $params->{$name} = $test->{p}->{$name};
     }
+    for my $name (keys %$params) {
+      $params->{$name} = perl2json_chars $params->{$name}
+          if defined $params->{$name} and
+             ref $params->{$name} eq 'HASH';
+    }
     my $bearer = exists $test->{bearer} ? $test->{bearer} : $self->bearer;
     $test->{_req} = {path => [
-      $test->{app_id} // $self->o ('app'), @$path,
+      $test->{app_id} // (defined $test->{app} ? $self->o ($test->{app}) : $self->o ('app')), @$path,
     ], method => 'POST', params => $params, bearer => $bearer};
     $test;
   } map {
@@ -179,20 +184,23 @@ sub are_errors ($$$;$) {
           return;
         }
         
-        if ($res->status == ($test->{status} // 400) and
-            ($res->header ('content-type') // '') eq 'application/json;charset=utf-8') {
-          my $json = json_bytes2perl $res->body_bytes;
-          if ($json->{reason} eq $test->{reason}) {
-            return;
-          }
-        }
-        
-        $has_error = 1;
         test {
-          is $res->status, $test->{status} // 400;
-          is $res->header ('content-type'), 'application/json;charset=utf-8';
-          my $json = json_bytes2perl $res->body_bytes;
-          is $json->{reason}, $test->{reason};
+          if ($res->status == ($test->{status} // 400) and
+              ($res->header ('content-type') // '') eq 'application/json;charset=utf-8') {
+            my $json = json_bytes2perl $res->body_bytes;
+            if ($json->{reason} eq $test->{reason}) {
+              return;
+            } else {
+              $has_error = 1;
+              is $res->status, $test->{status} // 400;
+              is $res->header ('content-type'), 'application/json;charset=utf-8';
+              is $json->{reason}, $test->{reason};
+            }
+          } else {
+            $has_error = 1;
+            is $res->status, $test->{status} // 400;
+            is $res->header ('content-type'), 'application/json;charset=utf-8';
+          }
         } $self->c, name => [$name, $i, $test->{name}];
       })->then (sub { $i++ });
     } $tests;
@@ -261,6 +269,12 @@ sub create ($;@) {
   } [@_];
 } # create
 
+sub create_app ($$$) {
+  my ($self, $name, $opts) = @_;
+  $self->set_o ($name => {app_id => $self->generate_id (rand, {})});
+  return Promise->resolve;
+} # create_app
+
 sub create_account ($$$) {
   my ($self, $name, $opts) = @_;
   $self->set_o ($name => {account_id => $self->generate_id (rand, {})});
@@ -283,7 +297,7 @@ sub create_comment ($$$) {
     author_status => $opts->{author_status} // 2,
     target_owner_status => $opts->{target_owner_status} // 2,
     admin_status => $opts->{admin_status} // 2,
-  })->then (sub {
+  }, app => $opts->{app})->then (sub {
     my $result = $_[0];
     $self->set_o ($name => $result->{json});
   });

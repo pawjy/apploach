@@ -100,6 +100,13 @@ sub throw ($$) {
   return $self->{app}->throw;
 } # throw
 
+sub id_param ($$) {
+  my ($self, $name) = @_;
+  my $v = $self->{app}->bare_param ('comment_id');
+  return 0+$v if $v =~ /\A[1-9][0-9]*\z/;
+  return $self->throw ({reason => 'Bad ID parameter |'.$name.'|'});
+} # id_param
+
 sub json_object_param ($$) {
   my ($self, $name) = @_;
   my $v = $self->{app}->bare_param ($name);
@@ -109,6 +116,15 @@ sub json_object_param ($$) {
   return $w if defined $w and ref $w eq 'HASH';
   return $self->throw ({reason => 'Bad JSON parameter |'.$name.'|'});
 } # json_object_param
+
+sub optional_json_object_param ($$) {
+  my ($self, $name) = @_;
+  my $v = $self->{app}->bare_param ($name);
+  return undef unless defined $v;
+  my $w = json_bytes2perl $v;
+  return $w if defined $w and ref $w eq 'HASH';
+  return $self->throw ({reason => 'Bad JSON parameter |'.$name.'|'});
+} # optional_json_object_param
 
 sub app_id_columns ($) {
   return (app_id => $_[0]->{app_id});
@@ -277,7 +293,7 @@ sub run ($) {
           ($self->app_id_columns),
           ($target->no_target ? () : ($target->to_columns)),
         };
-        
+
         my $comment_id = $self->{app}->bare_param ('comment_id');
         if (defined $comment_id) {
           $where->{comment_id} = $comment_id;
@@ -306,6 +322,7 @@ sub run ($) {
           $item->{data} = Dongry::Type->parse ('json', $item->{data});
           $item->{internal_data} = Dongry::Type->parse ('json', $item->{internal_data})
               if defined $item->{internal_data};
+          # XXX target
         }
         return $self->json ({items => $items});
       });
@@ -360,9 +377,108 @@ sub run ($) {
         });
         # XXX kick notifications
       });
-    }
+    } elsif (@{$self->{path}} == 1 and $self->{path}->[0] eq 'edit.json') {
+      ## /{app_id}/comments/edit.json - Edit a comment.
+      ##
+      ## Parameters.
+      ##
+      ##   |comment_id| : ID : The comment's ID.
+      ##
+      ##   |data_delta| : JSON object : New comment's data.  Unchanged
+      ##   name/value pairs can be omitted.  Removed names should be
+      ##   set to |null| values.  Optional if nothing to change.
+      ##
+      ##   |internal_data_delta| : JSON object : New comment's
+      ##   internal data.  Unchanged name/value pairs can be omitted.
+      ##   Removed names should be set to |null| values.  Optional if
+      ##   nothing to change.
+      ##
+      ##   Statuses : The comment's statuses.  Optional if nothing to
+      ##   change.
+      ##
+      ## Response.  No additional data.
 
-    # XXX edit.json
+      return $self->db->transaction->then (sub {
+        my $tr = $_[0];
+        return Promise->resolve->then (sub {
+          return $tr->select ('comment', {
+            ($self->app_id_columns),
+            comment_id => $self->id_param ('comment_id'),
+          }, fields => [
+            'comment_id', 'data', 'internal_data',
+            'author_status', 'target_owner_status', 'admin_status',
+          ], lock => 'update');
+        })->then (sub {
+          my $current = $_[0]->first;
+          return $self->throw ({reason => 'Object not found'})
+              unless defined $current;
+
+          # XXX author validation
+          # XXX operator
+          
+          my $updates = {};
+          for my $name (qw(data internal_data)) {
+            my $delta = $self->optional_json_object_param ($name.'_delta');
+            next unless defined $delta;
+            next unless keys %$delta;
+            $updates->{$name} = Dongry::Type->parse ('json', $current->{$name});
+            my $changed = 0;
+            for (keys %$delta) {
+              if (defined $delta->{$_}) {
+                if (not defined $updates->{$name}->{$_} or
+                    $updates->{$name}->{$_} ne $delta->{$_}) {
+                  $updates->{$name}->{$_} = $delta->{$_};
+                  $changed = 1;
+                  if ($_ eq 'timestamp') {
+                    $updates->{timestamp} = 0+$updates->{$name}->{$_};
+                  }
+                }
+              } else {
+                if (defined $updates->{$name}->{$_}) {
+                  delete $updates->{$name}->{$_};
+                  $changed = 1;
+                  if ($_ eq 'timestamp') {
+                    $updates->{timestamp} = 0;
+                  }
+                }
+              }
+            }
+            delete $updates->{$name} unless $changed;
+          } # $name
+          for (qw(author_status target_owner_status admin_status)) {
+            my $v = $self->{app}->bare_param ($_);
+            next unless defined $v;
+            return $self->throw ({reason => "Bad |$_|"})
+                unless $v =~ /\A[1-9][0-9]*\z/ and 1 < $v and $v < 255;
+            $updates->{$_} = 0+$v if $current->{$_} != $v;
+          } # status
+
+          for (qw(data internal_data)) {
+            $updates->{$_} = Dongry::Type->serialize ('json', $updates->{$_})
+                if defined $updates->{$_};
+          }
+          
+          unless (keys %$updates) {
+            $self->json ({});
+            return $self->{app}->throw;
+          }
+
+          return $tr->update ('comment', $updates, where => {
+            ($self->app_id_columns),
+            comment_id => $current->{comment_id},
+          });
+
+          # XXX status change history
+          # XXX notifications
+        })->then (sub {
+          return $tr->commit->then (sub { undef $tr });
+        })->finally (sub {
+          return $tr->rollback if defined $tr;
+        }); # transaction
+      })->then (sub {
+        return $self->json ({});
+      });
+    }
   }
   
   return $self->{app}->throw_error (404);

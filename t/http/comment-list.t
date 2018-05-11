@@ -9,7 +9,7 @@ Test {
   return $current->are_errors (
     [['comment', 'list.json'], {}],
     [
-      {params => {}, name => 'no params', status => 400},
+      {params => {}, name => 'no params', reason => 'Either target or |comment_id| is required'},
     ],
   )->then (sub {
     return $current->create (
