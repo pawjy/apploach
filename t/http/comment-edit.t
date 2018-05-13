@@ -33,6 +33,10 @@ Test {
       [
         {p => {comment_id => undef},
          reason => 'Bad ID parameter |comment_id|'},
+        {p => {comment_id => ''},
+         reason => 'Bad ID parameter |comment_id|'},
+        {p => {comment_id => 0},
+         reason => 'Bad ID parameter |comment_id|'},
         {p => {comment_id => 'abave'},
          reason => 'Bad ID parameter |comment_id|'},
         {p => {comment_id => $current->generate_id (rand, {})},

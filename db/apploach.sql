@@ -29,3 +29,21 @@ create table `comment` (
   key (`app_id`, `timestamp`),
   key (`timestamp`)
 ) default charset=binary engine=innodb;
+
+create table `star` (
+  `app_id` bigint unsigned not null,
+  `target_id` bigint unsigned not null,
+  `target_author_account_id` bigint unsigned not null,
+  `author_account_id` bigint unsigned not null,
+  `count` int unsigned not null,
+  `item_target_id` bigint unsigned not null,
+  `created` double not null,
+  `updated` double not null,
+  primary key (`app_id`, `target_id`, `author_account_id`, `item_target_id`),
+  key (`app_id`, `target_id`, `created`),
+  key (`app_id`, `author_account_id`, `created`),
+  key (`app_id`, `target_author_account_id`, `created`),
+  key (`app_id`, `item_target_id`, `created`),
+  key (`created`),
+  key (`updated`)
+) default charset=binary engine=innodb;

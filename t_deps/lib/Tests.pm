@@ -58,7 +58,7 @@ sub Test (&%) {
       c => $c,
       server_data => $ServerData,
     }, 'CurrentTest';
-    $current->generate_id (app => {});
+    $current->generate_id (app_id => {});
     Promise->resolve ($current)->then ($code)->finally (sub {
       return $current->close;
     })->catch (sub {

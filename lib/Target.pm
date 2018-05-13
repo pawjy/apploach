@@ -15,9 +15,30 @@ sub not_found ($) {
   return $_[0]->{not_found};
 } # not_found
 
-sub to_columns ($) {
+sub invalid_key ($) {
+  return $_[0]->{invalid_key};
+} # invalid_key
+
+sub is_error ($) {
+  return $_[0]->{no_target} || $_[0]->{not_found};
+} # is_error
+
+sub target_id ($) {
   die "Not available" unless defined $_[0]->{target_id};
-  return (target_id => $_[0]->{target_id});
+  return $_[0]->{target_id};
+} # target_id
+
+sub target_key ($) {
+  return $_[0]->{target_key};
+} # target_key
+
+sub to_columns ($;$) {
+  die "Not available" unless defined $_[0]->{target_id};
+  if (defined $_[1]) {
+    return ($_[1]."_target_id" => $_[0]->{target_id});
+  } else {
+    return (target_id => $_[0]->{target_id});
+  }
 } # to_columns
 
 1;

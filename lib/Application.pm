@@ -7,6 +7,7 @@ use Digest::SHA qw(sha1_hex);
 use Dongry::Type;
 use Dongry::Type::JSONPS;
 use Promise;
+use Promised::Flow;
 use Dongry::Database;
 
 use Target;
@@ -102,10 +103,18 @@ sub throw ($$) {
 
 sub id_param ($$) {
   my ($self, $name) = @_;
-  my $v = $self->{app}->bare_param ('comment_id');
-  return 0+$v if $v =~ /\A[1-9][0-9]*\z/;
-  return $self->throw ({reason => 'Bad ID parameter |'.$name.'|'});
+  my $v = $self->{app}->bare_param ($name.'_id');
+  return 0+$v if defined $v and $v =~ /\A[1-9][0-9]*\z/;
+  return $self->throw ({reason => 'Bad ID parameter |'.$name.'_id|'});
 } # id_param
+
+sub optional_account_id_param ($$) {
+  my ($self, $name) = @_;
+  my $v = $self->{app}->bare_param ($name.'_account_id');
+  return 0 unless defined $v;
+  return 0+$v if $v =~ /\A[1-9][0-9]*\z/;
+  return $self->throw ({reason => 'Bad ID parameter |'.$name.'_account_id|'});
+} # optional_account_id_param
 
 sub json_object_param ($$) {
   my ($self, $name) = @_;
@@ -168,6 +177,14 @@ sub ids ($$) {
   });
 } # ids
 
+sub _opt_id ($) {
+  if ($_[0]) {
+    return ''.$_[0];
+  } else {
+    return undef;
+  }
+} # _opt_id
+
 ## Target.
 ##
 ## A target identifies the "context" in which an object alives.  It is
@@ -178,67 +195,160 @@ sub ids ($$) {
 ##
 ## For example, implementing a blog's comment feature, the target key
 ## can be a string containing the blog's unique ID.
+##
+## Targets.
+##
+## Zero or more targets.  Parameters
+##
+##   |target_key| : Key : A target.  Zero or more parameters can be
+##   specified.
+sub new_target_list ($$) {
+  my ($self, $params) = @_;
+  my @key = map { $self->{app}->bare_param ($_) } @$params;
+  return $self->_target (\@key)->then (sub {
+    my $targets = $_[0];
+    return promised_map {
+      my $param = $params->[$_[0]];
+      my $target_key = $key[$_[0]];
+      my $target = $targets->[$_[0]];
+
+      return $self->throw ({reason => 'Bad |'.$param.'|'})
+          if $target->no_target or $target->invalid_key;
+      return $target unless $target->not_found;
+
+      # not found
+      my $target_key_sha = sha1_hex $target_key;
+      return $self->ids (1)->then (sub {
+        my $id = $_[0]->[0];
+        return $self->db->insert ('target', [{
+          ($self->app_id_columns),
+          target_id => $id,
+          target_key => $target_key,
+          target_key_sha => $target_key_sha,
+          timestamp => time,
+        }], source_name => 'master', duplicate => 'ignore');
+      })->then (sub {
+        return $self->db->select ('target', {
+          ($self->app_id_columns),
+          target_key_sha => $target_key_sha,
+          target_key => $target_key,
+        }, fields => ['target_id'], limit => 1, source_name => 'master');
+      })->then (sub {
+        my $v = $_[0]->first;
+        if (defined $v) {
+          my $t = Target->new (target_id => $v->{target_id},
+                               target_key => $target_key);
+          $self->{target_id_to_object}->{$v->{target_id}} = $t;
+          $self->{target_key_to_object}->{$target_key} = $t;
+          return $t;
+        }
+        die "Can't generate |target_id| for |$target_key|";
+      });
+    } [0..$#key];
+  });
+} # new_target_list
+
 sub new_target ($) {
-  my $self = $_[0];
-
-  my $target_key = $self->{app}->bare_param ('target_key');
-  return $self->throw ({reason => 'Bad |target_key|'})
-      if not defined $target_key or
-         not length $target_key or
-         4095 < length $target_key;
-  my $target_key_sha = sha1_hex $target_key;
-  
-  return $self->db->select ('target', {
-    ($self->app_id_columns),
-    target_key_sha => $target_key_sha,
-    target_key => $target_key,
-  }, fields => ['target_id'], limit => 1, source_name => 'master')->then (sub {
-    my $v = $_[0]->first;
-    return $v->{target_id} if defined $v;
-
-    return $self->ids (1)->then (sub {
-      my $id = $_[0]->[0];
-      return $self->db->insert ('target', [{
-        ($self->app_id_columns),
-        target_id => $id,
-        target_key => $target_key,
-        target_key_sha => $target_key_sha,
-        timestamp => time,
-      }], source_name => 'master', duplicate => 'ignore');
-    })->then (sub {
-      return $self->db->select ('target', {
-        ($self->app_id_columns),
-        target_key_sha => $target_key_sha,
-        target_key => $target_key,
-      }, fields => ['target_id'], limit => 1, source_name => 'master');
-    })->then (sub {
-      my $v = $_[0]->first;
-      return $v->{target_id} if defined $v;
-      die "Can't generate |target_id| for |$target_key|";
-    });
-  })->then (sub {
-    return Target->new (target_id => $_[0]);
+  my ($self) = @_;
+  return $self->new_target_list (['target_key'])->then (sub {
+    return $_[0]->[0];
   });
 } # new_target
 
 sub target ($) {
   my $self = $_[0];
-
   my $target_key = $self->{app}->bare_param ('target_key');
-  return Target->new (no_target => 1) if not defined $target_key;
-  return Target->new (not_found => 1) if 4095 < length $target_key;
-  my $target_key_sha = sha1_hex $target_key;
-  
-  return $self->db->select ('target', {
-    ($self->app_id_columns),
-    target_key_sha => $target_key_sha,
-    target_key => $target_key,
-  }, fields => ['target_id'], limit => 1, source_name => 'master')->then (sub {
-    my $v = $_[0]->first;
-    return Target->new (target_id => $v->{target_id}) if defined $v;
-    return Target->new (not_found => 1);
-  });
+  return $self->_target ([$target_key])->then (sub { return $_[0]->[0] });
 } # target
+
+sub target_list ($) {
+  my $self = $_[0];
+  return $self->_target ($self->{app}->bare_param_list ('target_key'));
+} # target_list
+
+sub _target ($$) {
+  my ($self, $target_keys) = @_;
+  my @key;
+  my $results = [map {
+    my $target_key = $_;
+    if (not defined $target_key) {
+      Target->new (no_target => 1);
+    } elsif (not length $target_key or 4095 < length $target_key) {
+      Target->new (not_found => 1, invalid_key => 1,
+                   target_key => $target_key);
+    } elsif (defined $self->{target_key_to_object}->{$target_key}) {
+      $self->{target_key_to_object}->{$target_key};
+    } else {
+      my $target_key_sha = sha1_hex $target_key;
+      push @key, [$target_key, $target_key_sha];
+      $target_key;
+    }
+  } @$target_keys];
+  return Promise->resolve->then (sub {
+    return unless @key;
+    return $self->db->select ('target', {
+      ($self->app_id_columns),
+      target_key_sha => {-in => [map { $_->[1] } @key]},
+      target_key => {-in => [map { $_->[0] } @key]},
+    }, fields => ['target_id', 'target_key'], source_name => 'master')->then (sub {
+      for (@{$_[0]->all}) {
+        my $t = Target->new (target_id => $_->{target_id},
+                             target_key => $_->{target_key});
+        $self->{target_key_to_object}->{$_->{target_key}} = $t;
+        $self->{target_id_to_object}->{$_->{target_id}} = $t;
+      }
+    });
+  })->then (sub {
+    $results = [map {
+      if (ref $_ eq 'Target') {
+        $_;
+      } else {
+        if ($self->{target_key_to_object}->{$_}) {
+          $self->{target_key_to_object}->{$_};
+        } else {
+          Target->new (not_found => 1, target_key => $_);
+        }
+      }
+    } @$results];
+    return $results;
+  });
+} # _target
+
+sub target_list_by_ids ($$) {
+  my ($self, $ids) = @_;
+  return Promise->resolve->then (sub {
+    my @id;
+    my $results = [map {
+      if (defined $self->{target_id_to_object}->{$_}) {
+        $self->{target_id_to_object}->{$_};
+      } else {
+        push @id, $_;
+        $_;
+      }
+    } @$ids];
+    return $results unless @id;
+    return $self->db->select ('target', {
+      ($self->app_id_columns),
+      target_id => {-in => \@id},
+    }, fields => ['target_id', 'target_key'], source_name => 'master')->then (sub {
+      for (@{$_[0]->all}) {
+        my $t = Target->new (target_id => $_->{target_id},
+                             target_key => $_->{target_key});
+        $self->{target_key_to_object}->{$_->{target_key}} = $t;
+        $self->{target_id_to_object}->{$_->{target_id}} = $t;
+      }
+      return [map {
+        if (ref $_ eq 'Target') {
+          $_;
+        } else {
+          $self->{target_id_to_object}->{$_} // die "Target |$_| not found";
+        }
+      } @$ids];
+    });
+  })->then (sub {
+    return {map { $_->target_id => $_ } @{$_[0]}};
+  });
+} # target_list_by_ids
 
 ## Statuses.  A pair of status values.  Parameters:
 ##
@@ -327,7 +437,7 @@ sub run ($) {
         return $self->json ({items => $items});
       });
     } elsif (@{$self->{path}} == 1 and $self->{path}->[0] eq 'post.json') {
-      ## /{app_id}/comments/post.json - Add a new comment.
+      ## /{app_id}/comment/post.json - Add a new comment.
       ##
       ## Parameters.
       ##
@@ -364,7 +474,7 @@ sub run ($) {
           ($self->app_id_columns),
           ($target->to_columns),
           comment_id => $ids->[0],
-          author_account_id => $self->{app}->bare_param ('author_account_id') // 0,
+          author_account_id => $self->optional_account_id_param ('author'),
           data => Dongry::Type->serialize ('json', $data),
           internal_data => Dongry::Type->serialize ('json', $self->json_object_param ('internal_data')),
           ($self->status_columns),
@@ -378,7 +488,7 @@ sub run ($) {
         # XXX kick notifications
       });
     } elsif (@{$self->{path}} == 1 and $self->{path}->[0] eq 'edit.json') {
-      ## /{app_id}/comments/edit.json - Edit a comment.
+      ## /{app_id}/comment/edit.json - Edit a comment.
       ##
       ## Parameters.
       ##
@@ -403,7 +513,7 @@ sub run ($) {
         return Promise->resolve->then (sub {
           return $tr->select ('comment', {
             ($self->app_id_columns),
-            comment_id => $self->id_param ('comment_id'),
+            comment_id => $self->id_param ('comment'),
           }, fields => [
             'comment_id', 'data', 'internal_data',
             'author_status', 'target_owner_status', 'admin_status',
@@ -479,7 +589,131 @@ sub run ($) {
         return $self->json ({});
       });
     }
-  }
+  } # comment
+
+  if ($self->{type} eq 'star') {
+    if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'add.json') {
+      ## /{app_id}/star/add.json - Add a star.
+      ##
+      ## Parameters.
+      ##
+      ##   Target : The star's target.
+      ##
+      ##   |target_author_account_id| : Account ID : The star's
+      ##   target's author.  Optional if no author (anonymous or
+      ##   unknown or unspecified).  The target's author cannot be
+      ##   changed.
+      ##
+      ##   |author_account_id| : Account ID : The star's author.
+      ##   Optional if no author (anonymous).
+      ##
+      ## Response.  No additional data.
+      return Promise->all ([
+        $self->new_target_list (['item_target_key', 'target_key']),
+      ])->then (sub {
+        my ($item_target, $target) = @{$_[0]->[0]};
+        
+        my $delta = 0+($self->{app}->bare_param ('delta') || 0); # can be negative
+        return unless $delta;
+
+        my $time = time;
+        return $self->db->insert ('star', [{
+          ($self->app_id_columns),
+          ($target->to_columns),
+          target_author_account_id => $self->optional_account_id_param ('target_author'),
+          author_account_id => $self->optional_account_id_param ('author'),
+          count => $delta > 0 ? $delta : 0,
+          ($item_target->to_columns ('item')),
+          created => $time,
+          updated => $time,
+        }], duplicate => {
+          count => $self->db->bare_sql_fragment (sprintf 'greatest(cast(`count` as signed) + %d, 0)', $delta),
+          updated => $self->db->bare_sql_fragment ('VALUES(updated)'),
+        }, source_name => 'master');
+      })->then (sub {
+        return $self->json ({});
+      });
+    } elsif (@{$self->{path}} == 1 and $self->{path}->[0] eq 'get.json') {
+      ## /{app_id}/star/get.json - Get stars of targets.
+      ##
+      ## Parameters.
+      ##
+      ##   Targets.
+      ##
+      ## Response.
+      ##
+      ##   |stars| : Object.
+      ##
+      ##     {|target_key| : Key : A target} : Array.
+      ##
+      ##       |author_account_id| : Account ID : The star's author.
+      ##
+      ##       |item_target_key| : Key : The star's item target.
+      ##
+      ##       |count| : Integer : The number of stars.
+      return Promise->all ([
+        $self->target_list,
+      ])->then (sub {
+        my $targets = $_[0]->[0];
+
+        my @target_id;
+        for (@$targets) {
+          push @target_id, $_->target_id unless $_->is_error;
+        }
+        return {} unless @target_id;
+        
+        return $self->db->select ('star', {
+          ($self->app_id_columns),
+          target_id => {-in => \@target_id},
+          count => {'>', 0},
+        }, fields => [
+          'target_id',
+          'item_target_id', 'count', 'author_account_id',
+        ], order => ['created', 'ASC'], source_name => 'master')->then (sub {
+          my $stars = {};
+          my @star;
+          my @item_target_id;
+          for (@{$_[0]->all}) {
+            push @item_target_id, $_->{item_target_id};
+            my $star = {
+              author_account_id => _opt_id $_->{author_account_id},
+              count => $_->{count},
+              item_target_id => $_->{item_target_id},
+            };
+            push @star, $star;
+            push @{$stars->{$_->{target_id}} ||= []}, $star;
+          }
+          return $self->target_list_by_ids (\@item_target_id)->then (sub {
+            my $map = $_[0];
+            for (@star) {
+              my $v = $map->{delete $_->{item_target_id}};
+              $_->{item_target_key} = $v->target_key if defined $v;
+            }
+            return $stars;
+          });
+        });
+      })->then (sub {
+        my $id_to_stars = $_[0];
+        my $stars = {};
+        return $self->target_list_by_ids ([keys %$id_to_stars])->then (sub {
+          my $map = $_[0];
+          for my $id (keys %$id_to_stars) {
+            $stars->{$map->{$id}->target_key} = $id_to_stars->{$id};
+          }
+          return $self->json ({stars => $stars});
+        });
+      });
+      
+
+      #XXX
+      # list.json?target_author_account_id=...
+      # list.json?author_account_id=...
+
+      # XXX target parent
+      # XXX author replacer
+      
+    }
+  } # star
   
   return $self->{app}->throw_error (404);
 } # run

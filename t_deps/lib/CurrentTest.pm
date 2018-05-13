@@ -69,10 +69,11 @@ sub generate_text ($$$) {
 
 sub _expand_reqs ($$$) {
   my ($self, $req, $tests) = @_;
+  my ($req_path, $req_params, %req_opts) = @$req;
   $tests = [map {
     my $test = $_;
-    my $path = $test->{path} || $req->[0];
-    my $params = {%{$test->{params} || $req->[1]}};
+    my $path = $test->{path} || $req_path;
+    my $params = {%{$test->{params} || $req_params}};
     for my $name (keys %{$test->{p} or {}}) {
       $params->{$name} = $test->{p}->{$name};
     }
@@ -81,9 +82,15 @@ sub _expand_reqs ($$$) {
           if defined $params->{$name} and
              ref $params->{$name} eq 'HASH';
     }
-    my $bearer = exists $test->{bearer} ? $test->{bearer} : $self->bearer;
+    my $bearer = (exists $test->{bearer} ? $test->{bearer} : undef)
+        // $req_opts{bearer}
+        // $self->bearer;
     $test->{_req} = {path => [
-      $test->{app_id} // (defined $test->{app} ? $self->o ($test->{app}) : $self->o ('app')), @$path,
+      $test->{app_id} //
+      (defined $test->{app} ? $self->o ($test->{app}) : undef) //
+      $req_opts{app_id} //
+      $self->o ('app_id'),
+      @$path,
     ], method => 'POST', params => $params, bearer => $bearer};
     $test;
   } map {
@@ -302,6 +309,20 @@ sub create_comment ($$$) {
     $self->set_o ($name => $result->{json});
   });
 } # create_comment
+
+sub create_star ($$$) {
+  my ($self, $name, $opts) = @_;
+  return $self->json (['star', 'add.json'], {
+    target_key => (defined $opts->{target} ? $self->o ($opts->{target})->{target_key} : $self->generate_key (rand, {})),
+    target_author_account_id => (defined $opts->{target_author} ? $self->o ($opts->{target_author})->{account_id} : undef),
+    author_account_id => (defined $opts->{author} ? $self->o ($opts->{author})->{account_id} : undef),
+    item_target_key => (defined $opts->{item_target} ? $self->o ($opts->{item_target})->{target_key} : $self->generate_key (rand, {})),
+    delta => $opts->{count} // 1,
+  }, app => $opts->{app})->then (sub {
+    my $result = $_[0];
+    $self->set_o ($name => $result->{json});
+  });
+} # create_star
 
 1;
 
