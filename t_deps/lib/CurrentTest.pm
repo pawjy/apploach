@@ -330,6 +330,7 @@ sub create_star ($$$) {
   return $self->json (['star', 'add.json'], {
     ($self->_nobj ('starred', $opts)),
     ($self->_nobj ('starred_author', $opts)),
+    ($self->_nobj ('starred_index', $opts)),
     ($self->_nobj ('author', $opts)),
     ($self->_nobj ('item', $opts)),
     delta => $opts->{count} // 1,

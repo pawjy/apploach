@@ -189,8 +189,12 @@ sub ids ($$) {
 ## "anonymous".
 ##
 ## Sometimes "author" of an NObj can be specified, which is not part
-## of the canonical data model of Apploach but is necessary for
+## of the canonical data model of Apploach object but is necessary for
 ## indexing.
+##
+## In addition, "index" value for an NObj can be specified, which is
+## not part of the canoncial data model of Apploach object but is used
+## for indexing.
 ##
 ## NObj (/prefix/) is an NObj, specified by the following parameter:
 ##
@@ -199,6 +203,13 @@ sub ids ($$) {
 ## NObj (/prefix/ with author) has the following additional parameter:
 ##
 ##   |/prefix/_author_nobj_key| : Key : The NObj's author's key.
+##
+## NObj (/prefix/ with index) has the following additional parameter:
+##
+##   |/prefix/_index_nobj_key| : Key : The NObj's additional index's
+##   key.  If the additional indexing is not necessary, an
+##   application-dependent dummy value such as "-" should be specified
+##   as filler.
 ##
 ## NObj list (/prefix/) are zero or more NObj, specified by the
 ## following parameters:
@@ -253,7 +264,9 @@ sub new_nobj_list ($$) {
 
 sub nobj ($$) {
   my ($self, $param) = @_;
-  return $self->_no ([$self->{app}->bare_param ($param.'_nobj_key')]);
+  return $self->_no ([$self->{app}->bare_param ($param.'_nobj_key')])->then (sub {
+    return $_[0]->[0];
+  });
 } # nobj
 
 sub one_nobj ($$) {
@@ -422,7 +435,7 @@ sub run ($) {
       return Promise->all ([
         $self->nobj ('thread'),
       ])->then (sub {
-        my ($thread) = @{$_[0]->[0]};
+        my $thread = $_[0]->[0];
         return [] if $thread->not_found;
         
         my $where = {
@@ -625,8 +638,8 @@ sub run ($) {
       ##
       ## Parameters.
       ##
-      ##   NObj (|starred| with author) : The star's starred NObj.
-      ##   For example, a blog entry.
+      ##   NObj (|starred| with author and index) : The star's starred
+      ##   NObj.  For example, a blog entry.
       ##
       ##   NObj (|author|) : The star's author.
       ##
@@ -638,9 +651,11 @@ sub run ($) {
       ##
       ## Response.  No additional data.
       return Promise->all ([
-        $self->new_nobj_list (['item', 'author', 'starred', 'starred_author']),
+        $self->new_nobj_list (['item', 'author',
+                               'starred', 'starred_author', 'starred_index']),
       ])->then (sub {
-        my ($item, $author, $starred, $starred_author) = @{$_[0]->[0]};
+        my ($item, $author,
+            $starred, $starred_author, $starred_index) = @{$_[0]->[0]};
         
         my $delta = 0+($self->{app}->bare_param ('delta') || 0); # can be negative
         return unless $delta;
@@ -650,6 +665,7 @@ sub run ($) {
           ($self->app_id_columns),
           ($starred->to_columns ('starred')),
           ($starred_author->to_columns ('starred_author')),
+          ($starred_index->to_columns ('starred_index')),
           ($author->to_columns ('author')),
           count => $delta > 0 ? $delta : 0,
           ($item->to_columns ('item')),
@@ -722,6 +738,10 @@ sub run ($) {
       ##   Either NObj (|author|) or NObj (|starred_author|) is
       ##   required.
       ##
+      ##   NObj (|starred_index|) : The star's starred NObj's index.
+      ##   Optional.  The list is filtered by both star's author or
+      ##   starred NObj's author and NObj's index, if specified.
+      ##
       ## List response of stars.
       ##
       ##   NObj (|starred|) : The star's starred NObj.
@@ -733,14 +753,18 @@ sub run ($) {
       ##   |count| : Integer : The star's count.
       return Promise->all ([
         $self->one_nobj (['author', 'starred_author']),
+        $self->nobj ('starred_index'),
       ])->then (sub {
         my ($name, $nobj) = @{$_[0]->[0]};
-
+        my $starred_index = $_[0]->[1];
+        
         return [] if $nobj->is_error;
+        return [] if $starred_index->is_error and not $starred_index->missing;
         
         return $self->db->select ('star', {
           ($self->app_id_columns),
           ($nobj->to_columns ($name)),
+          ($starred_index->missing ? () : ($starred_index->to_columns ('starred_index'))),
           count => {'>', 0},
           #XXXpaging
         }, fields => [
@@ -755,7 +779,6 @@ sub run ($) {
         return $self->json ({items => $_[0]});
       });
 
-      # XXX target parent
       # XXX author replacer
       
     }

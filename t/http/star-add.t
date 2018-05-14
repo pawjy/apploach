@@ -11,6 +11,7 @@ Test {
       starred_nobj_key => $current->generate_key (key1 => {}),
       item_nobj_key => $current->generate_key (type1 => {}),
       starred_author_nobj_key => $current->generate_key (id2 => {}),
+      starred_index_nobj_key => $current->generate_key (id3 => {}),
       author_nobj_key => $current->generate_key (id1 => {}),
       delta => 3,
     }],
@@ -24,6 +25,7 @@ Test {
       starred_nobj_key => $current->o ('key1'),
       item_nobj_key => $current->o ('type1'),
       starred_author_nobj_key => $current->o ('id2'),
+      starred_index_nobj_key => $current->o ('id3'),
       author_nobj_key => $current->o ('id1'),
       delta => 4,
     });
@@ -59,6 +61,7 @@ Test {
     return $current->json (['star', 'add.json'], {
       starred_nobj_key => $current->generate_key ('key1' => {}),
       starred_author_nobj_key => $current->o ('a2')->{nobj_key},
+      starred_index_nobj_key => $current->generate_key ('id3' => {}),
       item_nobj_key => $current->generate_key ('type1' => {}),
       author_nobj_key => $current->o ('a1')->{nobj_key},
       delta => 4,
@@ -67,6 +70,7 @@ Test {
     return $current->json (['star', 'add.json'], {
       starred_nobj_key => $current->o ('key1'),
       starred_author_nobj_key => $current->o ('a2')->{nobj_key},
+      starred_index_nobj_key => $current->o ('id3'),
       item_nobj_key => $current->o ('type1'),
       author_nobj_key => $current->o ('a1')->{nobj_key},
       delta => 0,
@@ -75,6 +79,7 @@ Test {
     return $current->json (['star', 'add.json'], {
       starred_nobj_key => $current->o ('key1'),
       starred_author_nobj_key => $current->o ('a2')->{nobj_key},
+      starred_index_nobj_key => $current->o ('id3'),
       item_nobj_key => $current->o ('type1'),
       author_nobj_key => $current->o ('a1')->{nobj_key},
       delta => -2,
@@ -95,6 +100,7 @@ Test {
     return $current->json (['star', 'add.json'], {
       starred_nobj_key => $current->o ('key1'),
       starred_author_nobj_key => $current->o ('a2')->{nobj_key},
+      starred_index_nobj_key => $current->o ('id3'),
       item_nobj_key => $current->o ('type1'),
       author_nobj_key => $current->o ('a1')->{nobj_key},
       delta => -10,
@@ -103,6 +109,7 @@ Test {
     return $current->json (['star', 'add.json'], {
       starred_nobj_key => $current->o ('key1'),
       starred_author_nobj_key => $current->o ('a2')->{nobj_key},
+      starred_index_nobj_key => $current->o ('id3'),
       item_nobj_key => $current->o ('type1'),
       author_nobj_key => $current->o ('a1')->{nobj_key},
       delta => 0,

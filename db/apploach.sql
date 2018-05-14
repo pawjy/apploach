@@ -34,6 +34,7 @@ create table `star` (
   `app_id` bigint unsigned not null,
   `starred_nobj_id` bigint unsigned not null,
   `starred_author_nobj_id` bigint unsigned not null,
+  `starred_index_nobj_id` bigint unsigned not null,
   `author_nobj_id` bigint unsigned not null,
   `count` int unsigned not null,
   `item_nobj_id` bigint unsigned not null,
@@ -43,6 +44,7 @@ create table `star` (
   key (`app_id`, `starred_nobj_id`, `created`),
   key (`app_id`, `author_nobj_id`, `created`),
   key (`app_id`, `starred_author_nobj_id`, `created`),
+  key (`app_id`, `starred_index_nobj_id`, `starred_author_nobj_id`, `created`),
   key (`app_id`, `item_nobj_id`, `created`),
   key (`created`),
   key (`updated`)
