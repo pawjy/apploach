@@ -32,9 +32,10 @@ sub nobj_key ($) {
   return $_[0]->{nobj_key};
 } # nobj_key
 
-sub to_columns ($;$) {
-  die "Not available" unless defined $_[0]->{nobj_id};
-  return ($_[1]."_nobj_id" => $_[0]->{nobj_id});
+sub to_columns ($$) {
+  my ($self, $name) = @_;
+  die "Not available" unless defined $self->{nobj_id};
+  return ($name."_nobj_id" => $self->{nobj_id});
 } # to_columns
 
 1;

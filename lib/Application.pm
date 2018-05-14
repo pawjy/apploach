@@ -188,9 +188,17 @@ sub ids ($$) {
 ## abstract concept such as "blogs", "bookmarks of a user", or
 ## "anonymous".
 ##
+## Sometimes "author" of an NObj can be specified, which is not part
+## of the canonical data model of Apploach but is necessary for
+## indexing.
+##
 ## NObj (/prefix/) is an NObj, specified by the following parameter:
 ##
 ##   |/prefix/_nobj_key| : Key : The NObj's key.
+##
+## NObj (/prefix/ with author) has the following additional parameter:
+##
+##   |/prefix/_author_nobj_key| : Key : The NObj's author's key.
 ##
 ## NObj list (/prefix/) are zero or more NObj, specified by the
 ## following parameters:
@@ -247,6 +255,23 @@ sub nobj ($$) {
   my ($self, $param) = @_;
   return $self->_no ([$self->{app}->bare_param ($param.'_nobj_key')]);
 } # nobj
+
+sub one_nobj ($$) {
+  my ($self, $params) = @_;
+  my $n;
+  my $w;
+  for my $param (@$params) {
+    my $v = $self->{app}->bare_param ($param.'_nobj_key');
+    if (defined $v) {
+      $n = $param;
+      $w = $v;
+      last;
+    }
+  }
+  return $self->_no ([$w])->then (sub {
+    return [$n, $_[0]->[0]];
+  });
+} # one_nobj
 
 sub nobj_list ($$) {
   my ($self, $param) = @_;
@@ -593,18 +618,15 @@ sub run ($) {
 
   if ($self->{type} eq 'star') {
     ## Stars.  A starred NObj can have zero or more stars.  A star has
-    ## starred NObj : NObj, starred NObj author : NObj, author : NObj,
-    ## item : NObj, count : Integer.
+    ## starred NObj : NObj, author : NObj, item : NObj, count :
+    ## Integer.
     if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'add.json') {
       ## /{app_id}/star/add.json - Add a star.
       ##
       ## Parameters.
       ##
-      ##   NObj (|starred|) : The star's starred NObj.  For example, a
-      ##   blog entry.
-      ##
-      ##   NObj (|starred_author|) : The star's starred NObj author.
-      ##   For example, a blog entry's author.
+      ##   NObj (|starred| with author) : The star's starred NObj.
+      ##   For example, a blog entry.
       ##
       ##   NObj (|author|) : The star's author.
       ##
@@ -642,7 +664,7 @@ sub run ($) {
       });
       # XXX notification hook
     } elsif (@{$self->{path}} == 1 and $self->{path}->[0] eq 'get.json') {
-      ## /{app_id}/star/get.json - Get stars.
+      ## /{app_id}/star/get.json - Get stars for rendering.
       ##
       ## Parameters.
       ##
@@ -652,13 +674,13 @@ sub run ($) {
       ##
       ##   |stars| : Object.
       ##
-      ##     {|target_key| : Key : A target} : Array.
+      ##     {NObj (|starred|) : The star's starred} : Array of stars.
       ##
-      ##       |author_account_id| : Account ID : The star's author.
+      ##       NObj (|author|) : The star's author.
       ##
-      ##       |item_target_key| : Key : The star's item target.
+      ##       NObj (|item|) : The star's item.
       ##
-      ##       |count| : Integer : The number of stars.
+      ##       |count| : Integer : The star's count.
       return Promise->all ([
         $self->nobj_list ('starred'),
       ])->then (sub {
@@ -689,10 +711,49 @@ sub run ($) {
         }
         return $self->json ({stars => $stars});
       });
+    } elsif (@{$self->{path}} == 1 and $self->{path}->[0] eq 'list.json') {
+      ## /{app_id}/star/list.json - Get stars for listing.
+      ##
+      ## Parameters.
+      ##
+      ##   NObj (|author|) : The star's author.
+      ##
+      ##   NObj (|starred_author|) : The star's starred NObj's author.
+      ##   Either NObj (|author|) or NObj (|starred_author|) is
+      ##   required.
+      ##
+      ## List response of stars.
+      ##
+      ##   NObj (|starred|) : The star's starred NObj.
+      ##
+      ##   NObj (|author|) : The star's author.
+      ##
+      ##   NObj (|item|) : The star's item.
+      ##
+      ##   |count| : Integer : The star's count.
+      return Promise->all ([
+        $self->one_nobj (['author', 'starred_author']),
+      ])->then (sub {
+        my ($name, $nobj) = @{$_[0]->[0]};
 
-      #XXX
-      # list.json?target_author_account_id=...
-      # list.json?author_account_id=...
+        return [] if $nobj->is_error;
+        
+        return $self->db->select ('star', {
+          ($self->app_id_columns),
+          ($nobj->to_columns ($name)),
+          count => {'>', 0},
+          #XXXpaging
+        }, fields => [
+          'starred_nobj_id',
+          'item_nobj_id', 'count', 'author_nobj_id',
+        ], order => ['updated', 'DESC'], source_name => 'master')->then (sub {
+          return $_[0]->all;
+        });
+      })->then (sub {
+        return $self->replace_nobj_ids ($_[0], ['author', 'item', 'starred']);
+      })->then (sub {
+        return $self->json ({items => $_[0]});
+      });
 
       # XXX target parent
       # XXX author replacer
