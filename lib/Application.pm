@@ -778,11 +778,36 @@ sub run ($) {
       })->then (sub {
         return $self->json ({items => $_[0]});
       });
-
-      # XXX author replacer
-      
     }
   } # star
+
+  if ($self->{type} eq 'nobj') {
+    if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'changeauthor.json') {
+      ## /{app_id}/nobj/changeauthor.json - Change the author of an
+      ## NObj.
+      ##
+      ## Parameters.
+      ##
+      ##   NObj (|subject|) - The NObj.
+      ##
+      ##   NObj (|author|) - The new author.
+      ##
+      ## Response.  No additional data.
+      return Promise->all ([
+        $self->new_nobj_list (['subject', 'author']),
+      ])->then (sub {
+        my ($subject, $author) = @{$_[0]->[0]};
+        return $self->db->update ('star', {
+          ($author->to_columns ('starred_author')),
+        }, where => {
+          ($self->app_id_columns),
+          ($subject->to_columns ('starred')),
+        })->then (sub {
+          return $self->json ({});
+        });
+      });
+    }
+  } # nobj
   
   return $self->{app}->throw_error (404);
 } # run
