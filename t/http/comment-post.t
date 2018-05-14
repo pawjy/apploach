@@ -8,28 +8,29 @@ Test {
   my $current = shift;
   return $current->are_errors (
     [['comment', 'post.json'], {
-      target_key => $current->generate_key (key1 => {}),
+      thread_nobj_key => $current->generate_key (key1 => {}),
       data => '{"a":5}',
       internal_data => '{"c":6}',
-      author_account_id => $current->generate_id (uid1 => {}),
+      author_nobj_key => $current->generate_key (uid1 => {}),
       author_status => 14,
-      target_owner_status => 2,
+      owner_status => 2,
       admin_status => 3,
     }],
     [
-      'new_target',
+      ['new_nobj', 'thread'],
+      ['new_nobj', 'author'],
       ['json', 'data'],
       ['json', 'internal_data'],
       'status',
     ],
   )->then (sub {
     return $current->json (['comment', 'post.json'], {
-      target_key => $current->o ('key1'),
+      thread_nobj_key => $current->o ('key1'),
       data => '{"a":5}',
       internal_data => '{"c":6}',
-      author_account_id => $current->o ('uid1'),
+      author_nobj_key => $current->o ('uid1'),
       author_status => 14,
-      target_owner_status => 2,
+      owner_status => 2,
       admin_status => 3,
     });
   })->then (sub {
@@ -51,14 +52,14 @@ Test {
       my $c = $result->{json}->{items}->[0];
       is $c->{comment_id}, $current->o ('c1')->{comment_id};
       is $c->{data}->{timestamp}, $current->o ('c1')->{timestamp};
-      is $c->{author_account_id}, $current->o ('uid1');
+      is $c->{author_nobj_key}, $current->o ('uid1');
+      is $c->{thread_nobj_key}, $current->o ('key1');
       is $c->{data}->{a}, 5;
       is $c->{internal_data}->{c}, 6;
       is $c->{author_status}, 14;
-      is $c->{target_owner_status}, 2;
+      is $c->{owner_status}, 2;
       is $c->{admin_status}, 3;
       has_json_string $result, 'comment_id';
-      has_json_string $result, 'author_account_id';
     } $current->c;
   });
 } n => 15, name => 'post.json';

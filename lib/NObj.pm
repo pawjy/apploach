@@ -1,4 +1,4 @@
-package Target;
+package NObj;
 use strict;
 use warnings;
 
@@ -7,9 +7,9 @@ sub new ($%) {
   return bless {@_}, $class;
 } # new
 
-sub no_target ($) {
-  return $_[0]->{no_target};
-} # no_target
+sub missing ($) {
+  return $_[0]->{missing};
+} # missing
 
 sub not_found ($) {
   return $_[0]->{not_found};
@@ -20,25 +20,21 @@ sub invalid_key ($) {
 } # invalid_key
 
 sub is_error ($) {
-  return $_[0]->{no_target} || $_[0]->{not_found};
+  return $_[0]->{missing} || $_[0]->{not_found};
 } # is_error
 
-sub target_id ($) {
-  die "Not available" unless defined $_[0]->{target_id};
-  return $_[0]->{target_id};
-} # target_id
+sub nobj_id ($) {
+  die "Not available" unless defined $_[0]->{nobj_id};
+  return $_[0]->{nobj_id};
+} # nobj_id
 
-sub target_key ($) {
-  return $_[0]->{target_key};
-} # target_key
+sub nobj_key ($) {
+  return $_[0]->{nobj_key};
+} # nobj_key
 
 sub to_columns ($;$) {
-  die "Not available" unless defined $_[0]->{target_id};
-  if (defined $_[1]) {
-    return ($_[1]."_target_id" => $_[0]->{target_id});
-  } else {
-    return (target_id => $_[0]->{target_id});
-  }
+  die "Not available" unless defined $_[0]->{nobj_id};
+  return ($_[1]."_nobj_id" => $_[0]->{nobj_id});
 } # to_columns
 
 1;

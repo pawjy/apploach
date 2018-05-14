@@ -10,7 +10,7 @@ use Promise;
 use Promised::Flow;
 use Dongry::Database;
 
-use Target;
+use NObj;
 
 ## Configurations.  The path to the configuration JSON file must be
 ## specified to the |APP_CONFIG| environment variable.  The JSON file
@@ -71,10 +71,6 @@ use Target;
 ##
 ## Key.  A non-empty ASCII string whose length is less than 4096.
 ##
-## Status.  An integer representing the object's status (e.g. "open",
-## "closed", "public", "private", "banned", and so on).  It must be in
-## the range [2, 254].
-##
 ## Timestamp.  A unix time, represented as a floating-point number.
 
 sub new ($%) {
@@ -108,14 +104,6 @@ sub id_param ($$) {
   return $self->throw ({reason => 'Bad ID parameter |'.$name.'_id|'});
 } # id_param
 
-sub optional_account_id_param ($$) {
-  my ($self, $name) = @_;
-  my $v = $self->{app}->bare_param ($name.'_account_id');
-  return 0 unless defined $v;
-  return 0+$v if $v =~ /\A[1-9][0-9]*\z/;
-  return $self->throw ({reason => 'Bad ID parameter |'.$name.'_account_id|'});
-} # optional_account_id_param
-
 sub json_object_param ($$) {
   my ($self, $name) = @_;
   my $v = $self->{app}->bare_param ($name);
@@ -139,10 +127,24 @@ sub app_id_columns ($) {
   return (app_id => $_[0]->{app_id});
 } # app_id_columns
 
+## Status.  An integer representing the object's status (e.g. "open",
+## "closed", "public", "private", "banned", and so on).  It must be in
+## the range [2, 254].
+##
+## Statuses.  A pair of status values.  Parameters:
+##
+##   |author_status| : Status : The status by the author.
+##
+##   |owner_status| : Status : The status by the owner(s).  The
+##   interpretation of "owner" is application-dependent.  For example,
+##   a comment's owner can be the comment's thread's author.
+##
+##   |admin_status| : Status : The status by the administrator(s) of
+##   the application.
 sub status_columns ($) {
   my $self = $_[0];
   my $w = {};
-  for (qw(author_status target_owner_status admin_status)) {
+  for (qw(author_status owner_status admin_status)) {
     my $v = $self->{app}->bare_param ($_) // '';
     return $self->throw ({reason => "Bad |$_|"})
         unless $v =~ /\A[1-9][0-9]*\z/ and 1 < $v and $v < 255;
@@ -177,214 +179,214 @@ sub ids ($$) {
   });
 } # ids
 
-sub _opt_id ($) {
-  if ($_[0]) {
-    return ''.$_[0];
-  } else {
-    return undef;
-  }
-} # _opt_id
-
-## Target.
+## Named object (NObj).  An NObj is an object or concept in the
+## application.  It is externally identified by a Key in the API or
+## internally by an ID on the straoge.  The key can be any value
+## assigned by the application.  The ID is assigned by Apploach.  It
+## can be used to represent an object stored in Apploach, such as a
+## comment or a tag, an external object such as account, or an
+## abstract concept such as "blogs", "bookmarks of a user", or
+## "anonymous".
 ##
-## A target identifies the "context" in which an object alives.  It is
-## identified by the application by a key which is unique within the
-## scope of the application.  Parameters:
+## NObj (/prefix/) is an NObj, specified by the following parameter:
 ##
-##   |target_key| : Key : The target.
+##   |/prefix/_nobj_key| : Key : The NObj's key.
 ##
-## For example, implementing a blog's comment feature, the target key
-## can be a string containing the blog's unique ID.
+## NObj list (/prefix/) are zero or more NObj, specified by the
+## following parameters:
 ##
-## Targets.
-##
-## Zero or more targets.  Parameters
-##
-##   |target_key| : Key : A target.  Zero or more parameters can be
-##   specified.
-sub new_target_list ($$) {
+##   |/prefix/_nobj_key| : Key : The NObj's key.  Zero or more
+##   parameters can be specified.
+sub new_nobj_list ($$) {
   my ($self, $params) = @_;
-  my @key = map { $self->{app}->bare_param ($_) } @$params;
-  return $self->_target (\@key)->then (sub {
-    my $targets = $_[0];
+  my @key = map { $self->{app}->bare_param ($_.'_nobj_key') } @$params;
+  return $self->_no (\@key)->then (sub {
+    my $nos = $_[0];
     return promised_map {
       my $param = $params->[$_[0]];
-      my $target_key = $key[$_[0]];
-      my $target = $targets->[$_[0]];
+      my $nobj_key = $key[$_[0]];
+      my $no = $nos->[$_[0]];
 
-      return $self->throw ({reason => 'Bad |'.$param.'|'})
-          if $target->no_target or $target->invalid_key;
-      return $target unless $target->not_found;
+      return $self->throw ({reason => 'Bad |'.$param.'_nobj_key|'})
+          if $no->missing or $no->invalid_key;
+      return $no unless $no->not_found;
 
       # not found
-      my $target_key_sha = sha1_hex $target_key;
+      my $nobj_key_sha = sha1_hex $nobj_key;
       return $self->ids (1)->then (sub {
         my $id = $_[0]->[0];
-        return $self->db->insert ('target', [{
+        return $self->db->insert ('nobj', [{
           ($self->app_id_columns),
-          target_id => $id,
-          target_key => $target_key,
-          target_key_sha => $target_key_sha,
+          nobj_id => $id,
+          nobj_key => $nobj_key,
+          nobj_key_sha => $nobj_key_sha,
           timestamp => time,
         }], source_name => 'master', duplicate => 'ignore');
       })->then (sub {
-        return $self->db->select ('target', {
+        return $self->db->select ('nobj', {
           ($self->app_id_columns),
-          target_key_sha => $target_key_sha,
-          target_key => $target_key,
-        }, fields => ['target_id'], limit => 1, source_name => 'master');
+          nobj_key_sha => $nobj_key_sha,
+          nobj_key => $nobj_key,
+        }, fields => ['nobj_id'], limit => 1, source_name => 'master');
       })->then (sub {
         my $v = $_[0]->first;
         if (defined $v) {
-          my $t = Target->new (target_id => $v->{target_id},
-                               target_key => $target_key);
-          $self->{target_id_to_object}->{$v->{target_id}} = $t;
-          $self->{target_key_to_object}->{$target_key} = $t;
+          my $t = NObj->new (nobj_id => $v->{nobj_id},
+                             nobj_key => $nobj_key);
+          $self->{nobj_id_to_object}->{$v->{nobj_id}} = $t;
+          $self->{nobj_key_to_object}->{$nobj_key} = $t;
           return $t;
         }
-        die "Can't generate |target_id| for |$target_key|";
+        die "Can't generate |nobj_id| for |$nobj_key|";
       });
     } [0..$#key];
   });
-} # new_target_list
+} # new_nobj_list
 
-sub new_target ($) {
-  my ($self) = @_;
-  return $self->new_target_list (['target_key'])->then (sub {
-    return $_[0]->[0];
-  });
-} # new_target
+sub nobj ($$) {
+  my ($self, $param) = @_;
+  return $self->_no ([$self->{app}->bare_param ($param.'_nobj_key')]);
+} # nobj
 
-sub target ($) {
-  my $self = $_[0];
-  my $target_key = $self->{app}->bare_param ('target_key');
-  return $self->_target ([$target_key])->then (sub { return $_[0]->[0] });
-} # target
+sub nobj_list ($$) {
+  my ($self, $param) = @_;
+  return $self->_no ($self->{app}->bare_param_list ($param.'_nobj_key'));
+} # nobj_list
 
-sub target_list ($) {
-  my $self = $_[0];
-  return $self->_target ($self->{app}->bare_param_list ('target_key'));
-} # target_list
-
-sub _target ($$) {
-  my ($self, $target_keys) = @_;
+sub _no ($$) {
+  my ($self, $nobj_keys) = @_;
   my @key;
   my $results = [map {
-    my $target_key = $_;
-    if (not defined $target_key) {
-      Target->new (no_target => 1);
-    } elsif (not length $target_key or 4095 < length $target_key) {
-      Target->new (not_found => 1, invalid_key => 1,
-                   target_key => $target_key);
-    } elsif (defined $self->{target_key_to_object}->{$target_key}) {
-      $self->{target_key_to_object}->{$target_key};
+    my $nobj_key = $_;
+    if (not defined $nobj_key) {
+      NObj->new (missing => 1);
+    } elsif (not length $nobj_key or 4095 < length $nobj_key) {
+      NObj->new (not_found => 1, invalid_key => 1, nobj_key => $nobj_key);
+    } elsif (defined $self->{nobj_key_to_object}->{$nobj_key}) {
+      $self->{nobj_key_to_object}->{$nobj_key};
     } else {
-      my $target_key_sha = sha1_hex $target_key;
-      push @key, [$target_key, $target_key_sha];
-      $target_key;
+      my $nobj_key_sha = sha1_hex $nobj_key;
+      push @key, [$nobj_key, $nobj_key_sha];
+      $nobj_key;
     }
-  } @$target_keys];
+  } @$nobj_keys];
   return Promise->resolve->then (sub {
     return unless @key;
-    return $self->db->select ('target', {
+    return $self->db->select ('nobj', {
       ($self->app_id_columns),
-      target_key_sha => {-in => [map { $_->[1] } @key]},
-      target_key => {-in => [map { $_->[0] } @key]},
-    }, fields => ['target_id', 'target_key'], source_name => 'master')->then (sub {
+      nobj_key_sha => {-in => [map { $_->[1] } @key]},
+      nobj_key => {-in => [map { $_->[0] } @key]},
+    }, fields => ['nobj_id', 'nobj_key'], source_name => 'master')->then (sub {
       for (@{$_[0]->all}) {
-        my $t = Target->new (target_id => $_->{target_id},
-                             target_key => $_->{target_key});
-        $self->{target_key_to_object}->{$_->{target_key}} = $t;
-        $self->{target_id_to_object}->{$_->{target_id}} = $t;
+        my $t = NObj->new (nobj_id => $_->{nobj_id},
+                           nobj_key => $_->{nobj_key});
+        $self->{nobj_key_to_object}->{$_->{nobj_key}} = $t;
+        $self->{nobj_id_to_object}->{$_->{nobj_id}} = $t;
       }
     });
   })->then (sub {
     $results = [map {
-      if (ref $_ eq 'Target') {
+      if (ref $_ eq 'NObj') {
         $_;
       } else {
-        if ($self->{target_key_to_object}->{$_}) {
-          $self->{target_key_to_object}->{$_};
+        if ($self->{nobj_key_to_object}->{$_}) {
+          $self->{nobj_key_to_object}->{$_};
         } else {
-          Target->new (not_found => 1, target_key => $_);
+          NObj->new (not_found => 1, nobj_key => $_);
         }
       }
     } @$results];
     return $results;
   });
-} # _target
+} # _no
 
-sub target_list_by_ids ($$) {
+sub replace_nobj_ids ($$$) {
+  my ($self, $items, $fields) = @_;
+  my $keys = {};
+  for my $item (@$items) {
+    for my $field (@$fields) {
+      $keys->{$item->{$field.'_nobj_id'}}++;
+    }
+  }
+  return $self->_nobj_list_by_ids ([keys %$keys])->then (sub {
+    my $map = $_[0];
+    for my $item (@$items) {
+      for my $field (@$fields) {
+        my $v = $map->{delete $item->{$field.'_nobj_id'}};
+        $item->{$field.'_nobj_key'} = $v->nobj_key
+            if defined $v and not $v->is_error;
+      }
+    }
+    return $items;
+  });
+} # replace_nobj_ids
+
+sub _nobj_list_by_ids ($$) {
   my ($self, $ids) = @_;
   return Promise->resolve->then (sub {
     my @id;
     my $results = [map {
-      if (defined $self->{target_id_to_object}->{$_}) {
-        $self->{target_id_to_object}->{$_};
+      if (defined $self->{nobj_id_to_object}->{$_}) {
+        $self->{nobj_id_to_object}->{$_};
       } else {
         push @id, $_;
         $_;
       }
     } @$ids];
     return $results unless @id;
-    return $self->db->select ('target', {
+    return $self->db->select ('nobj', {
       ($self->app_id_columns),
-      target_id => {-in => \@id},
-    }, fields => ['target_id', 'target_key'], source_name => 'master')->then (sub {
+      nobj_id => {-in => \@id},
+    }, fields => ['nobj_id', 'nobj_key'], source_name => 'master')->then (sub {
       for (@{$_[0]->all}) {
-        my $t = Target->new (target_id => $_->{target_id},
-                             target_key => $_->{target_key});
-        $self->{target_key_to_object}->{$_->{target_key}} = $t;
-        $self->{target_id_to_object}->{$_->{target_id}} = $t;
+        my $t = NObj->new (nobj_id => $_->{nobj_id},
+                           nobj_key => $_->{nobj_key});
+        $self->{nobj_key_to_object}->{$_->{nobj_key}} = $t;
+        $self->{nobj_id_to_object}->{$_->{nobj_id}} = $t;
       }
       return [map {
-        if (ref $_ eq 'Target') {
+        if (ref $_ eq 'NObj') {
           $_;
         } else {
-          $self->{target_id_to_object}->{$_} // die "Target |$_| not found";
+          $self->{nobj_id_to_object}->{$_} // die "NObj |$_| not found";
         }
       } @$ids];
     });
   })->then (sub {
-    return {map { $_->target_id => $_ } @{$_[0]}};
+    return {map { $_->nobj_id => $_ } @{$_[0]}};
   });
-} # target_list_by_ids
-
-## Statuses.  A pair of status values.  Parameters:
-##
-##   |author_status| : Status : The status by the author.
-##
-##   |target_owner_status| : Status : The status by the owner of the
-##   target, if any.
-##
-##   |admin_status| : Status : The status by the administrator of the
-##   application.
+} # _nobj_list_by_ids
 
 sub run ($) {
   my $self = $_[0];
 
   if ($self->{type} eq 'comment') {
+    ## Comments.  A thread can have zero or more comments.  A comment
+    ## has ID : ID, thread : NObj, author : NObj, data : JSON object,
+    ## internal data : JSON object, statuses : Statuses.
     if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'list.json') {
       ## /{app_id}/comment/list.json - Get comments.
       ##
       ## Parameters.
       ##
-      ##   Target : The thread of comments.
+      ##   NObj (|thread|) : The comment's thread.
       ##
-      ##   |comment_id| : ID : The comment's ID.  Either Target or
-      ##   |comment_id|, or both, is required.  If Target is
-      ##   specified, returned comments are limited to those for the
-      ##   Target.  If |comment_id| is specified, it is further
-      ##   limited to one with that |comment_id|.
+      ##   |comment_id| : ID : The comment's ID.  Either the thread or
+      ##   the ID, or both, is required.  If the thread is specified,
+      ##   returned comments are limited to those for the thread.  If
+      ##   |comment_id| is specified, it is further limited to one
+      ##   with that |comment_id|.
       ##
       ##   |with_internal_data| : Boolean : Whether |internal_data|
       ##   should be returned or not.
       ##
       ## List response of comments.
       ##
+      ##   NObj (|thread|) : The comment's thread.
+      ##
       ##   |comment_id| : ID : The comment's ID.
       ##
-      ##   |author_account_id| : ID : The comment's ID.
+      ##   NObj (|author|) : The comment's author.
       ##
       ##   |data| : JSON object : The comment's data.
       ##
@@ -392,16 +394,15 @@ sub run ($) {
       ##   Only when |with_internal_data| is true.
       ##
       ##   Statuses.
-
       return Promise->all ([
-        $self->target,
+        $self->nobj ('thread'),
       ])->then (sub {
-        my ($target) = @{$_[0]};
-        return [] if $target->not_found;
+        my ($thread) = @{$_[0]->[0]};
+        return [] if $thread->not_found;
         
         my $where = {
           ($self->app_id_columns),
-          ($target->no_target ? () : ($target->to_columns)),
+          ($thread->missing ? () : ($thread->to_columns ('thread'))),
         };
 
         my $comment_id = $self->{app}->bare_param ('comment_id');
@@ -409,18 +410,19 @@ sub run ($) {
           $where->{comment_id} = $comment_id;
         } else {
           return $self->throw
-              ({reason => 'Either target or |comment_id| is required'})
-              if $target->no_target;
+              ({reason => 'Either thread or |comment_id| is required'})
+              if $thread->missing;
         }
 
         # XXX status filter
         # XXX paging
         return $self->db->select ('comment', $where, fields => [
           'comment_id',
-          'author_account_id',
+          'thread_nobj_id',
+          'author_nobj_id',
           'data',
           ($self->{app}->bare_param ('with_internal_data') ? ('internal_data') : ()),
-          'author_status', 'target_owner_status', 'admin_status',
+          'author_status', 'owner_status', 'admin_status',
         ], source_name => 'master', order => ['timestamp', 'desc'])->then (sub {
           return $_[0]->all->to_a;
         });
@@ -428,31 +430,29 @@ sub run ($) {
         my $items = $_[0];
         for my $item (@$items) {
           $item->{comment_id} .= '';
-          $item->{author_account_id} .= '';
           $item->{data} = Dongry::Type->parse ('json', $item->{data});
           $item->{internal_data} = Dongry::Type->parse ('json', $item->{internal_data})
               if defined $item->{internal_data};
-          # XXX target
         }
-        return $self->json ({items => $items});
+        return $self->replace_nobj_ids ($items, ['author', 'thread'])->then (sub {
+          return $self->json ({items => $items});
+        });
       });
     } elsif (@{$self->{path}} == 1 and $self->{path}->[0] eq 'post.json') {
       ## /{app_id}/comment/post.json - Add a new comment.
       ##
       ## Parameters.
       ##
-      ##   Target : The comment's thread.
+      ##   NObj (|thread|) : The comment's thread.
       ##
-      ##   Statuses : The comment's status values.
+      ##   Statuses : The comment's statuses.
       ##
-      ##   |author_account_id| : Account ID or 0 : The comment's
-      ##   author.  Optional (default = 0).
+      ##   NObj (|author|) : The comment's author.
       ##
-      ##   |data| : JSON object : The comment's main data.  Its
-      ##   |timestamp| is replaced by the comment's timestamp
-      ##   (i.e. when the server added the comment).
+      ##   |data| : JSON object : The comment's data.  Its |timestamp|
+      ##   is replaced by the time Apploach accepts the comment.
       ##
-      ##   |internal_data| : JSON object : The comment's additional
+      ##   |internal_data| : JSON object : The comment's internal
       ##   data, intended for storing private data such as author's IP
       ##   address.
       ##
@@ -460,21 +460,21 @@ sub run ($) {
       ##
       ##   |comment_id| : ID : The comment's ID.
       ##
-      ##   |timestamp| : Timestamp : The comment's timestamp.
-
+      ##   |timestamp| : Timestamp : The comment's data's timestamp.
       return Promise->all ([
-        $self->new_target,
+        $self->new_nobj_list (['thread', 'author']),
         $self->ids (1),
       ])->then (sub {
-        my ($target, $ids) = @{$_[0]};
+        my (undef, $ids) = @{$_[0]};
+        my ($thread, $author) = @{$_[0]->[0]};
         my $data = $self->json_object_param ('data');
         my $time = time;
         $data->{timestamp} = $time;
         return $self->db->insert ('comment', [{
           ($self->app_id_columns),
-          ($target->to_columns),
+          ($thread->to_columns ('thread')),
           comment_id => $ids->[0],
-          author_account_id => $self->optional_account_id_param ('author'),
+          ($author->to_columns ('author')),
           data => Dongry::Type->serialize ('json', $data),
           internal_data => Dongry::Type->serialize ('json', $self->json_object_param ('internal_data')),
           ($self->status_columns),
@@ -494,11 +494,12 @@ sub run ($) {
       ##
       ##   |comment_id| : ID : The comment's ID.
       ##
-      ##   |data_delta| : JSON object : New comment's data.  Unchanged
-      ##   name/value pairs can be omitted.  Removed names should be
-      ##   set to |null| values.  Optional if nothing to change.
+      ##   |data_delta| : JSON object : The comment's new data.
+      ##   Unchanged name/value pairs can be omitted.  Removed names
+      ##   should be set to |null| values.  Optional if nothing to
+      ##   change.
       ##
-      ##   |internal_data_delta| : JSON object : New comment's
+      ##   |internal_data_delta| : JSON object : The comment's new
       ##   internal data.  Unchanged name/value pairs can be omitted.
       ##   Removed names should be set to |null| values.  Optional if
       ##   nothing to change.
@@ -507,7 +508,6 @@ sub run ($) {
       ##   change.
       ##
       ## Response.  No additional data.
-
       return $self->db->transaction->then (sub {
         my $tr = $_[0];
         return Promise->resolve->then (sub {
@@ -516,7 +516,7 @@ sub run ($) {
             comment_id => $self->id_param ('comment'),
           }, fields => [
             'comment_id', 'data', 'internal_data',
-            'author_status', 'target_owner_status', 'admin_status',
+            'author_status', 'owner_status', 'admin_status',
           ], lock => 'update');
         })->then (sub {
           my $current = $_[0]->first;
@@ -555,7 +555,7 @@ sub run ($) {
             }
             delete $updates->{$name} unless $changed;
           } # $name
-          for (qw(author_status target_owner_status admin_status)) {
+          for (qw(author_status owner_status admin_status)) {
             my $v = $self->{app}->bare_param ($_);
             next unless defined $v;
             return $self->throw ({reason => "Bad |$_|"})
@@ -592,26 +592,33 @@ sub run ($) {
   } # comment
 
   if ($self->{type} eq 'star') {
+    ## Stars.  A starred NObj can have zero or more stars.  A star has
+    ## starred NObj : NObj, starred NObj author : NObj, author : NObj,
+    ## item : NObj, count : Integer.
     if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'add.json') {
       ## /{app_id}/star/add.json - Add a star.
       ##
       ## Parameters.
       ##
-      ##   Target : The star's target.
+      ##   NObj (|starred|) : The star's starred NObj.  For example, a
+      ##   blog entry.
       ##
-      ##   |target_author_account_id| : Account ID : The star's
-      ##   target's author.  Optional if no author (anonymous or
-      ##   unknown or unspecified).  The target's author cannot be
-      ##   changed.
+      ##   NObj (|starred_author|) : The star's starred NObj author.
+      ##   For example, a blog entry's author.
       ##
-      ##   |author_account_id| : Account ID : The star's author.
-      ##   Optional if no author (anonymous).
+      ##   NObj (|author|) : The star's author.
+      ##
+      ##   NObj (|item|) : The star's item.  It represents the type of
+      ##   the star.
+      ##
+      ##   |delta| : Integer : The difference of the new and the
+      ##   current numbers of the star's count.
       ##
       ## Response.  No additional data.
       return Promise->all ([
-        $self->new_target_list (['item_target_key', 'target_key']),
+        $self->new_nobj_list (['item', 'author', 'starred', 'starred_author']),
       ])->then (sub {
-        my ($item_target, $target) = @{$_[0]->[0]};
+        my ($item, $author, $starred, $starred_author) = @{$_[0]->[0]};
         
         my $delta = 0+($self->{app}->bare_param ('delta') || 0); # can be negative
         return unless $delta;
@@ -619,11 +626,11 @@ sub run ($) {
         my $time = time;
         return $self->db->insert ('star', [{
           ($self->app_id_columns),
-          ($target->to_columns),
-          target_author_account_id => $self->optional_account_id_param ('target_author'),
-          author_account_id => $self->optional_account_id_param ('author'),
+          ($starred->to_columns ('starred')),
+          ($starred_author->to_columns ('starred_author')),
+          ($author->to_columns ('author')),
           count => $delta > 0 ? $delta : 0,
-          ($item_target->to_columns ('item')),
+          ($item->to_columns ('item')),
           created => $time,
           updated => $time,
         }], duplicate => {
@@ -633,12 +640,13 @@ sub run ($) {
       })->then (sub {
         return $self->json ({});
       });
+      # XXX notification hook
     } elsif (@{$self->{path}} == 1 and $self->{path}->[0] eq 'get.json') {
-      ## /{app_id}/star/get.json - Get stars of targets.
+      ## /{app_id}/star/get.json - Get stars.
       ##
       ## Parameters.
       ##
-      ##   Targets.
+      ##   NObj list (|starred|).  List of starred NObj to get.
       ##
       ## Response.
       ##
@@ -652,58 +660,35 @@ sub run ($) {
       ##
       ##       |count| : Integer : The number of stars.
       return Promise->all ([
-        $self->target_list,
+        $self->nobj_list ('starred'),
       ])->then (sub {
-        my $targets = $_[0]->[0];
+        my $starreds = $_[0]->[0];
 
-        my @target_id;
-        for (@$targets) {
-          push @target_id, $_->target_id unless $_->is_error;
+        my @nobj_id;
+        for (@$starreds) {
+          push @nobj_id, $_->nobj_id unless $_->is_error;
         }
-        return {} unless @target_id;
+        return [] unless @nobj_id;
         
         return $self->db->select ('star', {
           ($self->app_id_columns),
-          target_id => {-in => \@target_id},
+          starred_nobj_id => {-in => \@nobj_id},
           count => {'>', 0},
         }, fields => [
-          'target_id',
-          'item_target_id', 'count', 'author_account_id',
+          'starred_nobj_id',
+          'item_nobj_id', 'count', 'author_nobj_id',
         ], order => ['created', 'ASC'], source_name => 'master')->then (sub {
-          my $stars = {};
-          my @star;
-          my @item_target_id;
-          for (@{$_[0]->all}) {
-            push @item_target_id, $_->{item_target_id};
-            my $star = {
-              author_account_id => _opt_id $_->{author_account_id},
-              count => $_->{count},
-              item_target_id => $_->{item_target_id},
-            };
-            push @star, $star;
-            push @{$stars->{$_->{target_id}} ||= []}, $star;
-          }
-          return $self->target_list_by_ids (\@item_target_id)->then (sub {
-            my $map = $_[0];
-            for (@star) {
-              my $v = $map->{delete $_->{item_target_id}};
-              $_->{item_target_key} = $v->target_key if defined $v;
-            }
-            return $stars;
-          });
+          return $_[0]->all;
         });
       })->then (sub {
-        my $id_to_stars = $_[0];
+        return $self->replace_nobj_ids ($_[0], ['author', 'item', 'starred']);
+      })->then (sub {
         my $stars = {};
-        return $self->target_list_by_ids ([keys %$id_to_stars])->then (sub {
-          my $map = $_[0];
-          for my $id (keys %$id_to_stars) {
-            $stars->{$map->{$id}->target_key} = $id_to_stars->{$id};
-          }
-          return $self->json ({stars => $stars});
-        });
+        for (@{$_[0]}) {
+          push @{$stars->{delete $_->{starred_nobj_key}} ||= []}, $_;
+        }
+        return $self->json ({stars => $stars});
       });
-      
 
       #XXX
       # list.json?target_author_account_id=...

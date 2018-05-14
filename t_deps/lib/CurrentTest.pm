@@ -82,9 +82,9 @@ sub _expand_reqs ($$$) {
           if defined $params->{$name} and
              ref $params->{$name} eq 'HASH';
     }
-    my $bearer = (exists $test->{bearer} ? $test->{bearer} : undef)
-        // $req_opts{bearer}
-        // $self->bearer;
+    my $bearer = (exists $test->{bearer} and not defined $test->{bearer}) ? undef : (
+      $test->{bearer} // $req_opts{bearer} // $self->bearer
+    );
     $test->{_req} = {path => [
       $test->{app_id} //
       (defined $test->{app} ? $self->o ($test->{app}) : undef) //
@@ -100,10 +100,36 @@ sub _expand_reqs ($$$) {
       (@{({
         json => sub {
           my $n = $_[1];
-          [
+          return [
             {p => {$n => undef}, reason => "Bad JSON parameter |$n|"},
             {p => {$n => '"a"'}, reason => "Bad JSON parameter |$n|"},
             {p => {$n => '["a"]'}, reason => "Bad JSON parameter |$n|"},
+          ];
+        },
+        new_nobj => sub {
+          my $n = $_[1];
+          return [
+            {p => {$n.'_nobj_key' => undef}, reason => 'Bad |'.$n.'_nobj_key|',
+             name => 'Bad |'.$n.'_nobj_key| (undef)'},
+            {p => {$n.'_nobj_key' => ''}, reason => 'Bad |'.$n.'_nobj_key|',
+             name => 'Bad |'.$n.'_nobj_key| (empty)'},
+            {p => {
+               $n.'_nobj_key' => $self->generate_key (rand, {
+                 min_length => 4096, max_length => 4096,
+               }),
+             }, reason => 'Bad |'.$n.'_nobj_key|',
+             name => 'Bad |'.$n.'_nobj_key| (long)'},
+          ];
+        },
+        get_nobj => sub {
+          my $n = $_[1];
+          return [
+            {p => {$n.'_nobj_key' => ''}, name => 'empty nobj_key'},
+            {p => {$n.'_nobj_key' => $self->generate_key (rand, {})},
+             name => 'wrong nobj_key'},
+            {p => {$n.'_nobj_key' => $self->generate_key (rand, {
+               min => 4096, max => 4096,
+             })}, reason => 'Bad |'.$n.'_nobj_key|'},
           ];
         },
       }->{$_->[0]} or die TestError->new ("Bad error test |$_->[0]|"))->(@$_)});
@@ -113,24 +139,6 @@ sub _expand_reqs ($$$) {
           {app_id => $self->generate_id (rand, {}),
            name => 'Bad application ID'},
         ],
-        new_target => [
-          {p => {target_key => undef}, reason => 'Bad |target_key|',
-           name => 'Bad |target_key| (undef)'},
-          {p => {target_key => ''}, reason => 'Bad |target_key|',
-           name => 'Bad |target_key| (empty)'},
-          {p => {
-             target_key => $self->generate_key (rand, {
-               min_length => 4096, max_length => 4096,
-             }),
-           }, reason => 'Bad |target_key|',
-           name => 'Bad |target_key| (long)'},
-        ],
-        get_target => [
-          {p => {target_key => ''}, name => 'empty target_key'},
-          {p => {target_key => $self->generate_key (rand, {})},
-           name => 'wrong target_key'},
-          {p => {target_key => $self->generate_key (rand, {min => 4096, max => 4096})}, reason => 'Bad |target_key|'},
-        ],
         status => [
           {p => {author_status => undef}, reason => 'Bad |author_status|'},
           {p => {author_status => 0}, reason => 'Bad |author_status|'},
@@ -138,8 +146,8 @@ sub _expand_reqs ($$$) {
           {p => {author_status => 'abc'}, reason => 'Bad |author_status|'},
           {p => {author_status => 255}, reason => 'Bad |author_status|'},
           {p => {author_status => -1}, reason => 'Bad |author_status|'},
-          {p => {target_owner_status => undef}, reason => 'Bad |target_owner_status|'},
-          {p => {target_owner_status => 0}, reason => 'Bad |target_owner_status|'},
+          {p => {owner_status => undef}, reason => 'Bad |owner_status|'},
+          {p => {owner_status => 0}, reason => 'Bad |owner_status|'},
           {p => {admin_status => undef}, reason => 'Bad |admin_status|'},
           {p => {admin_status => 0}, reason => 'Bad |admin_status|'},
           {p => {admin_status => 1}, reason => 'Bad |admin_status|'},
@@ -187,7 +195,7 @@ sub are_errors ($$$;$) {
           $has_error = 1;
           test {
             is $res->status, $test->{status}, 'status';
-          } $self->c;
+          } $self->c, name => [$name, $i, $test->{name}];
           return;
         }
         
@@ -284,25 +292,32 @@ sub create_app ($$$) {
 
 sub create_account ($$$) {
   my ($self, $name, $opts) = @_;
-  $self->set_o ($name => {account_id => $self->generate_id (rand, {})});
+  $self->set_o ($name => {nobj_key => $self->generate_key (rand, {})});
   return Promise->resolve;
 } # create_account
 
-sub create_target ($$$) {
+sub create_nobj ($$$) {
   my ($self, $name, $opts) = @_;
-  $self->set_o ($name => {target_key => $self->generate_key (rand, {})});
+  $self->set_o ($name => {nobj_key => $self->generate_key (rand, {})});
   return Promise->resolve;
-} # create_target
+} # create_nobj
+
+sub _nobj ($$$) {
+  my ($self, $prefix, $opts) = @_;
+  return ($prefix.'_nobj_key' => (
+    defined $opts->{$prefix} ? $self->o ($opts->{$prefix})->{nobj_key} : $self->generate_key (rand, {})
+  ));
+} # _nobj
 
 sub create_comment ($$$) {
   my ($self, $name, $opts) = @_;
   return $self->json (['comment', 'post.json'], {
-    target_key => (defined $opts->{target} ? $self->o ($opts->{target})->{target_key} : $self->generate_key (rand, {})),
-    author_account_id => (defined $opts->{author} ? $self->o ($opts->{author})->{account_id} : undef),
+    ($self->_nobj ('thread', $opts)),
+    ($self->_nobj ('author', $opts)),
     data => perl2json_chars ($opts->{data} or {}),
     internal_data => perl2json_chars ($opts->{internal_data} or {}),
     author_status => $opts->{author_status} // 2,
-    target_owner_status => $opts->{target_owner_status} // 2,
+    owner_status => $opts->{owner_status} // 2,
     admin_status => $opts->{admin_status} // 2,
   }, app => $opts->{app})->then (sub {
     my $result = $_[0];
@@ -313,10 +328,10 @@ sub create_comment ($$$) {
 sub create_star ($$$) {
   my ($self, $name, $opts) = @_;
   return $self->json (['star', 'add.json'], {
-    target_key => (defined $opts->{target} ? $self->o ($opts->{target})->{target_key} : $self->generate_key (rand, {})),
-    target_author_account_id => (defined $opts->{target_author} ? $self->o ($opts->{target_author})->{account_id} : undef),
-    author_account_id => (defined $opts->{author} ? $self->o ($opts->{author})->{account_id} : undef),
-    item_target_key => (defined $opts->{item_target} ? $self->o ($opts->{item_target})->{target_key} : $self->generate_key (rand, {})),
+    ($self->_nobj ('starred', $opts)),
+    ($self->_nobj ('starred_author', $opts)),
+    ($self->_nobj ('author', $opts)),
+    ($self->_nobj ('item', $opts)),
     delta => $opts->{count} // 1,
   }, app => $opts->{app})->then (sub {
     my $result = $_[0];

@@ -8,41 +8,40 @@ Test {
   my $current = shift;
   return Promise->resolve->then (sub {
     return $current->create (
-      [t1 => target => {}],
-      [i1 => target => {}],
+      [t1 => nobj => {}],
+      [i1 => nobj => {}],
       [a1 => account => {}],
       [s1 => star => {
-        target => 't1', count => 2, item_target => 'i1', author => 'a1',
+        starred => 't1', count => 2, item => 'i1', author => 'a1',
       }],
     );
   })->then (sub {
     return $current->json (['star', 'get.json'], {
-      target_key => $current->o ('t1')->{target_key},
+      starred_nobj_key => $current->o ('t1')->{nobj_key},
     });
   })->then (sub {
     my $result = $_[0];
     test {
       is 0+keys %{$result->{json}->{stars}}, 1;
-      my $stars = $result->{json}->{stars}->{$current->o ('t1')->{target_key}};
+      my $stars = $result->{json}->{stars}->{$current->o ('t1')->{nobj_key}};
       is 0+@$stars, 1;
       my $c = $stars->[0];
-      is $c->{author_account_id}, $current->o ('a1')->{account_id};
-      is $c->{item_target_key}, $current->o ('i1')->{target_key};
+      is $c->{author_nobj_key}, $current->o ('a1')->{nobj_key};
+      is $c->{item_nobj_key}, $current->o ('i1')->{nobj_key};
       is $c->{count}, 2;
-      has_json_string $result, 'author_account_id';
     } $current->c;
     return $current->create (
-      [t2 => target => {}],
+      [t2 => nobj => {}],
       [s2 => star => {
-        target => 't2', count => 4, item_target => 'i1', author => 'a1',
+        starred => 't2', count => 4, item => 'i1', author => 'a1',
       }],
     );
   })->then (sub {
     return $current->json (['star', 'get.json'], {
-      target_key => [
-        $current->o ('t1')->{target_key},
+      starred_nobj_key => [
+        $current->o ('t1')->{nobj_key},
         $current->generate_key (key1 => {}),
-        $current->o ('t2')->{target_key},
+        $current->o ('t2')->{nobj_key},
         undef,
         '',
         rand,
@@ -52,47 +51,47 @@ Test {
     my $result = $_[0];
     test {
       is 0+keys %{$result->{json}->{stars}}, 2;
-      my $stars = $result->{json}->{stars}->{$current->o ('t1')->{target_key}};
+      my $stars = $result->{json}->{stars}->{$current->o ('t1')->{nobj_key}};
       is 0+@$stars, 1;
       my $c = $stars->[0];
-      is $c->{author_account_id}, $current->o ('a1')->{account_id};
-      is $c->{item_target_key}, $current->o ('i1')->{target_key};
+      is $c->{author_nobj_key}, $current->o ('a1')->{nobj_key};
+      is $c->{item_nobj_key}, $current->o ('i1')->{nobj_key};
       is $c->{count}, 2;
-      my $stars2 = $result->{json}->{stars}->{$current->o ('t2')->{target_key}};
+      my $stars2 = $result->{json}->{stars}->{$current->o ('t2')->{nobj_key}};
       is 0+@$stars2, 1;
       my $c2 = $stars2->[0];
-      is $c2->{author_account_id}, $current->o ('a1')->{account_id};
-      is $c2->{item_target_key}, $current->o ('i1')->{target_key};
+      is $c2->{author_nobj_key}, $current->o ('a1')->{nobj_key};
+      is $c2->{item_nobj_key}, $current->o ('i1')->{nobj_key};
       is $c2->{count}, 4;
     } $current->c, name => 'different targets';
     return $current->create (
       [a2 => account => {}],
       [s3 => star => {
-        target => 't1', count => 6, item_target => 'i1', author => 'a2',
+        starred => 't1', count => 6, item => 'i1', author => 'a2',
       }],
     );
   })->then (sub {
     return $current->json (['star', 'get.json'], {
-      target_key => $current->o ('t1')->{target_key},
+      starred_nobj_key => $current->o ('t1')->{nobj_key},
     });
   })->then (sub {
     my $result = $_[0];
     test {
       is 0+keys %{$result->{json}->{stars}}, 1;
-      my $stars = $result->{json}->{stars}->{$current->o ('t1')->{target_key}};
+      my $stars = $result->{json}->{stars}->{$current->o ('t1')->{nobj_key}};
       is 0+@$stars, 2;
       my $c = $stars->[0];
-      is $c->{author_account_id}, $current->o ('a1')->{account_id};
-      is $c->{item_target_key}, $current->o ('i1')->{target_key};
+      is $c->{author_nobj_key}, $current->o ('a1')->{nobj_key};
+      is $c->{item_nobj_key}, $current->o ('i1')->{nobj_key};
       is $c->{count}, 2;
       my $c2 = $stars->[1];
-      is $c2->{author_account_id}, $current->o ('a2')->{account_id};
-      is $c2->{item_target_key}, $current->o ('i1')->{target_key};
+      is $c2->{author_nobj_key}, $current->o ('a2')->{nobj_key};
+      is $c2->{item_nobj_key}, $current->o ('i1')->{nobj_key};
       is $c2->{count}, 6;
     } $current->c;
   })->then (sub {
     return $current->json (['star', 'get.json'], {
-      target_key => $current->o ('t1')->{target_key},
+      starred_nobj_key => $current->o ('t1')->{nobj_key},
     }, app_id => $current->generate_id (appid2 => {}));
   })->then (sub {
     my $result = $_[0];
@@ -100,7 +99,7 @@ Test {
       is 0+keys %{$result->{json}->{stars}}, 0;
     } $current->c, name => 'Bad app_id';
   });
-} n => 24, name => 'get.json';
+} n => 23, name => 'get.json';
 
 Test {
   my $current = shift;
@@ -119,7 +118,7 @@ Test {
   my $current = shift;
   return Promise->resolve->then (sub {
     return $current->json (['star', 'get.json'], {
-      target_key => $current->generate_id (id1 => {}),
+      starred_nobj_key => $current->generate_id (id1 => {}),
     });
   })->then (sub {
     my $result = $_[0];

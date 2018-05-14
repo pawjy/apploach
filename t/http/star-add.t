@@ -8,25 +8,23 @@ Test {
   my $current = shift;
   return $current->are_errors (
     [['star', 'add.json'], {
-      target_key => $current->generate_key (key1 => {}),
-      item_target_key => $current->generate_key (type1 => {}),
-      target_author_account_id => $current->generate_id (id2 => {}),
-      author_account_id => $current->generate_id (id1 => {}),
+      starred_nobj_key => $current->generate_key (key1 => {}),
+      item_nobj_key => $current->generate_key (type1 => {}),
+      starred_author_nobj_key => $current->generate_key (id2 => {}),
+      author_nobj_key => $current->generate_key (id1 => {}),
       delta => 3,
     }],
     [
-      'new_target',
-      {p => {target_author_account_id => 0},
-       reason => 'Bad ID parameter |target_author_account_id|'},
-      {p => {author_account_id => 0},
-       reason => 'Bad ID parameter |author_account_id|'},
+      ['new_nobj', 'starred'],
+      ['new_nobj', 'starred_author'],
+      ['new_nobj', 'author'],
     ],
   )->then (sub {
     return $current->json (['star', 'add.json'], {
-      target_key => $current->o ('key1'),
-      item_target_key => $current->o ('type1'),
-      target_author_account_id => $current->o ('id2'),
-      author_account_id => $current->o ('id1'),
+      starred_nobj_key => $current->o ('key1'),
+      item_nobj_key => $current->o ('type1'),
+      starred_author_nobj_key => $current->o ('id2'),
+      author_nobj_key => $current->o ('id1'),
       delta => 4,
     });
   })->then (sub {
@@ -35,7 +33,7 @@ Test {
       is ref $result->{json}, 'HASH';
     } $current->c;
     return $current->json (['star', 'get.json'], {
-      target_key => $current->o ('key1'),
+      starred_nobj_key => $current->o ('key1'),
     });
   })->then (sub {
     my $result = $_[0];
@@ -44,65 +42,46 @@ Test {
       my $stars = $result->{json}->{stars}->{$current->o ('key1')};
       is 0+@$stars, 1;
       my $c = $stars->[0];
-      is $c->{author_account_id}, $current->o ('id1');
+      is $c->{author_nobj_key}, $current->o ('id1');
       is $c->{count}, 4;
-      has_json_string $result, 'author_account_id';
     } $current->c;
   });
-} n => 7, name => 'add.json';
+} n => 6, name => 'add.json';
 
 Test {
   my $current = shift;
   return Promise->resolve->then (sub {
-    return $current->json (['star', 'add.json'], {
-      target_key => $current->generate_key ('key1' => {}),
-      item_target_key => $current->generate_key ('type1' => {}),
-      delta => 4,
-    });
+    return $current->create (
+      [a1 => account => {}],
+      [a2 => account => {}],
+    );
   })->then (sub {
-    my $result = $_[0];
-    test {
-      is ref $result->{json}, 'HASH';
-    } $current->c;
-    return $current->json (['star', 'get.json'], {
-      target_key => $current->o ('key1'),
-    });
-  })->then (sub {
-    my $result = $_[0];
-    test {
-      is 0+keys %{$result->{json}->{stars}}, 1;
-      my $stars = $result->{json}->{stars}->{$current->o ('key1')};
-      is 0+@$stars, 1;
-      my $c = $stars->[0];
-      is $c->{author_account_id}, undef;
-      is $c->{count}, 4;
-    } $current->c;
-  });
-} n => 5, name => 'add.json no author';
-
-Test {
-  my $current = shift;
-  return Promise->resolve->then (sub {
     return $current->json (['star', 'add.json'], {
-      target_key => $current->generate_key ('key1' => {}),
-      item_target_key => $current->generate_key ('type1' => {}),
+      starred_nobj_key => $current->generate_key ('key1' => {}),
+      starred_author_nobj_key => $current->o ('a2')->{nobj_key},
+      item_nobj_key => $current->generate_key ('type1' => {}),
+      author_nobj_key => $current->o ('a1')->{nobj_key},
       delta => 4,
     });
   })->then (sub {
     return $current->json (['star', 'add.json'], {
-      target_key => $current->o ('key1'),
-      item_target_key => $current->o ('type1'),
+      starred_nobj_key => $current->o ('key1'),
+      starred_author_nobj_key => $current->o ('a2')->{nobj_key},
+      item_nobj_key => $current->o ('type1'),
+      author_nobj_key => $current->o ('a1')->{nobj_key},
       delta => 0,
     });
   })->then (sub {
     return $current->json (['star', 'add.json'], {
-      target_key => $current->o ('key1'),
-      item_target_key => $current->o ('type1'),
+      starred_nobj_key => $current->o ('key1'),
+      starred_author_nobj_key => $current->o ('a2')->{nobj_key},
+      item_nobj_key => $current->o ('type1'),
+      author_nobj_key => $current->o ('a1')->{nobj_key},
       delta => -2,
     });
   })->then (sub {
     return $current->json (['star', 'get.json'], {
-      target_key => $current->o ('key1'),
+      starred_nobj_key => $current->o ('key1'),
     });
   })->then (sub {
     my $result = $_[0];
@@ -114,19 +93,23 @@ Test {
       is $c->{count}, 2;
     } $current->c, name => 'decreased';
     return $current->json (['star', 'add.json'], {
-      target_key => $current->o ('key1'),
-      item_target_key => $current->o ('type1'),
+      starred_nobj_key => $current->o ('key1'),
+      starred_author_nobj_key => $current->o ('a2')->{nobj_key},
+      item_nobj_key => $current->o ('type1'),
+      author_nobj_key => $current->o ('a1')->{nobj_key},
       delta => -10,
     });
   })->then (sub {
     return $current->json (['star', 'add.json'], {
-      target_key => $current->o ('key1'),
-      item_target_key => $current->o ('type1'),
+      starred_nobj_key => $current->o ('key1'),
+      starred_author_nobj_key => $current->o ('a2')->{nobj_key},
+      item_nobj_key => $current->o ('type1'),
+      author_nobj_key => $current->o ('a1')->{nobj_key},
       delta => 0,
     });
   })->then (sub {
     return $current->json (['star', 'get.json'], {
-      target_key => $current->o ('key1'),
+      starred_nobj_key => $current->o ('key1'),
     });
   })->then (sub {
     my $result = $_[0];

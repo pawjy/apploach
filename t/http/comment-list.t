@@ -9,14 +9,14 @@ Test {
   return $current->are_errors (
     [['comment', 'list.json'], {}],
     [
-      {params => {}, name => 'no params', reason => 'Either target or |comment_id| is required'},
+      {params => {}, name => 'no params', reason => 'Either thread or |comment_id| is required'},
     ],
   )->then (sub {
     return $current->create (
-      [t1 => target => {}],
+      [t1 => nobj => {}],
       [a1 => account => {}],
       [c1 => comment => {
-        target => 't1',
+        thread => 't1',
         data => {
           body => $current->generate_text (text1 => {}),
         },
@@ -25,7 +25,7 @@ Test {
         },
         author => 'a1',
         author_status => 5,
-        target_owner_status => 6,
+        owner_status => 6,
         admin_status => 7,
       }],
     );
@@ -40,14 +40,14 @@ Test {
       my $c = $result->{json}->{items}->[0];
       is $c->{comment_id}, $current->o ('c1')->{comment_id};
       is $c->{data}->{timestamp}, $current->o ('c1')->{timestamp};
-      is $c->{author_account_id}, $current->o ('a1')->{account_id};
+      is $c->{author_nobj_key}, $current->o ('a1')->{nobj_key};
+      is $c->{thread_nobj_key}, $current->o ('t1')->{nobj_key};
       is $c->{data}->{body}, $current->o ('text1');
       is $c->{internal_data}, undef, 'no internal_data';
       is $c->{author_status}, 5;
-      is $c->{target_owner_status}, 6;
+      is $c->{owner_status}, 6;
       is $c->{admin_status}, 7;
       has_json_string $result, 'comment_id';
-      has_json_string $result, 'author_account_id';
     } $current->c, name => 'get by comment_id';
     return $current->json (['comment', 'list.json'], {
       comment_id => $current->o ('c1')->{comment_id},
@@ -60,14 +60,14 @@ Test {
       my $c = $result->{json}->{items}->[0];
       is $c->{comment_id}, $current->o ('c1')->{comment_id};
       is $c->{data}->{timestamp}, $current->o ('c1')->{timestamp};
-      is $c->{author_account_id}, $current->o ('a1')->{account_id};
+      is $c->{author_nobj_key}, $current->o ('a1')->{nobj_key};
+      is $c->{thread_nobj_key}, $current->o ('t1')->{nobj_key};
       is $c->{data}->{body}, $current->o ('text1');
       is $c->{internal_data}->{hoge}, $current->o ('text2');
       is $c->{author_status}, 5;
-      is $c->{target_owner_status}, 6;
+      is $c->{owner_status}, 6;
       is $c->{admin_status}, 7;
       has_json_string $result, 'comment_id';
-      has_json_string $result, 'author_account_id';
     } $current->c, name => 'get by comment_id, with_internal_data';
   });
 } n => 23, name => 'list.json get a comment';
@@ -75,13 +75,13 @@ Test {
 Test {
   my $current = shift;
   return $current->create (
-    [t1 => target => {}],
-    [c1 => comment => {target => 't1'}],
-    [c2 => comment => {target => 't1'}],
-    [c3 => comment => {target => 't1'}],
+    [t1 => nobj => {}],
+    [c1 => comment => {thread => 't1'}],
+    [c2 => comment => {thread => 't1'}],
+    [c3 => comment => {thread => 't1'}],
   )->then (sub {
     return $current->json (['comment', 'list.json'], {
-      target_key => $current->o ('t1')->{target_key},
+      thread_nobj_key => $current->o ('t1')->{nobj_key},
     });
   })->then (sub {
     my $result = $_[0];
@@ -95,7 +95,7 @@ Test {
          $current->o ('c1')->{comment_id}, 'item #2';
     } $current->c, name => 'get by target_key';
     return $current->json (['comment', 'list.json'], {
-      target_key => $current->o ('t1')->{target_key},
+      thread_nobj_key => $current->o ('t1')->{thread_nobj_key},
       comment_id => $current->o ('c1')->{comment_id},
     });
   })->then (sub {
@@ -107,12 +107,12 @@ Test {
     } $current->c, name => 'get by target_key and comment_id';
     return $current->are_empty (
       [['comment', 'list.json'], {
-        target_key => $current->o ('t1')->{target_key},
+        thread_nobj_key => $current->o ('t1')->{thread_nobj_key},
         comment_id => $current->o ('c1')->{comment_id},
       }],
       [
         'app_id',
-        'get_target',
+        ['get_nobj', 'thread'],
       ],
     );
   });
