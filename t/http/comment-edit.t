@@ -44,6 +44,7 @@ Test {
         {app_id => $current->generate_id (rand, {}),
          reason => 'Object not found',
          name => 'Different application'},
+        {p => {operator_nobj_key => ''}, reason => 'Bad |operator_nobj_key|'},
       ],
     );
   })->then (sub {
@@ -183,6 +184,87 @@ Test {
     } $current->c;
   });
 } n => 10, name => 'edit.json empty change';
+
+Test {
+  my $current = shift;
+  return $current->create (
+    [a1 => account => {}],
+    [a2 => account => {}],
+    [c1 => comment => {data => {body => $current->generate_text (t1 => {})},
+                       author => 'a1'}],
+  )->then (sub {
+    return $current->json (['comment', 'edit.json'], {
+      comment_id => $current->o ('c1')->{comment_id},
+      operator_nobj_key => $current->o ('a1')->{nobj_key},
+      data_delta => {
+        body => $current->generate_text (t2 => {}),
+      },
+      validate_operator_is_author => 1,
+    });
+  })->then (sub {
+    return $current->json (['comment', 'list.json'], {
+      comment_id => $current->o ('c1')->{comment_id},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      my $c = $result->{json}->{items}->[0];
+      is $c->{data}->{body}, $current->o ('t2');
+    } $current->c, name => 'validation passed';
+    return $current->are_errors ([['comment', 'edit.json'], {
+      comment_id => $current->o ('c1')->{comment_id},
+      operator_nobj_key => $current->o ('a2')->{nobj_key},
+      data_delta => {
+        body => $current->generate_text (t3 => {}),
+      },
+      validate_operator_is_author => 1,
+    }], [{reason => 'Bad operator'}]);
+  })->then (sub {
+    return $current->json (['comment', 'list.json'], {
+      comment_id => $current->o ('c1')->{comment_id},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      my $c = $result->{json}->{items}->[0];
+      is $c->{data}->{body}, $current->o ('t2');
+    } $current->c, name => 'validation failed because of wrong operator';
+    return $current->json (['comment', 'edit.json'], {
+      comment_id => $current->o ('c1')->{comment_id},
+      operator_nobj_key => $current->o ('a2')->{nobj_key},
+      data_delta => {
+        body => $current->generate_text (t4 => {}),
+      },
+    });
+  })->then (sub {
+    return $current->json (['comment', 'list.json'], {
+      comment_id => $current->o ('c1')->{comment_id},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      my $c = $result->{json}->{items}->[0];
+      is $c->{data}->{body}, $current->o ('t4');
+    } $current->c, name => 'validation skipped';
+    return $current->are_errors ([['comment', 'edit.json'], {
+      comment_id => $current->o ('c1')->{comment_id},
+      data_delta => {
+        body => $current->generate_text (t5 => {}),
+      },
+      validate_operator_is_author => 1,
+    }], [{reason => 'Bad operator'}]);
+  })->then (sub {
+    return $current->json (['comment', 'list.json'], {
+      comment_id => $current->o ('c1')->{comment_id},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      my $c = $result->{json}->{items}->[0];
+      is $c->{data}->{body}, $current->o ('t4');
+    } $current->c, name => 'validation failed because of missing operator';
+  });
+} n => 6, name => 'author validation';
 
 RUN;
 

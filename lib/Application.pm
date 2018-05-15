@@ -581,8 +581,21 @@ sub run ($) {
       ##   Statuses : The comment's statuses.  Optional if nothing to
       ##   change.
       ##
+      ##   NObj (|operator|) : The operator of this editing.
+      ##   Optional.
+      ##
+      ##   |validate_operator_is_author| : Boolean : Whether the
+      ##   operator has to be the comment's author or not.  If true,
+      ##   NObj (|operator|) is required.
+      ##
       ## Response.  No additional data.
-      return $self->db->transaction->then (sub {
+      my $operator;
+      return Promise->all ([
+        (defined $self->{app}->bare_param ('operator_nobj_key') ? $self->new_nobj_list (['operator']) : undef),
+      ])->then (sub {
+        $operator = $_[0]->[0]->[0];
+        return $self->db->transaction;
+      })->then (sub {
         my $tr = $_[0];
         return Promise->resolve->then (sub {
           return $tr->select ('comment', {
@@ -590,6 +603,7 @@ sub run ($) {
             comment_id => $self->id_param ('comment'),
           }, fields => [
             'comment_id', 'data', 'internal_data',
+            'author_nobj_id',
             'author_status', 'owner_status', 'admin_status',
           ], lock => 'update');
         })->then (sub {
@@ -597,8 +611,12 @@ sub run ($) {
           return $self->throw ({reason => 'Object not found'})
               unless defined $current;
 
-          # XXX author validation
-          # XXX operator
+          if ($self->{app}->bare_param ('validate_operator_is_author')) {
+            if (not defined $operator or
+                not $current->{author_nobj_id} eq $operator->nobj_id) {
+              return $self->throw ({reason => 'Bad operator'});
+            }
+          }
           
           my $updates = {};
           for my $name (qw(data internal_data)) {
