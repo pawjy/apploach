@@ -167,6 +167,17 @@ sub status_columns ($) {
   return %$w;
 } # status_columns
 
+sub status_filter_columns ($) {
+  my $self = $_[0];
+  my $r = {};
+  for (qw(author_status owner_status admin_status)) {
+    my $v = $self->{app}->bare_param_list ($_);
+    next unless @$v;
+    $r->{$_} = {-in => $v};
+  }
+  return %$r;
+} # status_filter_columns
+
 sub db ($) {
   my $self = $_[0];
   return $self->{db} ||= Dongry::Database->new (
@@ -432,6 +443,8 @@ sub run ($) {
       ##   |with_internal_data| : Boolean : Whether |internal_data|
       ##   should be returned or not.
       ##
+      ##   Status filters.
+      ##
       ##   Pages.
       ##
       ## List response of comments.
@@ -458,6 +471,7 @@ sub run ($) {
         my $where = {
           ($self->app_id_columns),
           ($thread->missing ? () : ($thread->to_columns ('thread'))),
+          ($self->status_filter_columns),
         };
         $where->{timestamp} = $page->{value} if defined $page->{value};
         
@@ -470,7 +484,6 @@ sub run ($) {
               if $thread->missing;
         }
 
-        # XXX status filter
         return $self->db->select ('comment', $where, fields => [
           'comment_id',
           'thread_nobj_id',

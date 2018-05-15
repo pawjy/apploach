@@ -134,6 +134,131 @@ Test {
   });
 } n => 1, name => 'pager paging';
 
+Test {
+  my $current = shift;
+  return $current->create (
+    [t1 => nobj => {}],
+    [c1 => comment => {
+      thread => 't1',
+      author_status => 10, owner_status => 2, admin_status => 3,
+    }],
+    [c2 => comment => {
+      thread => 't1',
+      author_status => 4, owner_status => 3, admin_status => 5,
+    }],
+    [c3 => comment => {
+      thread => 't1',
+      author_status => 10, owner_status => 5, admin_status => 3,
+    }],
+  )->then (sub {
+    return $current->json (['comment', 'list.json'], {
+      thread_nobj_key => $current->o ('t1')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      my $has = {};
+      $has->{$_->{comment_id}}++ for @{$result->{json}->{items}};
+      ok $has->{$current->o ('c1')->{comment_id}};
+      ok $has->{$current->o ('c2')->{comment_id}};
+      ok $has->{$current->o ('c3')->{comment_id}};
+    } $current->c, name => 'no filter';
+    return $current->json (['comment', 'list.json'], {
+      thread_nobj_key => $current->o ('t1')->{nobj_key},
+      author_status => 10,
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      my $has = {};
+      $has->{$_->{comment_id}}++ for @{$result->{json}->{items}};
+      ok $has->{$current->o ('c1')->{comment_id}};
+      ok ! $has->{$current->o ('c2')->{comment_id}};
+      ok $has->{$current->o ('c3')->{comment_id}};
+    } $current->c, name => 'author_status only';
+    return $current->json (['comment', 'list.json'], {
+      thread_nobj_key => $current->o ('t1')->{nobj_key},
+      owner_status => [2, 3],
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      my $has = {};
+      $has->{$_->{comment_id}}++ for @{$result->{json}->{items}};
+      ok $has->{$current->o ('c1')->{comment_id}};
+      ok $has->{$current->o ('c2')->{comment_id}};
+      ok ! $has->{$current->o ('c3')->{comment_id}};
+    } $current->c, name => 'multiple values';
+    return $current->json (['comment', 'list.json'], {
+      thread_nobj_key => $current->o ('t1')->{nobj_key},
+      admin_status => 6,
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      my $has = {};
+      $has->{$_->{comment_id}}++ for @{$result->{json}->{items}};
+      ok ! $has->{$current->o ('c1')->{comment_id}};
+      ok ! $has->{$current->o ('c2')->{comment_id}};
+      ok ! $has->{$current->o ('c3')->{comment_id}};
+    } $current->c, name => 'no result';
+    return $current->json (['comment', 'list.json'], {
+      thread_nobj_key => $current->o ('t1')->{nobj_key},
+      author_status => 10,
+      owner_status => 5,
+      admin_status => 3,
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      my $has = {};
+      $has->{$_->{comment_id}}++ for @{$result->{json}->{items}};
+      ok ! $has->{$current->o ('c1')->{comment_id}};
+      ok ! $has->{$current->o ('c2')->{comment_id}};
+      ok $has->{$current->o ('c3')->{comment_id}};
+    } $current->c, name => 'multiple filters';
+    return $current->json (['comment', 'list.json'], {
+      thread_nobj_key => $current->o ('t1')->{nobj_key},
+      author_status => 0,
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      my $has = {};
+      $has->{$_->{comment_id}}++ for @{$result->{json}->{items}};
+      ok ! $has->{$current->o ('c1')->{comment_id}};
+      ok ! $has->{$current->o ('c2')->{comment_id}};
+      ok ! $has->{$current->o ('c3')->{comment_id}};
+    } $current->c, name => 'bad value';
+    return $current->json (['comment', 'list.json'], {
+      thread_nobj_key => $current->o ('t1')->{nobj_key},
+      author_status => 1,
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      my $has = {};
+      $has->{$_->{comment_id}}++ for @{$result->{json}->{items}};
+      ok ! $has->{$current->o ('c1')->{comment_id}};
+      ok ! $has->{$current->o ('c2')->{comment_id}};
+      ok ! $has->{$current->o ('c3')->{comment_id}};
+    } $current->c, name => 'bad value';
+    return $current->json (['comment', 'list.json'], {
+      thread_nobj_key => $current->o ('t1')->{nobj_key},
+      author_status => "abc",
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      my $has = {};
+      $has->{$_->{comment_id}}++ for @{$result->{json}->{items}};
+      ok ! $has->{$current->o ('c1')->{comment_id}};
+      ok ! $has->{$current->o ('c2')->{comment_id}};
+      ok ! $has->{$current->o ('c3')->{comment_id}};
+    } $current->c, name => 'bad value';
+  });
+} n => 24, name => 'status filters';
+
 RUN;
 
 =head1 LICENSE
