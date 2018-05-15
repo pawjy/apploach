@@ -2,8 +2,19 @@
   "travisci": {},
   "circleci": {
     "docker-build": "quay.io/wakaba/apploach",
-    "pmbp": 1,
     "merger": 1,
-    "gaa": 1
+    "gaa": 1,
+
+    "build": [
+      "make deps",
+      "rm -fr $CIRCLE_ARTIFACTS/pid",
+      {"./perl t_deps/bin/env-for-circleci.pl > $CIRCLE_ARTIFACTS/servers-http-$CIRCLE_NODE_INDEX.txt.dat 2>&1": null,
+       "background": true},
+      "while [ ! -e $CIRCLE_ARTIFACTS/pid ]; do sleep 1; done",
+      "if [ ! -e $CIRCLE_ARTIFACTS/pid ]; then cat $CIRCLE_ARTIFACTS/env.pl; fi; cat $CIRCLE_ARTIFACTS/pid"
+    ],
+    "tests": [
+      "SS_ENV_FILE=$CIRCLE_ARTIFACTS/env.pl make test"
+    ]
   }
 }

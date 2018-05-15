@@ -3,6 +3,8 @@ use strict;
 use warnings;
 use Path::Tiny;
 use File::Temp qw(tempdir);
+use Data::Dumper;
+$Data::Dumper::Sortkeys = 1;
 use AbortController;
 use Promise;
 use Promised::Flow;
@@ -537,6 +539,17 @@ sub run ($%) {
   ##   done           Promise fulfilled after the servers' shutdown.
   ## or rejected.
 
+  if (defined $ENV{SS_ENV_FILE}) {
+    return Promised::File->new_from_path (path ($ENV{SS_ENV_FILE}))->read_byte_string->then (sub {
+      no strict;
+      my $data = eval $_[0];
+      die "$ENV{SS_ENV_FILE}: $@" if $@;
+      my ($r, $s) = promised_cv;
+      $args{signal}->manakai_onabort ($s);
+      return {data => $data, done => $r};
+    });
+  }
+
   my $self = bless {
     proxy_map => {},
     data_root_path => $args{data_root_path},
@@ -639,7 +652,24 @@ sub run ($%) {
     $data->{app_bearer} = $self->_key ('app_bearer');
     $self->_set_local_envs ('proxy', $data->{local_envs} = {});
 
-    return {data => $data, done => Promise->all (\@done)};
+    $data->{artifacts_path} = defined $ENV{CIRCLE_ARTIFACTS}
+        ? path ($ENV{CIRCLE_ARTIFACTS})
+        : $self->_path ('artifacts');
+    $data->{ss_env_file_path} = $data->{artifacts_path}->child ('env.pl');
+    $data->{ss_env_pid_path} = $data->{artifacts_path}->child ('pid');
+
+    my $pid_file = Promised::File->new_from_path ($data->{ss_env_pid_path});
+    return Promise->all ([
+      Promised::File->new_from_path ($data->{ss_env_file_path})->write_byte_string (Dumper $data),
+      $pid_file->write_byte_string ($$),
+    ])->then (sub {
+      return {data => $data, done => Promise->all (\@done)->finally (sub {
+        return $pid_file->remove_tree;
+      })};
+    })->catch (sub {
+      my $e = $_[0];
+      return $pid_file->remove_tree->then (sub { die $e });
+    });
   })->catch (sub {
     my $e = $_[0];
     $stop->();
