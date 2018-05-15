@@ -235,6 +235,27 @@ Test {
   });
 } n => 9, name => 'list.json by starred author and index';
 
+Test {
+  my $current = shift;
+  return $current->create (
+    [t1 => account => {}],
+    [a1 => account => {}],
+    [a2 => account => {}],
+    [a3 => account => {}],
+    [a4 => account => {}],
+    [a5 => account => {}],
+    [s1 => star => {starred_author => 't1', author => 'a1'}],
+    [s2 => star => {starred_author => 't1', author => 'a2'}],
+    [s3 => star => {starred_author => 't1', author => 'a3'}],
+    [s4 => star => {starred_author => 't1', author => 'a4'}],
+    [s5 => star => {starred_author => 't1', author => 'a5'}],
+  )->then (sub {
+    return $current->pages_ok ([['star', 'list.json'], {
+      starred_author_nobj_key => $current->o ('t1')->{nobj_key},
+    }] => ['s1', 's2', 's3', 's4', 's5'], 'author_nobj_key');
+  });
+} n => 1, name => 'pager paging';
+
 RUN;
 
 =head1 LICENSE

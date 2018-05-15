@@ -118,6 +118,22 @@ Test {
   });
 } n => 7, name => 'get by target';
 
+Test {
+  my $current = shift;
+  return $current->create (
+    [t1 => nobj => {}],
+    [c1 => comment => {thread => 't1'}],
+    [c2 => comment => {thread => 't1'}],
+    [c3 => comment => {thread => 't1'}],
+    [c4 => comment => {thread => 't1'}],
+    [c5 => comment => {thread => 't1'}],
+  )->then (sub {
+    return $current->pages_ok ([['comment', 'list.json'], {
+      thread_nobj_key => $current->o ('t1')->{nobj_key},
+    }] => ['c1', 'c2', 'c3', 'c4', 'c5'], 'comment_id');
+  });
+} n => 1, name => 'pager paging';
+
 RUN;
 
 =head1 LICENSE

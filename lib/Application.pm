@@ -11,6 +11,7 @@ use Promised::Flow;
 use Dongry::Database;
 
 use NObj;
+use Pager;
 
 ## Configurations.  The path to the configuration JSON file must be
 ## specified to the |APP_CONFIG| environment variable.  The JSON file
@@ -51,7 +52,20 @@ use NObj;
 ## List responses.  HTTP responses containing zero or more objects
 ## with following name/value pair:
 ##
-##   |objects| : JSON array : Objects.
+##   |items| : JSON array : Objects.
+##
+##   |has_next| : Boolean : Whether there is the next page or not.
+##
+##   |next_ref| : Ref ? : The |ref| string that can be used to obtain
+##   the next page.
+##
+## Pages.  End points with list response accepts page parameters.
+##
+##   |limit| : Integer : The maximum number of the objects in a list
+##   response.
+##
+##   |ref| : Ref : A string that identifies the page that should be
+##   returned.
 ##
 ## Error responses.  HTTP |400| responses whose JSON object responses
 ## with following name/value pair:
@@ -418,6 +432,8 @@ sub run ($) {
       ##   |with_internal_data| : Boolean : Whether |internal_data|
       ##   should be returned or not.
       ##
+      ##   Pages.
+      ##
       ## List response of comments.
       ##
       ##   NObj (|thread|) : The comment's thread.
@@ -432,17 +448,19 @@ sub run ($) {
       ##   Only when |with_internal_data| is true.
       ##
       ##   Statuses.
+      my $page = Pager::this_page ($self, limit => 10, max_limit => 100);
       return Promise->all ([
         $self->nobj ('thread'),
       ])->then (sub {
         my $thread = $_[0]->[0];
         return [] if $thread->not_found;
-        
+
         my $where = {
           ($self->app_id_columns),
           ($thread->missing ? () : ($thread->to_columns ('thread'))),
         };
-
+        $where->{timestamp} = $page->{value} if defined $page->{value};
+        
         my $comment_id = $self->{app}->bare_param ('comment_id');
         if (defined $comment_id) {
           $where->{comment_id} = $comment_id;
@@ -453,7 +471,6 @@ sub run ($) {
         }
 
         # XXX status filter
-        # XXX paging
         return $self->db->select ('comment', $where, fields => [
           'comment_id',
           'thread_nobj_id',
@@ -461,7 +478,11 @@ sub run ($) {
           'data',
           ($self->{app}->bare_param ('with_internal_data') ? ('internal_data') : ()),
           'author_status', 'owner_status', 'admin_status',
-        ], source_name => 'master', order => ['timestamp', 'desc'])->then (sub {
+          'timestamp',
+        ], source_name => 'master',
+          offset => $page->{offset}, limit => $page->{limit},
+          order => ['timestamp', $page->{order_direction}],
+        )->then (sub {
           return $_[0]->all->to_a;
         });
       })->then (sub {
@@ -473,7 +494,9 @@ sub run ($) {
               if defined $item->{internal_data};
         }
         return $self->replace_nobj_ids ($items, ['author', 'thread'])->then (sub {
-          return $self->json ({items => $items});
+          my $next_page = Pager::next_page $page, $items, 'timestamp';
+          delete $_->{timestamp} for @$items;
+          return $self->json ({items => $items, %$next_page});
         });
       });
     } elsif (@{$self->{path}} == 1 and $self->{path}->[0] eq 'post.json') {
@@ -742,6 +765,8 @@ sub run ($) {
       ##   Optional.  The list is filtered by both star's author or
       ##   starred NObj's author and NObj's index, if specified.
       ##
+      ##   Pages.
+      ##
       ## List response of stars.
       ##
       ##   NObj (|starred|) : The star's starred NObj.
@@ -751,6 +776,7 @@ sub run ($) {
       ##   NObj (|item|) : The star's item.
       ##
       ##   |count| : Integer : The star's count.
+      my $page = Pager::this_page ($self, limit => 10, max_limit => 100);
       return Promise->all ([
         $self->one_nobj (['author', 'starred_author']),
         $self->nobj ('starred_index'),
@@ -760,23 +786,34 @@ sub run ($) {
         
         return [] if $nobj->is_error;
         return [] if $starred_index->is_error and not $starred_index->missing;
-        
-        return $self->db->select ('star', {
+
+        my $where = {
           ($self->app_id_columns),
           ($nobj->to_columns ($name)),
-          ($starred_index->missing ? () : ($starred_index->to_columns ('starred_index'))),
           count => {'>', 0},
-          #XXXpaging
-        }, fields => [
+        };
+        unless ($starred_index->missing) {
+          $where = {%$where, ($starred_index->to_columns ('starred_index'))};
+        }
+        $where->{updated} = $page->{value} if defined $page->{value};
+
+        return $self->db->select ('star', $where, fields => [
           'starred_nobj_id',
           'item_nobj_id', 'count', 'author_nobj_id',
-        ], order => ['updated', 'DESC'], source_name => 'master')->then (sub {
-          return $_[0]->all;
+          'updated',
+        ], source_name => 'master',
+          offset => $page->{offset}, limit => $page->{limit},
+          order => ['updated', $page->{order_direction}],
+        )->then (sub {
+          return $_[0]->all->to_a;
         });
       })->then (sub {
         return $self->replace_nobj_ids ($_[0], ['author', 'item', 'starred']);
       })->then (sub {
-        return $self->json ({items => $_[0]});
+        my $items = $_[0];
+        my $next_page = Pager::next_page $page, $items, 'updated';
+        delete $_->{updated} for @$items;
+        return $self->json ({items => $items, %$next_page});
       });
     }
   } # star
