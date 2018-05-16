@@ -58,14 +58,27 @@ sub Test (&%) {
       c => $c,
       server_data => $ServerData,
     }, 'CurrentTest';
+    $current->generate_id (app_id => {});
     Promise->resolve ($current)->then ($code)->finally (sub {
       return $current->close;
+    })->catch (sub {
+      my $e = $_[0];
+      test {
+        ok 0, 'Exception is thrown?';
+        is $e, undef, 'No exception?';
+      } $c, name => 'Test should not throw';
     })->finally (sub {
       done $c;
       undef $c;
     });
   } @_;
 } # Test
+
+push @EXPORT, qw(has_json_string);
+sub has_json_string ($$;$) {
+  my ($result, $key, $name) = @_;
+  like $result->{res}->body_bytes, qr{"\Q$key\E"\s*:\s*"}, $name;
+} # has_json_string
 
 1;
 
