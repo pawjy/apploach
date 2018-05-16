@@ -8,8 +8,8 @@
          "make deps",
          "rm -fr $CIRCLE_ARTIFACTS/pid",
          {
-            "PROMISED_COMMAND_DEBUG=1 ./perl t_deps/bin/env-for-circleci.pl" : null,
-            "background" : 0
+            "./perl t_deps/bin/env-for-circleci.pl > $CIRCLE_ARTIFACTS/servers-http-$CIRCLE_NODE_INDEX.txt.dat 2>&1" : null,
+            "background" : 1
          },
          "while [ ! -e $CIRCLE_ARTIFACTS/pid ]; do sleep 1; done",
          "if [ ! -e $CIRCLE_ARTIFACTS/pid ]; then cat $CIRCLE_ARTIFACTS/env.pl; fi; cat $CIRCLE_ARTIFACTS/pid",
