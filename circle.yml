@@ -2,7 +2,7 @@
    "dependencies" : {
       "override" : [
          {
-            "docker pull quay.io/wakaba/docker-perl-app-base && docker pull minio/minio && docker pull mysql/mysql-server" : null,
+            "command": "docker pull quay.io/wakaba/docker-perl-app-base && docker pull minio/minio && docker pull mysql/mysql-server",
             "background": true
          },
          "make deps",
