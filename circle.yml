@@ -8,8 +8,7 @@
          "make deps",
          "rm -fr $CIRCLE_ARTIFACTS/pid",
          {
-            "./perl t_deps/bin/env-for-circleci.pl " : null,
-            "background" : 0
+            "./perl t_deps/bin/env-for-circleci.pl " : null
          },
          "while [ ! -e $CIRCLE_ARTIFACTS/pid ]; do sleep 1; done",
          "if [ ! -e $CIRCLE_ARTIFACTS/pid ]; then cat $CIRCLE_ARTIFACTS/env.pl; fi; cat $CIRCLE_ARTIFACTS/pid",
