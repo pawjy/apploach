@@ -2,13 +2,14 @@
    "dependencies" : {
       "override" : [
          {
-            "command": "docker pull quay.io/wakaba/docker-perl-app-base && docker pull minio/minio && docker pull mysql/mysql-server",
-            "background": true
+            " docker pull quay.io/wakaba/docker-perl-app-base && docker pull minio/minio && docker pull mysql/mysql-server" : null,
+            "background" : 1
          },
          "make deps",
          "rm -fr $CIRCLE_ARTIFACTS/pid",
          {
-            "./perl t_deps/bin/env-for-circleci.pl " : null
+            "PROMISED_COMMAND_DEBUG=1 ./perl t_deps/bin/env-for-circleci.pl" : null,
+            "background" : 0
          },
          "while [ ! -e $CIRCLE_ARTIFACTS/pid ]; do sleep 1; done",
          "if [ ! -e $CIRCLE_ARTIFACTS/pid ]; then cat $CIRCLE_ARTIFACTS/env.pl; fi; cat $CIRCLE_ARTIFACTS/pid",
