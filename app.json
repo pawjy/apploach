@@ -1,0 +1,17 @@
+{
+  "name": "apploach",
+  "website": "https://github.com/wakaba/apploach",
+  "buildpacks": [
+    {"url": "https://github.com/wakaba/heroku-buildpack-perl-pmbp"}
+  ],
+  "env": {
+    "CLEARDB_DATABASE_URL": {
+      "description": "URL of the MySQL database",
+      "required": true
+    },
+    "APP_BEARER": {
+      "description": "Bearer",
+      "generator": "secret"
+    }
+  }
+}
