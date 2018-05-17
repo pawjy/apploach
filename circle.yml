@@ -9,14 +9,16 @@
          "make deps",
          "rm -fr $CIRCLE_ARTIFACTS/pid",
          {
-            "./perl t_deps/bin/env-for-circleci.pl " : {
-               "background" : 0
+            "./perl t_deps/bin/env-for-circleci.pl > $CIRCLE_ARTIFACTS/servers-http-$CIRCLE_NODE_INDEX.txt.dat 2>&1" : {
+               "background" : 1
             }
          },
          "while [ ! -e $CIRCLE_ARTIFACTS/pid ]; do sleep 1; done",
          "if [ ! -e $CIRCLE_ARTIFACTS/pid ]; then cat $CIRCLE_ARTIFACTS/env.pl; fi; cat $CIRCLE_ARTIFACTS/pid",
          "docker info",
-         "docker build -t quay.io/wakaba/apploach ."
+         "docker build -t quay.io/wakaba/apploach .",
+         "git config --global user.email \u0022temp@circleci.test\u0022",
+         "git config --global user.name \u0022CircleCI\u0022"
       ]
    },
    "deployment" : {
@@ -24,7 +26,10 @@
          "branch" : "master",
          "commands" : [
             "docker login -e $DOCKER_EMAIL -u $DOCKER_USER -p $DOCKER_PASS quay.io",
-            "docker push quay.io/wakaba/apploach && curl -sSLf $BWALL_URL -X POST"
+            "docker push quay.io/wakaba/apploach && curl -sSLf $BWALL_URL -X POST",
+            "git checkout --orphan herokucommit && git commit -m \u0022Heroku base commit\u0022",
+            "make create-commit-for-heroku",
+            "git push git@heroku.com:$HEROKU_APP_NAME.git \u002B`git rev-parse HEAD`:refs/heads/master"
          ]
       },
       "nightly" : {

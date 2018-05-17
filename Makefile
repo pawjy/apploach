@@ -15,10 +15,13 @@ updatenightly: local/bin/pmbp.pl
 
 deps: always
 	true # dummy for make -q
+ifdef PMBP_HEROKU_BUILDPACK
+else
 	$(MAKE) git-submodules
 ifdef GAA
 else
 	$(MAKE) deps-local
+endif
 endif
 	$(MAKE) pmbp-install
 
@@ -48,6 +51,16 @@ deps-local: pmbp-install
 	chmod u+x ./lserver
 
 lserver: deps-local
+
+create-commit-for-heroku:
+	git remote rm origin
+	rm -fr deps/pmtar/.git deps/pmpp/.git modules/*/.git
+	git add -f deps/pmtar/* #deps/pmpp/*
+	rm -fr ./t_deps/modules
+	git rm -r t_deps/modules .gitmodules
+	git rm modules/* --cached
+	git add -f modules/*/*
+	git commit -m "for heroku"
 
 ## ------ Tests ------
 
