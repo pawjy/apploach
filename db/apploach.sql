@@ -46,6 +46,21 @@ create table `star` (
   key (`app_id`, `starred_author_nobj_id`, `created`),
   key (`app_id`, `starred_index_nobj_id`, `starred_author_nobj_id`, `created`),
   key (`app_id`, `item_nobj_id`, `created`),
+  key (`app_id`, `updated`),
   key (`created`),
   key (`updated`)
+) default charset=binary engine=innodb;
+
+create table `follow` (
+  `app_id` bigint unsigned not null,
+  `subject_nobj_id` bigint unsigned not null,
+  `object_nobj_id` bigint unsigned not null,
+  `verb_nobj_id` bigint unsigned not null,
+  `value` tinyint unsigned not null,
+  `timestamp` double not null,
+  primary key (`app_id`, `subject_nobj_id`, `object_nobj_id`, `verb_nobj_id`),
+  key (`app_id`, `object_nobj_id`, `subject_nobj_id`),
+  key (`app_id`, `verb_nobj_id`, `timestamp`),
+  key (`app_id`, `timestamp`),
+  key (`timestamp`)
 ) default charset=binary engine=innodb;
