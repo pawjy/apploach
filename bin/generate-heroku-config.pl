@@ -6,7 +6,9 @@ use JSON::PS;
 my $Config = {};
 
 my $cert_path = path ('mysqld_cert.pem')->absolute;
-die "No |mysqld_cert.pem|" unless $cert_path->is_file;
+my $cert = $ENV{CLEARDB_CERT} // die "No |CLEARDB_CERT|";
+$cert_path->spew ($cert);
+
 $ENV{CLEARDB_DATABASE_URL} =~ m{^mysql://([^#?/\@:]*):([^#?/\@]*)\@([^#?/:]+)/([^#?]+)\?}
     or die "Bad |CLEARDB_DATABASE_URL| ($ENV{CLEARDB_DATABASE_URL})";
 my $dsn = "dbi:mysql:host=$3;dbname=$4;user=$1;password=$2;mysql_ssl=1;mysql_ssl_ca_file=$cert_path";

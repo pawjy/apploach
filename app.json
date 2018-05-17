@@ -9,6 +9,10 @@
       "description": "URL of the MySQL database",
       "required": true
     },
+    "CLEARDB_CERT": {
+      "description": "MySQL database's certificate's CA certificates (PEM file's content)",
+      "required": true
+    },
     "APP_BEARER": {
       "description": "Bearer",
       "generator": "secret"
