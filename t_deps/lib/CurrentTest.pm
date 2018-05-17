@@ -425,6 +425,20 @@ sub create_star ($$$) {
   });
 } # create_star
 
+sub create_follow ($$$) {
+  my ($self, $name, $opts) = @_;
+  return $self->json (['follow', 'set.json'], {
+    ($self->_nobj ('subject', $opts)),
+    ($self->_nobj ('object', $opts)),
+    ($self->_nobj ('verb', $opts)),
+    value => $opts->{value} // 1,
+  }, app => $opts->{app})->then (sub {
+    my $result = $_[0];
+    $result->{json} = {%{$result->{json}}, ($self->_nobj ('verb', $opts))};
+    $self->set_o ($name => $result->{json});
+  });
+} # create_follow
+
 1;
 
 =head1 LICENSE

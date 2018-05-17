@@ -849,6 +849,128 @@ sub run ($) {
     }
   } # star
 
+  if ($self->{type} eq 'follow') {
+    ## A follow is a relation from subject NObj to object NObj of verb
+    ## (type) NObj.  It can have a value of 8-bit unsigned integer,
+    ## where value |0| is equivalent to not having any relation.
+    if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'set.json') {
+      ## /{app_id}/follow/set.json - Set a follow.
+      ##
+      ## Parameters.
+      ##
+      ##   NObj (|subject|) : The follow's subject NObj.
+      ##
+      ##   NObj (|object|) : The follow's object NObj.
+      ##
+      ##   NObj (|verb|) : The follow's object NObj.
+      ##
+      ##   |value| : Integer : The follow's value.
+      ##
+      ## Response.  No additional data.
+      return Promise->all ([
+        $self->new_nobj_list (['subject', 'object', 'verb']),
+      ])->then (sub {
+        my ($subj, $obj, $verb) = @{$_[0]->[0]};
+        return $self->db->insert ('follow', [{
+          ($self->app_id_columns),
+          ($subj->to_columns ('subject')),
+          ($obj->to_columns ('object')),
+          ($verb->to_columns ('verb')),
+          value => $self->{app}->bare_param ('value') || 0,
+          timestamp => time,
+        }], duplicate => {
+          value => $self->db->bare_sql_fragment ('VALUES(`value`)'),
+          timestamp => $self->db->bare_sql_fragment ('VALUES(`timestamp`)'),
+        }, source_name => 'master');
+      })->then (sub {
+        return $self->json ({});
+      });
+      # XXX notifications
+    } elsif (@{$self->{path}} == 1 and $self->{path}->[0] eq 'list.json') {
+      ## /{app_id}/follow/list.json - Get follows.
+      ##
+      ## Parameters.
+      ##
+      ##   NObj (|subject|) : The follow's subject NObj.
+      ##
+      ##   NObj (|object|) : The follow's object NObj.  Either NObj
+      ##   (|subject|) or NObj (|object|) or both is required.
+      ##
+      ##   NObj (|verb|) : The follow's object NObj.  Optional.
+      ##
+      ##   Pages.
+      ##
+      ## List response of follows.
+      ##
+      ##   NObj (|subject|) : The follow's subject NObj.
+      ##
+      ##   NObj (|object|) : The follow's object NObj.
+      ##
+      ##   NObj (|verb|) : The follow's object NObj.
+      ##
+      ##   |value| : Integer : The follow's value.
+      my $s = $self->{app}->bare_param ('subject_nobj_key');
+      my $o = $self->{app}->bare_param ('object_nobj_key');
+      my $v = $self->{app}->bare_param ('verb_nobj_key');
+      my $page = Pager::this_page ($self, limit => 100, max_limit => 1000);
+      return Promise->all ([
+        $self->_no ([$s, $o, $v]),
+      ])->then (sub {
+        my ($subj, $obj, $verb) = @{$_[0]->[0]};
+        return [] if defined $v and $verb->is_error;
+        return [] if defined $s and $subj->is_error;
+        return [] if defined $o and $obj->is_error;
+
+        my $where = {
+          ($self->app_id_columns),
+          value => {'>', 0},
+        };
+        if (not $subj->is_error) {
+          if (not $obj->is_error) {
+            $where = {
+              %$where,
+              ($subj->to_columns ('subject')),
+              ($obj->to_columns ('object')),
+            };
+          } else {
+            $where = {
+              %$where,
+              ($subj->to_columns ('subject')),
+            };
+          }
+        } else {
+          if (not $obj->is_error) {
+            $where = {
+              %$where,
+              ($obj->to_columns ('object')),
+            };
+          } else {
+            return $self->throw ({reason => 'No |subject| or |object|'});
+          }
+        }
+        if (not $verb->is_error) {
+          $where = {%$where, ($verb->to_columns ('verb'))};
+        }
+        $where->{timestamp} = $page->{value} if defined $page->{value};
+
+        return $self->db->select ('follow', $where, fields => [
+          'subject_nobj_id', 'object_nobj_id', 'verb_nobj_id',
+          'value', 'timestamp',
+        ], source_name => 'master',
+          offset => $page->{offset}, limit => $page->{limit},
+          order => ['timestamp', $page->{order_direction}],
+        )->then (sub {
+          return $self->replace_nobj_ids ($_[0]->all->to_a, ['subject', 'object', 'verb']);
+        });
+      })->then (sub {
+        my $items = $_[0];
+        my $next_page = Pager::next_page $page, $items, 'timestamp';
+        delete $_->{timestamp} for @$items;
+        return $self->json ({items => $items, %$next_page});
+      });
+    }
+  } # follow
+
   if ($self->{type} eq 'nobj') {
     if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'changeauthor.json') {
       ## /{app_id}/nobj/changeauthor.json - Change the author of an
