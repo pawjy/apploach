@@ -321,7 +321,7 @@ sub _docker ($%) {
             })->catch (sub {
               return $client->disconnect->catch (sub { })->then (sub { 0 });
             });
-          } timeout => 60*3, signal => $signal;
+          } timeout => 60, signal => $signal;
         })->then (sub {
           return $client->query (
             sprintf q{create user '%s'@'%s' identified by '%s'},
