@@ -195,6 +195,11 @@ sub _start_dockers ($) {
         (map { ('-p', $_) } @{$d->{ports} or []}),
         (map { ('--user', $_) } grep { defined $_ } ($d->{user})),
         (map { ('-e', $_ . '=' . $d->{environment}->{$_}) } keys %{$d->{environment} or {}}),
+        '--restart' => {
+          any => 'always',
+          'on-failure' => 'on-failure',
+          none => 'no',
+        }->{$d->{deploy}->{restart_policy}->{condition} || 'any'},
       ],
     );
     $docker->propagate_signal ($propagate);
