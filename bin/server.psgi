@@ -18,6 +18,7 @@ $ENV{TZ} = 'UTC';
 my $config_path = path ($ENV{APP_CONFIG} // die "No |APP_CONFIG|");
 my $Config = json_bytes2perl $config_path->slurp;
 my $RootPath = path (__FILE__)->parent->parent;
+my $Rev = $RootPath->child ('rev')->slurp;
 
 sub error_log ($$) {
   my ($important, $message) = @_;
@@ -44,6 +45,7 @@ sub main ($$) {
 
   if (@$path == 1 and $path->[0] eq 'robots.txt') {
     # /robots.txt
+    $app->http->set_response_header ('x-rev', $Rev);
     return $app->send_plain_text ("User-agent: *\nDisallow: /");
   }
 
