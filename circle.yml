@@ -6,7 +6,7 @@
                "background" : 1
             }
          },
-         "make deps",
+         "make deps-circleci",
          "rm -fr $CIRCLE_ARTIFACTS/pid",
          {
             "./perl t_deps/bin/env-for-circleci.pl > $CIRCLE_ARTIFACTS/servers-http-$CIRCLE_NODE_INDEX.txt.dat 2>&1" : {

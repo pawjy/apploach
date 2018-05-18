@@ -28,6 +28,9 @@ endif
 
 deps-docker: pmbp-install
 
+deps-circleci: git-submodules pmbp-install
+	$(GIT) rev-parse HEAD > rev
+
 git-submodules:
 	$(GIT) submodule update --init
 
