@@ -7,6 +7,8 @@ use Warabe::App;
 use Promise;
 use Promised::Flow;
 use JSON::PS;
+use Web::URL;
+use Web::Transport::BasicClient;
 
 use Application;
 
@@ -17,8 +19,22 @@ my $config_path = path ($ENV{APP_CONFIG} // die "No |APP_CONFIG|");
 my $Config = json_bytes2perl $config_path->slurp;
 my $RootPath = path (__FILE__)->parent->parent;
 
-sub error_log ($) {
-  warn $_[0];
+sub error_log ($$) {
+  my ($important, $message) = @_;
+  warn $message;
+  return undef unless defined $Config->{ikachan_url_prefix};
+  my $url = Web::URL->parse_string ($Config->{ikachan_prefix});
+  my $con = Web::Transport::BasicClient->new_from_url ($url);
+  $con->request (
+    path => [$important ? 'privmsg' : 'notice'],
+    method => 'POST', params => {
+      channel => $Config->{ikachan_channel},
+      message => (sprintf "%s%s", $Config->{ikachan_message_prefix}, $message),
+    },
+  )->finally (sub {
+    return $con->close;
+  });
+  return undef;
 } # error_log
 
 sub main ($$) {
@@ -74,7 +90,7 @@ return sub {
       if (UNIVERSAL::isa ($e, 'Web::Transport::Response')) {
         $e = $e . "\n" . substr $e->body_bytes, 0, 1024;
       }
-      error_log $e;
+      error_log 'important', $e;
       return $app->send_error (500);
     });
   });
