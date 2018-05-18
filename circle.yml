@@ -7,14 +7,6 @@
             }
          },
          "make deps-circleci",
-         "rm -fr $CIRCLE_ARTIFACTS/pid",
-         {
-            "./perl t_deps/bin/env-for-circleci.pl > $CIRCLE_ARTIFACTS/servers-http-$CIRCLE_NODE_INDEX.txt.dat 2>&1" : {
-               "background" : 1
-            }
-         },
-         "while [ ! -e $CIRCLE_ARTIFACTS/pid ]; do sleep 1; done",
-         "if [ ! -e $CIRCLE_ARTIFACTS/pid ]; then cat $CIRCLE_ARTIFACTS/env.pl; fi; cat $CIRCLE_ARTIFACTS/pid",
          "docker info",
          "docker build -t quay.io/wakaba/apploach .",
          "git config --global user.email \u0022temp@circleci.test\u0022",
@@ -54,6 +46,14 @@
    },
    "test" : {
       "override" : [
+         "rm -fr $CIRCLE_ARTIFACTS/pid",
+         {
+            "./perl t_deps/bin/env-for-circleci.pl > $CIRCLE_ARTIFACTS/servers-http-$CIRCLE_NODE_INDEX.txt.dat 2>&1" : {
+               "background" : 1
+            }
+         },
+         "while [ ! -e $CIRCLE_ARTIFACTS/pid ]; do sleep 1; done",
+         "if [ ! -e $CIRCLE_ARTIFACTS/pid ]; then cat $CIRCLE_ARTIFACTS/env.pl; fi; cat $CIRCLE_ARTIFACTS/pid",
          "SS_ENV_FILE=$CIRCLE_ARTIFACTS/env.pl make test"
       ]
    }
