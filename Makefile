@@ -24,6 +24,9 @@ else
 endif
 endif
 	$(MAKE) pmbp-install
+	$(GIT) rev-parse HEAD > rev
+
+deps-docker: pmbp-install
 
 git-submodules:
 	$(GIT) submodule update --init
@@ -53,6 +56,7 @@ deps-local: pmbp-install
 lserver: deps-local
 
 create-commit-for-heroku:
+	git add rev
 	git remote rm origin
 	rm -fr deps/pmtar/.git deps/pmpp/.git modules/*/.git
 	git add -f deps/pmtar/* #deps/pmpp/*

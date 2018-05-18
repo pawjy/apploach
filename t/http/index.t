@@ -20,10 +20,11 @@ Test {
     my $res = $_[0];
     test {
       is $res->status, 200;
+      ok $res->header ('x-rev');
       is $res->body_bytes, "User-agent: *\nDisallow: /";
     } $current->c;
   });
-} n => 2, name => '/robots.txt';
+} n => 3, name => '/robots.txt';
 
 Test {
   my $current = shift;
