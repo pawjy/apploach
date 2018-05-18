@@ -53,6 +53,8 @@ deps-local: pmbp-install
 lserver: deps-local
 
 create-commit-for-heroku:
+	git rev-parse HEAD > rev
+	git add rev
 	git remote rm origin
 	rm -fr deps/pmtar/.git deps/pmpp/.git modules/*/.git
 	git add -f deps/pmtar/* #deps/pmpp/*
