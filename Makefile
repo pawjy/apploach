@@ -26,6 +26,9 @@ endif
 	$(MAKE) pmbp-install
 	$(GIT) rev-parse HEAD > rev
 
+deps-docker: deps-local pmbp-install
+	$(GIT) rev-parse HEAD > rev
+
 git-submodules:
 	$(GIT) submodule update --init
 

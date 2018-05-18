@@ -17,7 +17,7 @@ RUN cd /app && \
     echo '#!/bin/bash' > /showrev && \
     echo 'cat /app/rev' >> /showrev && \
     chmod u+x /showrev && \
-    rm -rf /var/lib/apt/lists/* /app/local/pmbp/tmp
+    rm -rf /var/lib/apt/lists/* /app/local/pmbp/tmp /app/deps
 
 CMD ["/server"]
 
