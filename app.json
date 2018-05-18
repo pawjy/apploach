@@ -16,6 +16,16 @@
     "APP_BEARER": {
       "description": "Bearer",
       "generator": "secret"
+    },
+    "APP_IKACHAN_URL_PREFIX": {
+      "description": "Ikachan-compatible error-reporting Web API end point"
+    },
+    "APP_IKACHAN_CHANNEL": {
+      "description": "IRC channel errors are reported"
+    },
+    "APP_IKACHAN_MESSAGE_PREFIX": {
+      "description": "Error message prefix",
+      "value": ""
     }
   }
 }

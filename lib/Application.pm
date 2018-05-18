@@ -17,9 +17,20 @@ use Pager;
 ## specified to the |APP_CONFIG| environment variable.  The JSON file
 ## must contain an object with following name/value pairs:
 ##
-##   |bearer|: The bearer (API key).  Its value must be a key.
+##   |bearer| : Key : The bearer (API key).
 ##
-##   |dsn|: The DSN of the MySQL database.
+##   |dsn| : String : The DSN of the MySQL database.
+##
+##   |ikachan_url_prefix| : String? : The prefix of the
+##   Ikachan-compatible Web API to which errors are reported.  If not
+##   specified, errors are not sent.
+##
+##   |ikachan_channel| : String? : The channel to which errors are
+##   sent.  Required if |ikachan_url_prefix| is specified.
+##
+##   |ikachan_message_prefix| : String? : A short string used as the
+##   prefix of the error message.  Required if |ikachan_url_prefix| is
+##   specified.
 
 ## HTTP requests.
 ##
