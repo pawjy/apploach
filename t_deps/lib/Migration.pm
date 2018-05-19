@@ -1,6 +1,7 @@
 package Migration;
 use strict;
 use warnings;
+use Digest::SHA qw(sha1_hex);
 use Time::HiRes qw(time);
 use Promise;
 use Promised::Flow;
@@ -23,14 +24,15 @@ sub run ($$$;%) {
     my $done = {};
     return $db->execute (q{
       create table if not exists `__migration` (
-        `sql` varbinary(767) not null,
+        `sql_sha` binary(40) not null,
+        `sql` mediumblob not null,
         `timestamp` double not null,
-        primary key (`sql`),
+        primary key (`sql_sha`),
         key (`timestamp`)
       ) default charset=binary engine=innodb
     }, undef, source_name => 'master')->then (sub {
       return $db->select ('__migration', {
-        sql => {-in => \@sql},
+        sql_sha => {-in => [map { sha1_hex $_ } @sql]},
       }, fields => ['sql'], source_name => 'master');
     })->then (sub {
       $done->{$_->{sql}} = 1 for @{$_[0]->all};
@@ -43,6 +45,7 @@ sub run ($$$;%) {
           })->then (sub {
             return $tr->insert ('__migration', [{
               sql => $sql,
+              sql_sha => sha1_hex ($sql),
               timestamp => time,
             }], source_name => 'master');
           })->then (sub {
