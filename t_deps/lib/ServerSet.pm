@@ -281,7 +281,7 @@ sub _docker ($%) {
           $self->_write_file ('my.cnf', $my_cnf),
         ])->then (sub {
           return {
-            image => ($ENV{CIRCLECI} ? 'mysql/mysql-server:5.7' : 'mysql/mysql-server'), # XXX
+            image => 'mysql/mysql-server',
             volumes => [
               $self->_path ('my.cnf')->absolute . ':/etc/my.cnf',
               $data->{_data_path}->absolute . ':/var/lib/mysql',
