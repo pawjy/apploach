@@ -134,7 +134,8 @@ sub _register_server ($$;$$) {
   my ($self, $name, $host, $port) = @_;
   $self->{servers}->{$name} ||= do {
     $port //= find_listenable_port;
-    $host //= Web::Host->parse_string ('127.0.0.1');
+    #$host //= Web::Host->parse_string ('127.0.0.1');
+    $host //= Web::Host->parse_string ('0'); # need to bind all for container->port accesses
     my $local_url = Web::URL->parse_string
         ("http://".$host->to_ascii.":$port");
 
@@ -176,6 +177,13 @@ sub _set_local_envs ($$$) {
   my $envs = $self->{servers}->{$name}->{local_envs} // die "No |$name| envs";
   $dest->{$_} = $envs->{$_} for keys %$envs;
 } # _set_local_envs
+
+sub _set_docker_envs ($$$) {
+  my ($self, $name, $dest) = @_;
+  $self->_register_server ($name);
+  my $envs = $self->{servers}->{$name}->{docker_envs} // die "No |$name| envs";
+  $dest->{$_} = $envs->{$_} for keys %$envs;
+} # _set_docker_envs
 
 use AnyEvent;
 use AnyEvent::Socket;
@@ -285,7 +293,8 @@ sub _docker ($%) {
               MYSQL_USER => $self->_key ('mysqld_user'),
               MYSQL_PASSWORD => $self->_key ('mysqld_password'),
               MYSQL_ROOT_PASSWORD => $self->_key ('mysqld_root_password'),
-              MYSQL_ROOT_HOST => $dockerhost->to_ascii,
+              #MYSQL_ROOT_HOST => $dockerhost->to_ascii,
+              MYSQL_ROOT_HOST => '%',
               MYSQL_DATABASE => $dbname[0] . $data->{_dbname_suffix},
               MYSQL_LOG_CONSOLE => 1,
             },
@@ -477,10 +486,136 @@ sub _docker ($%) {
   });
 } # _docker
 
+sub _docker_app ($%) {
+  my ($self, %args) = @_;
+  my $stack;
+  my $data = {};
+
+  my $servers = {
+    app => {
+      prepare => sub {
+        my ($self, $data) = @_;
+        my $envs = {};
+        return Promise->all ([
+          $args{receive_docker_data},
+        ])->then (sub {
+          my ($docker_data) = @{$_[0]};
+          my $config = {};
+
+          $config->{bearer} = $self->_key ('app_bearer');
+          
+          $config->{dsn} = $docker_data->{mysqld}->{docker_dsn}->{apploach};
+          $self->_set_docker_envs ('proxy' => $envs);
+          
+          return $self->_write_json ('app-config.json', $config);
+        })->then (sub {
+          return {
+            image => 'quay.io/wakaba/apploach',
+            volumes => [
+              $self->_path ('app-config.json')->absolute . ':/app-config.json',
+            ],
+            environment => {
+              %$envs,
+              APP_CONFIG => '/app-config.json',
+            },
+            ports => [
+              $self->_local_url ('app')->hostport . ":8080",
+            ],
+          };
+        });
+      }, # prepare
+      wait => sub {
+        my ($self, $data, $signal) = @_;
+        return wait_for_http $self->_local_url ('app'), $signal;
+      }, # wait
+    }, # storage
+  }; # $servers
+
+  my $stop = sub {
+    return Promise->all ([
+      defined $stack ? $stack->stop : undef,
+      map {
+        my $name = $_;
+        Promise->resolve->then (sub {
+          return (($servers->{$name}->{cleanup} or sub {})->($self, $data->{$name}));
+        });
+      } keys %$servers,
+    ]);
+  }; # $stop
+
+  my $services = {};
+  my $out = '';
+  my $started = 0;
+  return Promise->all ([
+    map {
+      my $name = $_;
+      Promise->resolve->then (sub {
+        return $servers->{$name}->{prepare}->($self, $data->{$name} ||= {});
+      })->then (sub {
+        my $service = $_[0];
+        $services->{$name} = $service if defined $service;
+      });
+    } keys %$servers,
+  ])->then (sub {
+    $stack = DockerStack->new ({
+      services => $services,
+    });
+    $stack->propagate_signal (1);
+    $stack->signal_before_destruction ('TERM');
+    $stack->stack_name (($args{docker_stack_name} // __PACKAGE__) . '-app');
+    $stack->use_fallback (1);
+    $stack->logs (sub {
+      my $v = $_[0];
+      return unless defined $v;
+      $v =~ s/^/docker: app: /gm;
+      $v .= "\x0A" unless $v =~ /\x0A\z/;
+      $out .= $v;
+
+      if ($started) {
+        warn $out;
+        $out = '';
+      }
+    });
+    $args{signal}->manakai_onabort ($stop);
+    return $stack->start;
+  })->then (sub {
+    my $acs = [];
+    $started = 1;
+    my $waits = [
+      map {
+        my $ac = AbortController->new;
+        ($servers->{$_}->{wait} or sub { })->($self, $data->{$_}, $ac->signal),
+      } keys %$servers,
+    ];
+    $args{signal}->manakai_onabort (sub {
+      $_->abort for @$acs;
+      $stop->();
+    });
+    return Promise->all ($waits)->catch (sub {
+      $_->abort for @$acs;
+      die $_[0];
+    });
+  })->then (sub {
+    my ($r_s, $s_s) = promised_cv;
+    $args{signal}->manakai_onabort (sub {
+      $s_s->($stop->());
+    });
+    return [$data, $r_s];
+  })->catch (sub {
+    my $e = $_[0];
+    warn $out;
+    $args{signal}->manakai_onabort (sub { });
+    return $stop->()->then (sub { die $e });
+  });
+} # _docker_app
+
 sub _app ($%) {
   my ($self, %args) = @_;
 
-  # XXX docker mode
+  if ($args{use_docker_app}) {
+    return $self->_docker_app (%args);
+  }
+
   my $sarze = Promised::Command->new
       ([$RootPath->child ('perl'),
         $RootPath->child ('bin/sarze.pl'),
@@ -496,7 +631,6 @@ sub _app ($%) {
 
     $config->{bearer} = $self->_key ('app_bearer');
     
-    # XXX if docker mode
     $config->{dsn} = $docker_data->{mysqld}->{local_dsn}->{apploach};
     $self->_set_local_envs ('proxy' => $sarze->envs);
     
@@ -573,6 +707,7 @@ sub run ($%) {
       )],
     },
     app => {
+      use_docker_app => $ENV{CIRCLECI},
       port => $args{app_port},
       requires => ['docker'],
       exposed_hostports => [['app', $args{app_host}, $args{app_port}]],
