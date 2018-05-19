@@ -322,7 +322,7 @@ sub _docker ($%) {
             })->catch (sub {
               return $client->disconnect->catch (sub { })->then (sub { 0 });
             });
-          } timeout => 60*3, signal => $signal;
+          } timeout => 60*4, signal => $signal;
         })->then (sub {
           return $client->query (
             sprintf q{create user '%s'@'%s' identified by '%s'},
@@ -407,7 +407,7 @@ sub _docker ($%) {
                      defined $data->{aws4}->[1] &&
                      defined $data->{aws4}->[2];
             })->catch (sub { return 0 });
-          } timeout => 60*3, signal => $signal;
+          } timeout => 60*4, signal => $signal;
         })->then (sub {
           return wait_for_http $self->_local_url ('storage'), $signal;
         });
