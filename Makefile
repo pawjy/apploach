@@ -22,9 +22,9 @@ ifdef GAA
 else
 	$(MAKE) deps-local
 endif
+	$(GIT) rev-parse HEAD > rev
 endif
 	$(MAKE) pmbp-install
-	$(GIT) rev-parse HEAD > rev
 
 deps-docker: pmbp-install
 
