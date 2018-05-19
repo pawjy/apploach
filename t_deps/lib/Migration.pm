@@ -23,7 +23,7 @@ sub run ($$$;%) {
     my $done = {};
     return $db->execute (q{
       create table if not exists `__migration` (
-        `sql` varbinary(2048) not null,
+        `sql` varbinary(767) not null,
         `timestamp` double not null,
         primary key (`sql`),
         key (`timestamp`)
