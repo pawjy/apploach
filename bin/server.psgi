@@ -24,7 +24,7 @@ sub error_log ($$) {
   my ($important, $message) = @_;
   warn $message;
   return undef unless defined $Config->{ikachan_url_prefix};
-  my $url = Web::URL->parse_string ($Config->{ikachan_prefix});
+  my $url = Web::URL->parse_string ($Config->{ikachan_url_prefix});
   my $con = Web::Transport::BasicClient->new_from_url ($url);
   $con->request (
     path => [$important ? 'privmsg' : 'notice'],
