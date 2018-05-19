@@ -5,12 +5,14 @@ use Time::HiRes qw(time);
 use Promise;
 use Promised::Flow;
 use Dongry::Database;
+use Dongry::Type;
 
 sub run ($$$;%) {
   my ($class, $sqls, $dsn, %args) = @_;
   my $db = Dongry::Database->new (
     sources => {
-      master => {dsn => $dsn, writable => 1, anyevent => 1},
+      master => {dsn => Dongry::Type->serialize ('text', $dsn),
+                 writable => 1, anyevent => 1},
     },
   );
   return Promise->resolve->then (sub {
