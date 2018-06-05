@@ -405,6 +405,7 @@ sub create_comment ($$$) {
     admin_status => $opts->{admin_status} // 2,
   }, app => $opts->{app})->then (sub {
     my $result = $_[0];
+    $result->{json}->{nobj_key} = 'apploach-comment-'.$result->{json}->{comment_id};
     $self->set_o ($name => $result->{json});
   });
 } # create_comment

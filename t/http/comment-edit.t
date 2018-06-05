@@ -277,6 +277,117 @@ Test {
   });
 } n => 7, name => 'author validation';
 
+Test {
+  my $current = shift;
+  return $current->create (
+    [a1 => account => {}],
+    [c1 => comment => {author => 'a1'}],
+  )->then (sub {
+    return $current->json (['comment', 'edit.json'], {
+      comment_id => $current->o ('c1')->{comment_id},
+      operator_nobj_key => $current->o ('a1')->{nobj_key},
+      author_status => 4,
+    });
+  })->then (sub {
+    return $current->json (['nobj', 'statusinfo.json'], {
+      target_nobj_key => $current->o ('c1')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      my $v = $result->{json}->{info}->{$current->o ('c1')->{nobj_key}};
+      $current->set_o (l1 => $v);
+      ok $v->{log_id};
+      ok $v->{timestamp};
+      is 0+keys %{$v->{details}}, 0;
+      is $v->{old}->{author_status}, 2;
+      is $v->{old}->{owner_status}, 2;
+      is $v->{old}->{admin_status}, 2;
+      is $v->{new}->{author_status}, 4;
+      is $v->{new}->{owner_status}, 2;
+      is $v->{new}->{admin_status}, 2;
+    } $current->c;
+    return $current->json (['nobj', 'logs.json'], {
+      log_id => $current->o ('l1')->{log_id},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      my $v = $result->{json}->{items}->[0];
+      is $v->{log_id}, $current->o ('l1')->{log_id};
+      is $v->{data}->{timestamp}, $current->o ('l1')->{timestamp};
+      is 0+keys %{$v->{data}->{details}}, 0;
+      is $v->{data}->{old}->{author_status}, 2;
+      is $v->{data}->{old}->{owner_status}, 2;
+      is $v->{data}->{old}->{admin_status}, 2;
+      is $v->{data}->{new}->{author_status}, 4;
+      is $v->{data}->{new}->{owner_status}, 2;
+      is $v->{data}->{new}->{admin_status}, 2;
+      is $v->{operator_nobj_key}, $current->o ('a1')->{nobj_key};
+      is $v->{target_nobj_key}, $current->o ('c1')->{nobj_key};
+      is $v->{verb_nobj_key}, 'apploach-set-status';
+    } $current->c;
+  });
+} n => 21, name => 'status, logs';
+
+Test {
+  my $current = shift;
+  return $current->create (
+    [a1 => account => {}],
+    [c1 => comment => {author => 'a1'}],
+  )->then (sub {
+    return $current->json (['comment', 'edit.json'], {
+      comment_id => $current->o ('c1')->{comment_id},
+      operator_nobj_key => $current->o ('a1')->{nobj_key},
+      owner_status => 4,
+      status_info_details => {
+        hoge => $current->generate_text (t1 => {}),
+      },
+    });
+  })->then (sub {
+    return $current->json (['nobj', 'statusinfo.json'], {
+      target_nobj_key => $current->o ('c1')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      my $v = $result->{json}->{info}->{$current->o ('c1')->{nobj_key}};
+      $current->set_o (l1 => $v);
+      ok $v->{log_id};
+      ok $v->{timestamp};
+      is 0+keys %{$v->{details}}, 1;
+      is $v->{details}->{hoge}, $current->o ('t1');
+      is $v->{old}->{author_status}, 2;
+      is $v->{old}->{owner_status}, 2;
+      is $v->{old}->{admin_status}, 2;
+      is $v->{new}->{author_status}, 2;
+      is $v->{new}->{owner_status}, 4;
+      is $v->{new}->{admin_status}, 2;
+    } $current->c;
+    return $current->json (['nobj', 'logs.json'], {
+      log_id => $current->o ('l1')->{log_id},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      my $v = $result->{json}->{items}->[0];
+      is $v->{log_id}, $current->o ('l1')->{log_id};
+      is $v->{data}->{timestamp}, $current->o ('l1')->{timestamp};
+      is 0+keys %{$v->{data}->{details}}, 1;
+      is $v->{data}->{details}->{hoge}, $current->o ('t1');
+      is $v->{data}->{old}->{author_status}, 2;
+      is $v->{data}->{old}->{owner_status}, 2;
+      is $v->{data}->{old}->{admin_status}, 2;
+      is $v->{data}->{new}->{author_status}, 2;
+      is $v->{data}->{new}->{owner_status}, 4;
+      is $v->{data}->{new}->{admin_status}, 2;
+      is $v->{operator_nobj_key}, $current->o ('a1')->{nobj_key};
+      is $v->{target_nobj_key}, $current->o ('c1')->{nobj_key};
+      is $v->{verb_nobj_key}, 'apploach-set-status';
+    } $current->c;
+  });
+} n => 23, name => 'status, logs - 2';
+
 RUN;
 
 =head1 LICENSE
