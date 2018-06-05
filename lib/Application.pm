@@ -215,6 +215,20 @@ sub ids ($$) {
   });
 } # ids
 
+sub db_ids ($$$) {
+  my ($self, $db_or_tr, $n) = @_;
+  return Promise->resolve ([]) unless $n;
+  my $v = join ',', map { sprintf 'uuid_short() as `%d`', $_ } 0..($n-1);
+  return $db_or_tr->execute ('select '.$v, undef, source_name => 'master')->then (sub {
+    my $w = $_[0]->first;
+    my $r = [];
+    for (keys %$w) {
+      $r->[$_] = $w->{$_};
+    }
+    return $r;
+  });
+} # db_ids
+
 ## Named object (NObj).  An NObj is an object or concept in the
 ## application.  It is externally identified by a Key in the API or
 ## internally by an ID on the straoge.  The key can be any value
@@ -255,7 +269,7 @@ sub ids ($$) {
 ##   parameters can be specified.
 sub new_nobj_list ($$) {
   my ($self, $params) = @_;
-  my @key = map { $self->{app}->bare_param ($_.'_nobj_key') } @$params;
+  my @key = map { ref $_ ? $$_ : $self->{app}->bare_param ($_.'_nobj_key') } @$params;
   return $self->_no (\@key)->then (sub {
     my $nos = $_[0];
     return promised_map {
@@ -432,13 +446,13 @@ sub _nobj_list_by_ids ($$) {
   });
 } # _nobj_list_by_ids
 
-sub write_log ($$$$$) {
-  my ($self, $operator, $target, $verb, $data) = @_;
-  return $self->ids (1)->then (sub {
+sub write_log ($$$$$$) {
+  my ($self, $db_or_tr, $operator, $target, $verb, $data) = @_;
+  return $self->db_ids ($db_or_tr, 1)->then (sub {
     my ($log_id) = @{$_[0]};
     my $time = time;
     $data->{timestamp} = $time;
-    return $self->db->insert ('log', [{
+    return $db_or_tr->insert ('log', [{
       ($self->app_id_columns),
       log_id => $log_id,
       ($operator->to_columns ('operator')),
@@ -455,13 +469,36 @@ sub write_log ($$$$$) {
   });
 } # write_log
 
+sub set_status_info ($$$$) {
+  my ($self, $db_or_tr, $operator, $target, $verb, $data) = @_;
+  return $self->write_log ($db_or_tr, $operator, $target, $verb, $data)->then (sub {
+    $data->{timestamp} = $_[0]->{timestamp}; # redundant
+    $data->{log_id} = $_[0]->{log_id};
+    return $db_or_tr->insert ('status_info', [{
+      ($self->app_id_columns),
+      ($target->to_columns ('target')),
+      data => Dongry::Type->serialize ('json', $data),
+      timestamp => 0+$data->{timestamp},
+    }], source_name => 'master', duplicate => {
+      data => $self->db->bare_sql_fragment ('VALUES(`data`)'),
+      timestamp => $self->db->bare_sql_fragment ('VALUES(`timestamp`)'),
+    });
+  })->then (sub {
+    return {
+      timestamp => $data->{timestamp},
+      log_id => $data->{log_id},
+    };
+  });
+} # set_status_info
+
 sub run ($) {
   my $self = $_[0];
 
   if ($self->{type} eq 'comment') {
     ## Comments.  A thread can have zero or more comments.  A comment
     ## has ID : ID, thread : NObj, author : NObj, data : JSON object,
-    ## internal data : JSON object, statuses : Statuses.
+    ## internal data : JSON object, statuses : Statuses.  A comment's
+    ## NObj key is |apploach-comment-| followed by the comment's ID.
     if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'list.json') {
       ## /{app_id}/comment/list.json - Get comments.
       ##
@@ -614,7 +651,13 @@ sub run ($) {
       ##   nothing to change.
       ##
       ##   Statuses : The comment's statuses.  Optional if nothing to
-      ##   change.
+      ##   change.  When statuses are changed, the comment NObj's
+      ##   status info is updated (and a log is added).
+      ##
+      ##   |status_info_details| : JSON Object : The comment NObj's
+      ##   status info's |details|.  Optional if none of statuses is
+      ##   updated.  If statuses are updated but this is omitted,
+      ##   defaulted to an empty JSON object.
       ##
       ##   NObj (|operator|) : The operator of this editing.
       ##   Required.
@@ -624,17 +667,22 @@ sub run ($) {
       ##
       ## Response.  No additional data.
       my $operator;
+      my $cnobj;
+      my $ssnobj;
+      my $comment_id = $self->id_param ('comment');
       return Promise->all ([
-        $self->new_nobj_list (['operator']),
+        $self->new_nobj_list (['operator',
+                               \('apploach-comment-' . $comment_id),
+                               \'apploach-set-status']),
       ])->then (sub {
-        $operator = $_[0]->[0]->[0];
+        ($operator, $cnobj, $ssnobj) = @{$_[0]->[0]};
         return $self->db->transaction;
       })->then (sub {
         my $tr = $_[0];
         return Promise->resolve->then (sub {
           return $tr->select ('comment', {
             ($self->app_id_columns),
-            comment_id => $self->id_param ('comment'),
+            comment_id => $comment_id,
           }, fields => [
             'comment_id', 'data', 'internal_data',
             'author_nobj_id',
@@ -698,12 +746,32 @@ sub run ($) {
             return $self->{app}->throw;
           }
 
-          return $tr->update ('comment', $updates, where => {
-            ($self->app_id_columns),
-            comment_id => $current->{comment_id},
+          my $sid = $self->optional_json_object_param ('status_info_details');
+          return Promise->resolve->then (sub {
+            return unless $updates->{author_status} or
+                $updates->{owner_status} or
+                $updates->{admin_status} or
+                defined $sid;
+            my $status_info = {
+              old => {
+                author_status => $current->{author_status},
+                owner_status => $current->{owner_status},
+                admin_status => $current->{admin_status},
+              },
+              new => {
+                author_status => $updates->{author_status} // $current->{author_status},
+                owner_status => $updates->{owner_status} // $current->{owner_status},
+                admin_status => $updates->{admin_status} // $current->{admin_status},
+              },
+              details => $sid // {},
+            };
+            return $self->set_status_info ($tr, $operator, $cnobj, $ssnobj, $status_info);
+          })->then (sub {
+            return $tr->update ('comment', $updates, where => {
+              ($self->app_id_columns),
+              comment_id => $current->{comment_id},
+            });
           });
-
-          # XXX status change history
           # XXX notifications
         })->then (sub {
           return $tr->commit->then (sub { undef $tr });
@@ -1036,7 +1104,7 @@ sub run ($) {
       ])->then (sub {
         my ($operator, $target, $verb) = @{$_[0]->[0]};
         my $data = $self->json_object_param ('data');
-        return $self->write_log ($operator, $target, $verb, $data)->then (sub {
+        return $self->write_log ($self->db, $operator, $target, $verb, $data)->then (sub {
           return $self->json ($_[0]);
         });
       });
@@ -1163,24 +1231,10 @@ sub run ($) {
       ])->then (sub {
         my ($target, $operator, $verb) = @{$_[0]->[0]};
         my $data = $self->json_object_param ('data');
-        return $self->write_log ($operator, $target, $verb, $data)->then (sub {
-          $data->{timestamp} = $_[0]->{timestamp}; # redundant
-          $data->{log_id} = $_[0]->{log_id};
-          return $self->db->insert ('status_info', [{
-            ($self->app_id_columns),
-            ($target->to_columns ('target')),
-            data => Dongry::Type->serialize ('json', $data),
-            timestamp => 0+$data->{timestamp},
-          }], source_name => 'master', duplicate => {
-            data => $self->db->bare_sql_fragment ('VALUES(`data`)'),
-            timestamp => $self->db->bare_sql_fragment ('VALUES(`timestamp`)'),
-          });
-        })->then (sub {
-          return $self->json ({
-            timestamp => $data->{timestamp},
-            log_id => $data->{log_id},
-          });
-        });
+        return $self->set_status_info
+            ($self->db, $operator, $target, $verb, $data);
+      })->then (sub {
+        return $self->json ($_[0]);
       });
     } elsif (@{$self->{path}} == 1 and $self->{path}->[0] eq 'statusinfo.json') {
       ## /{app_id}/nobj/statusinfo.json - Get status info data of
