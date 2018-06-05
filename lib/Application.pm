@@ -432,6 +432,29 @@ sub _nobj_list_by_ids ($$) {
   });
 } # _nobj_list_by_ids
 
+sub write_log ($$$$$) {
+  my ($self, $operator, $target, $verb, $data) = @_;
+  return $self->ids (1)->then (sub {
+    my ($log_id) = @{$_[0]};
+    my $time = time;
+    $data->{timestamp} = $time;
+    return $self->db->insert ('log', [{
+      ($self->app_id_columns),
+      log_id => $log_id,
+      ($operator->to_columns ('operator')),
+      ($target->to_columns ('target')),
+      ($verb->to_columns ('verb')),
+      data => Dongry::Type->serialize ('json', $data),
+      timestamp => $time,
+    }], source_name => 'master')->then (sub {
+      return {
+        log_id => ''.$log_id,
+        timestamp => $time,
+      };
+    });
+  });
+} # write_log
+
 sub run ($) {
   my $self = $_[0];
 
@@ -754,7 +777,7 @@ sub run ($) {
       ##
       ##   |stars| : Object.
       ##
-      ##     {NObj (|starred|) : The star's starred} : Array of stars.
+      ##     {NObj (|starred|) : The star's starred NObj} : Array of stars.
       ##
       ##       NObj (|author|) : The star's author.
       ##
@@ -1010,26 +1033,11 @@ sub run ($) {
       ##   |timestamp| : Timestamp : The log's data's |timestamp|.
       return Promise->all ([
         $self->new_nobj_list (['operator', 'target', 'verb']),
-        $self->ids (1),
       ])->then (sub {
         my ($operator, $target, $verb) = @{$_[0]->[0]};
-        my ($log_id) = @{$_[0]->[1]};
         my $data = $self->json_object_param ('data');
-        my $time = time;
-        $data->{timestamp} = $time;
-        return $self->db->insert ('log', [{
-          ($self->app_id_columns),
-          log_id => $log_id,
-          ($operator->to_columns ('operator')),
-          ($target->to_columns ('target')),
-          ($verb->to_columns ('verb')),
-          data => Dongry::Type->serialize ('json', $data),
-          timestamp => $time,
-        }], source_name => 'master')->then (sub {
-          return $self->json ({
-            log_id => ''.$log_id,
-            timestamp => $time,
-          });
+        return $self->write_log ($operator, $target, $verb, $data)->then (sub {
+          return $self->json ($_[0]);
         });
       });
     } elsif (@{$self->{path}} == 1 and $self->{path}->[0] eq 'logs.json') {
@@ -1051,7 +1059,7 @@ sub run ($) {
       ##
       ## List response of logs.
       ##
-      ##   |log_id| : Id : The log's ID.
+      ##   |log_id| : ID : The log's ID.
       ##
       ##   NObj (|operator|) : The log's operator NObj.
       ##
@@ -1117,6 +1125,100 @@ sub run ($) {
           $_->{data} = Dongry::Type->parse ('json', $_->{data});
         }
         return $self->json ({items => $items, %$next_page});
+      });
+    }
+
+    ## Status info.  An NObj can have status info.  It is additional
+    ## data on the current statuses of the NObj, such as reasons of
+    ## admin's action of hiding the object from the public.  A status
+    ## info have target NObj, which is an NObj to which the status
+    ## info is associated, and data, which is an JSON object.
+    if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'setstatusinfo.json') {
+      ## /{app_id}/nobj/setstatusinfo.json - Set status info of an
+      ## NObj.
+      ##
+      ## Parameters.
+      ##
+      ##   NObj (|target|) : The status info's target NObj.
+      ##
+      ##   |data| : JSON object : The status info's data.  Its
+      ##   |timestamp| is replaced by the time Apploach receives the
+      ##   new status info.
+      ##
+      ##   NObj (|operator|) : The status info's log's operator NObj.
+      ##
+      ##   NObj (|verb|) : The status info's log's verb NObj.
+      ##   Whenever the status info is set, a new log of NObj
+      ##   (|target|), NObj (|operator|), NObj (|verb|), and |data| is
+      ##   added.
+      ##
+      ## Response.
+      ##
+      ##   |log_id| : ID : The status info's log's ID.
+      ##
+      ##   |timestamp| : Timestamp : The status info's data's
+      ##   |timestamp|.
+      return Promise->all ([
+        $self->new_nobj_list (['target', 'operator', 'verb']),
+      ])->then (sub {
+        my ($target, $operator, $verb) = @{$_[0]->[0]};
+        my $data = $self->json_object_param ('data');
+        return $self->write_log ($operator, $target, $verb, $data)->then (sub {
+          $data->{timestamp} = $_[0]->{timestamp}; # redundant
+          $data->{log_id} = $_[0]->{log_id};
+          return $self->db->insert ('status_info', [{
+            ($self->app_id_columns),
+            ($target->to_columns ('target')),
+            data => Dongry::Type->serialize ('json', $data),
+            timestamp => 0+$data->{timestamp},
+          }], source_name => 'master', duplicate => {
+            data => $self->db->bare_sql_fragment ('VALUES(`data`)'),
+            timestamp => $self->db->bare_sql_fragment ('VALUES(`timestamp`)'),
+          });
+        })->then (sub {
+          return $self->json ({
+            timestamp => $data->{timestamp},
+            log_id => $data->{log_id},
+          });
+        });
+      });
+    } elsif (@{$self->{path}} == 1 and $self->{path}->[0] eq 'statusinfo.json') {
+      ## /{app_id}/nobj/statusinfo.json - Get status info data of
+      ## NObj.
+      ##
+      ## Parameters.
+      ##
+      ##   NObj list (|target|).  List of target NObj to get.
+      ##
+      ## Response.
+      ##
+      ##   |info| : Object.
+      ##
+      ##     {NObj (|target|) : The status info's target NObj} : Array
+      ##     of status info's data.
+      return Promise->all ([
+        $self->nobj_list ('target'),
+      ])->then (sub {
+        my $targets = $_[0]->[0];
+
+        my @nobj_id;
+        for (@$targets) {
+          push @nobj_id, $_->nobj_id unless $_->is_error;
+        }
+        return [] unless @nobj_id;
+
+        return $self->db->select ('status_info', {
+          ($self->app_id_columns),
+          target_nobj_id => {-in => \@nobj_id},
+        }, fields => ['target_nobj_id', 'data'], source_name => 'master')->then (sub {
+          return $self->replace_nobj_ids ($_[0]->all->to_a, ['target']);
+        });
+      })->then (sub {
+        my $items = $_[0];
+        for (@$items) {
+          $_->{data} = Dongry::Type->parse ('json', $_->{data});
+        }
+        return $self->json ({info => {map { $_->{target_nobj_key} => $_->{data} } @$items}});
       });
     }
 

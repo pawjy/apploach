@@ -441,7 +441,7 @@ sub create_follow ($$$) {
 
 sub create_log ($$$) {
   my ($self, $name, $opts) = @_;
-  return $self->json (['nobj', 'addlog.json'], {
+  return $self->json (['nobj', $opts->{status_info} ? 'setstatusinfo.json' : 'addlog.json'], {
     ($self->_nobj ('operator', $opts)),
     ($self->_nobj ('target', $opts)),
     ($self->_nobj ('verb', $opts)),
