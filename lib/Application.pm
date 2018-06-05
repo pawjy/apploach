@@ -218,11 +218,12 @@ sub ids ($$) {
 ## Named object (NObj).  An NObj is an object or concept in the
 ## application.  It is externally identified by a Key in the API or
 ## internally by an ID on the straoge.  The key can be any value
-## assigned by the application.  The ID is assigned by Apploach.  It
-## can be used to represent an object stored in Apploach, such as a
-## comment or a tag, an external object such as account, or an
-## abstract concept such as "blogs", "bookmarks of a user", or
-## "anonymous".
+## assigned by the application, though any key starting with
+## "apploach-" might have specific semantics assigned by some APIs of
+## Apploach.  The ID is assigned by Apploach.  It can be used to
+## represent an object stored in Apploach, such as a comment or a tag,
+## an external object such as account, or an abstract concept such as
+## "blogs", "bookmarks of a user", or "anonymous".
 ##
 ## Sometimes "author" of an NObj can be specified, which is not part
 ## of the canonical data model of Apploach object but is necessary for
@@ -593,16 +594,15 @@ sub run ($) {
       ##   change.
       ##
       ##   NObj (|operator|) : The operator of this editing.
-      ##   Optional.
+      ##   Required.
       ##
       ##   |validate_operator_is_author| : Boolean : Whether the
-      ##   operator has to be the comment's author or not.  If true,
-      ##   NObj (|operator|) is required.
+      ##   operator has to be the comment's author or not.
       ##
       ## Response.  No additional data.
       my $operator;
       return Promise->all ([
-        (defined $self->{app}->bare_param ('operator_nobj_key') ? $self->new_nobj_list (['operator']) : undef),
+        $self->new_nobj_list (['operator']),
       ])->then (sub {
         $operator = $_[0]->[0]->[0];
         return $self->db->transaction;
@@ -623,8 +623,7 @@ sub run ($) {
               unless defined $current;
 
           if ($self->{app}->bare_param ('validate_operator_is_author')) {
-            if (not defined $operator or
-                not $current->{author_nobj_id} eq $operator->nobj_id) {
+            if (not $current->{author_nobj_id} eq $operator->nobj_id) {
               return $self->throw ({reason => 'Bad operator'});
             }
           }
