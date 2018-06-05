@@ -917,7 +917,7 @@ sub run ($) {
       ##
       ##   NObj (|object|) : The follow's object NObj.
       ##
-      ##   NObj (|verb|) : The follow's object NObj.
+      ##   NObj (|verb|) : The follow's verb NObj.
       ##
       ##   |value| : Integer : The follow's value.
       my $s = $self->{app}->bare_param ('subject_nobj_key');
@@ -983,6 +983,144 @@ sub run ($) {
   } # follow
 
   if ($self->{type} eq 'nobj') {
+    ## Logs.  An NObj can have zero or more logs.  A log has ID, which
+    ## identifies the log, target NObj, which represents the NObj to
+    ## which the log is associated, operator NObj, which is intended
+    ## to represent who causes the log being recorded, verb NObj,
+    ## which is intended to represent the type of the log, and data,
+    ## which is a JSON object containing application-specific log
+    ## data.
+    if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'addlog.json') {
+      ## /{app_id}/nobj/addlog.json - Add a log entry.
+      ##
+      ## Parameters.
+      ##
+      ##   NObj (|operator|) : The log's operator NObj.
+      ##
+      ##   NObj (|target|) : The log's target NObj.
+      ##
+      ##   NObj (|verb|) : The log's verb NObj.
+      ##
+      ##   |data| : JSON object : The log's data.  Its |timestamp| is
+      ##   replaced by the time Apploach saves the log.
+      ##
+      ## Response.
+      ##
+      ##   |log_id| : ID : The log's ID.
+      ##
+      ##   |timestamp| : Timestamp : The log's data's |timestamp|.
+      return Promise->all ([
+        $self->new_nobj_list (['operator', 'target', 'verb']),
+        $self->ids (1),
+      ])->then (sub {
+        my ($operator, $target, $verb) = @{$_[0]->[0]};
+        my ($log_id) = @{$_[0]->[1]};
+        my $data = $self->json_object_param ('data');
+        my $time = time;
+        $data->{timestamp} = $time;
+        return $self->db->insert ('log', [{
+          ($self->app_id_columns),
+          log_id => $log_id,
+          ($operator->to_columns ('operator')),
+          ($target->to_columns ('target')),
+          ($verb->to_columns ('verb')),
+          data => Dongry::Type->serialize ('json', $data),
+          timestamp => $time,
+        }], source_name => 'master')->then (sub {
+          return $self->json ({
+            log_id => ''.$log_id,
+            timestamp => $time,
+          });
+        });
+      });
+    } elsif (@{$self->{path}} == 1 and $self->{path}->[0] eq 'logs.json') {
+      ## /{app_id}/nobj/logs.json - Get logs.
+      ##
+      ## Parameters.
+      ##
+      ##   |log_id| : ID : The log's ID.
+      ##
+      ##   NObj (|operator|) : The log's operator NObj.
+      ##
+      ##   NObj (|object|) : The log's object NObj.
+      ##
+      ##   NObj (|verb|) : The log's object NObj.  At least one of
+      ##   these four parameters should be specified.  Logs matching
+      ##   with these four parameters are returned in the response.
+      ##
+      ##   Pages.
+      ##
+      ## List response of logs.
+      ##
+      ##   |log_id| : Id : The log's ID.
+      ##
+      ##   NObj (|operator|) : The log's operator NObj.
+      ##
+      ##   NObj (|target|) : The log's target NObj.
+      ##
+      ##   NObj (|verb|) : The log's verb NObj.
+      ##
+      ##   |data| : JSON Object : The log's data.
+      my $s = $self->{app}->bare_param ('operator_nobj_key');
+      my $o = $self->{app}->bare_param ('target_nobj_key');
+      my $v = $self->{app}->bare_param ('verb_nobj_key');
+      my $page = Pager::this_page ($self, limit => 10, max_limit => 1000);
+      return Promise->all ([
+        $self->_no ([$s, $o, $v]),
+      ])->then (sub {
+        my ($subj, $obj, $verb) = @{$_[0]->[0]};
+        return [] if defined $v and $verb->is_error;
+        return [] if defined $s and $subj->is_error;
+        return [] if defined $o and $obj->is_error;
+
+        my $where = {
+          ($self->app_id_columns),
+        };
+        if (not $subj->is_error) {
+          $where = {
+            %$where,
+            ($subj->to_columns ('operator')),
+          };
+        }
+        if (not $verb->is_error) {
+          $where = {
+            %$where,
+            ($verb->to_columns ('verb')),
+          };
+        }
+        if (not $obj->is_error) {
+          $where = {
+            %$where,
+            ($obj->to_columns ('target')),
+          };
+        }
+        my $id = $self->{app}->bare_param ('log_id');
+        if (defined $id) {
+          $where->{log_id} = $id;
+        }
+        $where->{timestamp} = $page->{value} if defined $page->{value};
+
+        return $self->db->select ('log', $where, fields => [
+          'operator_nobj_id', 'target_nobj_id', 'verb_nobj_id',
+          'data', 'timestamp', 'log_id',
+        ], source_name => 'master',
+          offset => $page->{offset}, limit => $page->{limit},
+          order => ['timestamp', $page->{order_direction}],
+        )->then (sub {
+          return $self->replace_nobj_ids ($_[0]->all->to_a, ['operator', 'target', 'verb']);
+        });
+      })->then (sub {
+        my $items = $_[0];
+        my $next_page = Pager::next_page $page, $items, 'timestamp';
+        for (@$items) {
+          delete $_->{timestamp};
+          $_->{log_id} .= '';
+          $_->{data} = Dongry::Type->parse ('json', $_->{data});
+        }
+        return $self->json ({items => $items, %$next_page});
+      });
+    }
+
     if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'changeauthor.json') {
       ## /{app_id}/nobj/changeauthor.json - Change the author of an
       ## NObj.
