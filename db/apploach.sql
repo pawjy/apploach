@@ -64,3 +64,19 @@ create table `follow` (
   key (`app_id`, `timestamp`),
   key (`timestamp`)
 ) default charset=binary engine=innodb;
+
+create table `log` (
+  `app_id` bigint unsigned not null,
+  `log_id` bigint unsigned not null,
+  `target_nobj_id` bigint unsigned not null,
+  `verb_nobj_id` bigint unsigned not null,
+  `operator_nobj_id` bigint unsigned not null,
+  `data` mediumblob not null,
+  `timestamp` double not null,
+  primary key (`log_id`),
+  key (`app_id`, `target_nobj_id`, `timestamp`),
+  key (`app_id`, `verb_nobj_id`, `timestamp`),
+  key (`app_id`, `operator_nobj_id`, `timestamp`),
+  key (`app_id`, `timestamp`),
+  key (`timestamp`)
+) default charset=binary engine=innodb;

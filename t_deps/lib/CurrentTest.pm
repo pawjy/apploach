@@ -439,6 +439,19 @@ sub create_follow ($$$) {
   });
 } # create_follow
 
+sub create_log ($$$) {
+  my ($self, $name, $opts) = @_;
+  return $self->json (['nobj', 'addlog.json'], {
+    ($self->_nobj ('operator', $opts)),
+    ($self->_nobj ('target', $opts)),
+    ($self->_nobj ('verb', $opts)),
+    data => $opts->{data} // {},
+  }, app => $opts->{app})->then (sub {
+    my $result = $_[0];
+    $self->set_o ($name => $result->{json});
+  });
+} # create_log
+
 1;
 
 =head1 LICENSE
