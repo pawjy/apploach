@@ -29,6 +29,7 @@ Test {
     return $current->are_errors (
       [['comment', 'edit.json'], {
         comment_id => $current->o ('c1')->{comment_id},
+        operator_nobj_key => $current->generate_key (rand, {}),
       }],
       [
         {p => {comment_id => undef},
@@ -56,6 +57,7 @@ Test {
         foo => $current->generate_text (text5 => {}),
       },
       author_status => 10,
+      operator_nobj_key => $current->generate_key (rand, {}),
     });
   })->then (sub {
     return $current->json (['comment', 'list.json'], {
@@ -112,6 +114,7 @@ Test {
         abc => $current->generate_text (text5 => {}),
       },
       admin_status => 53,
+      operator_nobj_key => $current->generate_key (rand, {}),
     });
   })->then (sub {
     return $current->json (['comment', 'list.json'], {
@@ -161,6 +164,7 @@ Test {
   })->then (sub {
     return $current->json (['comment', 'edit.json'], {
       comment_id => $current->o ('c1')->{comment_id},
+      operator_nobj_key => $current->generate_key (rand, {}),
     });
   })->then (sub {
     return $current->json (['comment', 'list.json'], {
@@ -252,7 +256,14 @@ Test {
         body => $current->generate_text (t5 => {}),
       },
       validate_operator_is_author => 1,
-    }], [{reason => 'Bad operator'}]);
+    }], [{reason => 'Bad |operator_nobj_key|'}]);
+  })->then (sub {
+    return $current->are_errors ([['comment', 'edit.json'], {
+      comment_id => $current->o ('c1')->{comment_id},
+      data_delta => {
+        body => $current->generate_text (t6 => {}),
+      },
+    }], [{reason => 'Bad |operator_nobj_key|'}]);
   })->then (sub {
     return $current->json (['comment', 'list.json'], {
       comment_id => $current->o ('c1')->{comment_id},
@@ -264,7 +275,7 @@ Test {
       is $c->{data}->{body}, $current->o ('t4');
     } $current->c, name => 'validation failed because of missing operator';
   });
-} n => 6, name => 'author validation';
+} n => 7, name => 'author validation';
 
 RUN;
 
