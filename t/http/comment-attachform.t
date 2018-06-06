@@ -55,6 +55,13 @@ Test {
       my $res = $_[0];
       die $res unless $res->is_success;
       $url = Web::URL->parse_string ($result->{json}->{file}->{file_url});
+      $current->client_for ($url)->request (url => $url);
+    })->then (sub {
+      my $res = $_[0];
+      test {
+        is $res->status, 403;
+      } $current->c;
+      $url = Web::URL->parse_string ($result->{json}->{file}->{signed_url});
       return $current->client_for ($url)->request (
         url => $url,
       );
@@ -75,11 +82,30 @@ Test {
       my $v = $result->{json}->{items}->[0];
       is 0+@{$v->{data}->{files}}, 1;
       is $v->{data}->{files}->[0]->{file_url}, $current->o ('file1')->{file_url};
+      ok $v->{data}->{files}->[0]->{signed_url};
       is $v->{data}->{files}->[0]->{mime_type}, $current->o ('file1')->{mime_type};
       is $v->{data}->{files}->[0]->{byte_length}, $current->o ('file1')->{byte_length};
     } $current->c;
+    my $url = Web::URL->parse_string ($result->{json}->{items}->[0]->{data}->{files}->[0]->{file_url});
+    return $current->client_for ($url)->request (url => $url)->then (sub {
+      my $res = $_[0];
+      test {
+        is $res->status, 403;
+      } $current->c;
+      $url = Web::URL->parse_string ($result->{json}->{items}->[0]->{data}->{files}->[0]->{signed_url});
+      return $current->client_for ($url)->request (
+        url => $url,
+      );
+    })->then (sub {
+      my $res = $_[0];
+      test {
+        is $res->status, 200;
+        is $res->header ('content-type'), 'application/octet-stream';
+        is $res->body_bytes, $current->o ('k1');
+      } $current->c;
+    });
   });
-} n => 13, name => 'attach a file';
+} n => 19, name => 'attach a file';
 
 RUN;
 

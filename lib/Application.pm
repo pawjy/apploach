@@ -519,6 +519,9 @@ sub prepare_upload ($$%) {
   ##   |prefix| : String : The URL path prefix of the file in the
   ##   storage.
   ##
+  ##   |signed_url_max_age| : Integer : The lifetime of the
+  ##   |signed_url| to be returned.
+  ##
   ## File upload information.
   ##
   ##   |form_data| : Object : The |name|/|value| pairs of |hidden|
@@ -530,7 +533,11 @@ sub prepare_upload ($$%) {
   ##
   ##   |file| : Object.
   ##
-  ##     |file_url| : String : The result URL of the file.
+  ##     |file_url| : String : The result URL of the file.  Note that
+  ##     this URL is not world-accessible.
+  ##
+  ##     |signed_url| : String : The signed URL of the file, which can
+  ##     be used to access to the file content.
   ##
   ##     |mime_type| : String : The MIME type of the file.
   ##
@@ -583,7 +590,7 @@ sub prepare_upload ($$%) {
             "Statement" => [
               {'Sid' => "Stmt1",
                "Effect" => "Allow",
-               "Action" => ["s3:PutObject", "s3:PutObjectAcl"],
+               "Action" => ["s3:PutObject", "s3:PutObjectAcl", "s3:GetObject"],
                "Resource" => "arn:aws:s3:::$bucket/*"},
             ],
           }),
@@ -606,7 +613,7 @@ sub prepare_upload ($$%) {
             ('SessionToken')->[0]->text_content;
       });
     })->then (sub {
-      my $acl = "public-read";
+      my $acl = 'private';
       #my $redirect_url = ...;
       my $form_data = Web::Transport::AWS->aws4_post_policy
           (clock => Web::DateTime::Clock->realtime_clock,
@@ -624,6 +631,18 @@ sub prepare_upload ($$%) {
              {"Content-Type" => $args{mime_type}},
              ["content-length-range", $args{byte_length}, $args{byte_length}],
            ]);
+
+      my $signed = Web::Transport::AWS->aws4_signed_url
+          (clock => Web::DateTime::Clock->realtime_clock,
+           max_age => $args{signed_url_max_age} // 60*10,
+           access_key_id => $accesskey,
+           secret_access_key => $secret,
+           security_token => $token,
+           region => $region,
+           service => 's3',
+           method => 'GET',
+           url => Web::URL->parse_string ($file_url));
+      
       return {
         form_data => {
           key => $key,
@@ -635,6 +654,7 @@ sub prepare_upload ($$%) {
         form_url => $self->{config}->{s3_form_url},
         file => {
           file_url => $file_url,
+          signed_url => $signed->stringify,
           mime_type => $args{mime_type},
           byte_length => 0+$args{byte_length},
         },
@@ -777,6 +797,9 @@ sub run ($) {
       ##
       ##   Pages.
       ##
+      ##   |signed_url_max_age| : Integer : The lifetime of the
+      ##   |signed_url| in the |files| of the comment's data, if any.
+      ##
       ## List response of comments.
       ##
       ##   NObj (|thread|) : The comment's thread.
@@ -830,11 +853,29 @@ sub run ($) {
         });
       })->then (sub {
         my $items = $_[0];
+        my $signed_max_age = $self->{app}->bare_param ('signed_url_max_age') // 60*10;
         for my $item (@$items) {
           $item->{comment_id} .= '';
           $item->{data} = Dongry::Type->parse ('json', $item->{data});
           $item->{internal_data} = Dongry::Type->parse ('json', $item->{internal_data})
               if defined $item->{internal_data};
+          if (ref $item->{data}->{files} eq 'ARRAY') {
+            for (@{$item->{data}->{files}}) {
+              my $url = Web::URL->parse_string ($_->{file_url});
+              next unless defined $url and $url->is_http_s;
+              my $signed = Web::Transport::AWS->aws4_signed_url
+                  (clock => Web::DateTime::Clock->realtime_clock,
+                   max_age => $signed_max_age,
+                   access_key_id => $self->{config}->{s3_aws4}->[0],
+                   secret_access_key => $self->{config}->{s3_aws4}->[1],
+                   #security_token => 
+                   region => $self->{config}->{s3_aws4}->[2],
+                   service => 's3',
+                   method => 'GET',
+                   url => $url);
+              $_->{signed_url} = $signed->stringify;
+            }
+          }
         }
         return $self->replace_nobj_ids ($items, ['author', 'thread'])->then (sub {
           my $next_page = Pager::next_page $page, $items, 'timestamp';
