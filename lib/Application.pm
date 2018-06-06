@@ -689,7 +689,7 @@ sub edit_comment ($$$%) {
     for my $name (qw(data internal_data)) {
       my $delta = $args{$name.'_delta'};
       $updates->{$name} = Dongry::Type->parse ('json', $current->{$name});
-      if ($name eq 'data' and @{$args{files_delta}}) {
+      if ($name eq 'data' and @{$args{files_delta} or []}) {
         $delta->{files} = $updates->{$name}->{files} || [];
         $delta->{files} = [] unless ref $delta->{files} eq 'ARRAY';
         push @{$delta->{files}}, @{$args{files_delta}};
