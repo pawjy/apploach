@@ -9,6 +9,10 @@ use Dongry::Type::JSONPS;
 use Promise;
 use Promised::Flow;
 use Dongry::Database;
+use Web::DOM::Document;
+use Web::XML::Parser;
+use Web::Transport::AWS;
+use Web::DateTime::Clock;
 
 use NObj;
 use Pager;
@@ -502,6 +506,249 @@ sub set_status_info ($$$$$$$) {
   });
 } # set_status_info
 
+sub prepare_upload ($$%) {
+  my ($self, $tr, %args) = @_;
+  ## File upload parameters.
+  ##
+  ##   |mime_type| : String : The MIME type essence of the file to be
+  ##   submitted.
+  ##
+  ##   |byte_length| : Integer : The byte length of the file to be
+  ##   submitted.
+  ##
+  ##   |prefix| : String : The URL path prefix of the file in the
+  ##   storage.
+  ##
+  ## File upload information.
+  ##
+  ##   |form_data| : Object : The |name|/|value| pairs of |hidden|
+  ##   form data.
+  ##
+  ##   |form_url| : String : The |action| URL of the form.
+  ##
+  ##   |form_expires| : Timestamp : The expiration time of the form.
+  ##
+  ##   |file| : Object.
+  ##
+  ##     |file_url| : String : The result URL of the file.
+  ##
+  ##     |mime_type| : String : The MIME type of the file.
+  ##
+  ##     |byte_length| : Integer : The byte length of the file.
+  return $self->db_ids ($tr, 1)->then (sub {
+    my ($key) = @{$_[0]};
+    $key = $args{prefix} . '/' . $key;
+
+    die $self->throw ({reason => "Bad MIME type"})
+        unless defined $args{mime_type} and
+               $args{mime_type} =~ m{\A[\x21-\x7E]+\z};
+    die $self->throw ({reason => "Bad byte length"})
+        unless defined $args{byte_length} and
+               $args{byte_length} =~ /\A[0-9]+\z/ and
+               $args{byte_length} <= 10*1024*1024*1024;
+               ## This is a hard limit.  Applications should enforce
+               ## its own limit, if necessary.
+    die "Bad prefix"
+        unless defined $args{prefix} and length $args{prefix};
+    
+    #my $file_url = "https://$service-$region.amazonaws.com/$bucket/$key";
+    #my $file_url = "https://$bucket/$key";
+    my $file_url = $self->{config}->{s3_file_url_prefix} . $key;
+    my $bucket = $self->{config}->{s3_bucket};
+    my $accesskey = $self->{config}->{s3_aws4}->[0];
+    my $secret = $self->{config}->{s3_aws4}->[1];
+    my $region = $self->{config}->{s3_aws4}->[2];
+    my $token;
+    my $expires;
+    my $max_age = 60*60;
+    
+    return Promise->resolve->then (sub {
+      my $sts_role_arn = $self->{config}->{s3_sts_role_arn};
+      return unless defined $sts_role_arn;
+      my $sts_url = Web::URL->parse_string
+          (qq<https://sts.$region.amazonaws.com/>);
+      my $sts_client = Web::Transport::ConnectionClient->new_from_url
+          ($sts_url);
+      $expires = time + $max_age;
+      return $sts_client->request (
+        url => $sts_url,
+        params => {
+          Version => '2011-06-15',
+          Action => 'AssumeRole',
+          ## Maximum length = 64 (sha1_hex length = 40)
+          RoleSessionName => 'apploach-' . sha1_hex (Dongry::Type->serialize ('text', $args{prefix})),
+          RoleArn => $sts_role_arn,
+          Policy => perl2json_chars ({
+            "Version" => "2012-10-17",
+            "Statement" => [
+              {'Sid' => "Stmt1",
+               "Effect" => "Allow",
+               "Action" => ["s3:PutObject", "s3:PutObjectAcl"],
+               "Resource" => "arn:aws:s3:::$bucket/*"},
+            ],
+          }),
+          DurationSeconds => $max_age,
+        },
+        aws4 => [$accesskey, $secret, $region, 'sts'],
+      )->then (sub {
+        my $res = $_[0];
+        die $res unless $res->status == 200;
+
+        my $doc = new Web::DOM::Document;
+        my $parser = new Web::XML::Parser;
+        $parser->onerror (sub { });
+        $parser->parse_byte_string ('utf-8', $res->body_bytes => $doc);
+        $accesskey = $doc->get_elements_by_tag_name
+            ('AccessKeyId')->[0]->text_content;
+        $secret = $doc->get_elements_by_tag_name
+            ('SecretAccessKey')->[0]->text_content;
+        $token = $doc->get_elements_by_tag_name
+            ('SessionToken')->[0]->text_content;
+      });
+    })->then (sub {
+      my $acl = "public-read";
+      #my $redirect_url = ...;
+      my $form_data = Web::Transport::AWS->aws4_post_policy
+          (clock => Web::DateTime::Clock->realtime_clock,
+           max_age => $max_age,
+           access_key_id => $accesskey,
+           secret_access_key => $secret,
+           security_token => $token,
+           region => $region,
+           service => 's3',
+           policy_conditions => [
+             {"bucket" => $bucket},
+             {"key", $key}, #["starts-with", q{$key}, $prefix],
+             {"acl" => $acl},
+             #{"success_action_redirect" => $redirect_url},
+             {"Content-Type" => $args{mime_type}},
+             ["content-length-range", $args{byte_length}, $args{byte_length}],
+           ]);
+      return {
+        form_data => {
+          key => $key,
+          acl => $acl,
+          #success_action_redirect => $redirect_url,
+          "Content-Type" => $args{mime_type},
+          %$form_data,
+        },
+        form_url => $self->{config}->{s3_form_url},
+        file => {
+          file_url => $file_url,
+          mime_type => $args{mime_type},
+          byte_length => 0+$args{byte_length},
+        },
+      };
+    });
+  });
+} # prepare_upload
+
+sub edit_comment ($$$%) {
+  my ($self, $tr, $comment_id, %args) = @_;
+  return Promise->resolve->then (sub {
+    return $tr->select ('comment', {
+      ($self->app_id_columns),
+      comment_id => Dongry::Type->serialize ('text', $comment_id),
+    }, fields => [
+      'comment_id', 'data', 'internal_data',
+      'author_nobj_id',
+      'author_status', 'owner_status', 'admin_status',
+    ], lock => 'update');
+  })->then (sub {
+    my $current = $_[0]->first;
+    return $self->throw ({reason => 'Object not found'})
+        unless defined $current;
+
+    if ($args{validate_operator_is_author}) {
+      if (not $current->{author_nobj_id} eq $args{operator_nobj}->nobj_id) {
+        return $self->throw ({reason => 'Bad operator'});
+      }
+    }
+    
+    my $updates = {};
+    for my $name (qw(data internal_data)) {
+      my $delta = $args{$name.'_delta'};
+      $updates->{$name} = Dongry::Type->parse ('json', $current->{$name});
+      if ($name eq 'data' and @{$args{files_delta}}) {
+        $delta->{files} = $updates->{$name}->{files} || [];
+        $delta->{files} = [] unless ref $delta->{files} eq 'ARRAY';
+        push @{$delta->{files}}, @{$args{files_delta}};
+      }
+      next unless defined $delta;
+      next unless keys %$delta;
+      my $changed = 0;
+      for (keys %$delta) {
+        if (defined $delta->{$_}) {
+          if (not defined $updates->{$name}->{$_} or
+              $updates->{$name}->{$_} ne $delta->{$_}) {
+            $updates->{$name}->{$_} = $delta->{$_};
+            $changed = 1;
+            if ($_ eq 'timestamp') {
+              $updates->{timestamp} = 0+$updates->{$name}->{$_};
+            }
+          }
+        } else {
+          if (defined $updates->{$name}->{$_}) {
+            delete $updates->{$name}->{$_};
+            $changed = 1;
+            if ($_ eq 'timestamp') {
+              $updates->{timestamp} = 0;
+            }
+          }
+        }
+      }
+      delete $updates->{$name} unless $changed;
+    } # $name
+    for (qw(author_status owner_status admin_status)) {
+      my $v = $args{$_};
+      next unless defined $v;
+      return $self->throw ({reason => "Bad |$_|"})
+          unless $v =~ /\A[1-9][0-9]*\z/ and 1 < $v and $v < 255;
+      $updates->{$_} = 0+$v if $current->{$_} != $v;
+    } # status
+
+    for (qw(data internal_data)) {
+      $updates->{$_} = Dongry::Type->serialize ('json', $updates->{$_})
+          if defined $updates->{$_};
+    }
+    
+    my $d1 = $args{status_info_author_data};
+    my $d2 = $args{status_info_owner_data};
+    my $d3 = $args{status_info_admin_data};
+    return Promise->resolve->then (sub {
+      return unless $updates->{author_status} or
+          $updates->{owner_status} or
+          $updates->{admin_status} or
+          defined $d1 or defined $d2 or defined $d3;
+      my $data = {
+        old => {
+          author_status => $current->{author_status},
+          owner_status => $current->{owner_status},
+          admin_status => $current->{admin_status},
+        },
+        new => {
+          author_status => $updates->{author_status} // $current->{author_status},
+          owner_status => $updates->{owner_status} // $current->{owner_status},
+          admin_status => $updates->{admin_status} // $current->{admin_status},
+        },
+      };
+      return $self->set_status_info
+          ($tr,
+           ($args{operator_nobj} // die "No |operator|"),
+           ($args{comment_nobj} // die "No |comment_nobj|"),
+           ($args{set_status_nobj} // die "No |set_status_nobj|"),
+           $data, $d1, $d2, $d3);
+    })->then (sub {
+      return unless keys %$updates;
+      return $tr->update ('comment', $updates, where => {
+        ($self->app_id_columns),
+        comment_id => $current->{comment_id},
+      });
+    });
+    # XXX notifications
+  });
+} # edit_comment
+
 sub run ($) {
   my $self = $_[0];
 
@@ -671,8 +918,8 @@ sub run ($) {
       ##   |status_info_owner_data| : JSON Object : The comment NObj's
       ##   status info's owner data.  Optional if no change.
       ##
-      ##   |status_info_admin_data| : JSON Object : The comment NObj's
-      ##   status info's admin data.  Optional if no change.
+      ##   |status_info_admin_data| : JSON Object : The comment
+      ##   NObj's status info's admin data.  Optional if no change.
       ##
       ##   NObj (|operator|) : The operator of this editing.
       ##   Required.
@@ -694,105 +941,81 @@ sub run ($) {
         return $self->db->transaction;
       })->then (sub {
         my $tr = $_[0];
-        return Promise->resolve->then (sub {
-          return $tr->select ('comment', {
-            ($self->app_id_columns),
-            comment_id => $comment_id,
-          }, fields => [
-            'comment_id', 'data', 'internal_data',
-            'author_nobj_id',
-            'author_status', 'owner_status', 'admin_status',
-          ], lock => 'update');
-        })->then (sub {
-          my $current = $_[0]->first;
-          return $self->throw ({reason => 'Object not found'})
-              unless defined $current;
-
-          if ($self->{app}->bare_param ('validate_operator_is_author')) {
-            if (not $current->{author_nobj_id} eq $operator->nobj_id) {
-              return $self->throw ({reason => 'Bad operator'});
-            }
-          }
-          
-          my $updates = {};
-          for my $name (qw(data internal_data)) {
-            my $delta = $self->optional_json_object_param ($name.'_delta');
-            next unless defined $delta;
-            next unless keys %$delta;
-            $updates->{$name} = Dongry::Type->parse ('json', $current->{$name});
-            my $changed = 0;
-            for (keys %$delta) {
-              if (defined $delta->{$_}) {
-                if (not defined $updates->{$name}->{$_} or
-                    $updates->{$name}->{$_} ne $delta->{$_}) {
-                  $updates->{$name}->{$_} = $delta->{$_};
-                  $changed = 1;
-                  if ($_ eq 'timestamp') {
-                    $updates->{timestamp} = 0+$updates->{$name}->{$_};
-                  }
-                }
-              } else {
-                if (defined $updates->{$name}->{$_}) {
-                  delete $updates->{$name}->{$_};
-                  $changed = 1;
-                  if ($_ eq 'timestamp') {
-                    $updates->{timestamp} = 0;
-                  }
-                }
-              }
-            }
-            delete $updates->{$name} unless $changed;
-          } # $name
-          for (qw(author_status owner_status admin_status)) {
-            my $v = $self->{app}->bare_param ($_);
-            next unless defined $v;
-            return $self->throw ({reason => "Bad |$_|"})
-                unless $v =~ /\A[1-9][0-9]*\z/ and 1 < $v and $v < 255;
-            $updates->{$_} = 0+$v if $current->{$_} != $v;
-          } # status
-
-          for (qw(data internal_data)) {
-            $updates->{$_} = Dongry::Type->serialize ('json', $updates->{$_})
-                if defined $updates->{$_};
-          }
-          
-          my $d1 = $self->optional_json_object_param ('status_info_author_data');
-          my $d2 = $self->optional_json_object_param ('status_info_owner_data');
-          my $d3 = $self->optional_json_object_param ('status_info_admin_data');
-          return Promise->resolve->then (sub {
-            return unless $updates->{author_status} or
-                $updates->{owner_status} or
-                $updates->{admin_status} or
-                defined $d1 or defined $d2 or defined $d3;
-            my $data = {
-              old => {
-                author_status => $current->{author_status},
-                owner_status => $current->{owner_status},
-                admin_status => $current->{admin_status},
-              },
-              new => {
-                author_status => $updates->{author_status} // $current->{author_status},
-                owner_status => $updates->{owner_status} // $current->{owner_status},
-                admin_status => $updates->{admin_status} // $current->{admin_status},
-              },
-            };
-            return $self->set_status_info
-                ($tr, $operator, $cnobj, $ssnobj, $data, $d1, $d2, $d3);
-          })->then (sub {
-            return unless keys %$updates;
-            return $tr->update ('comment', $updates, where => {
-              ($self->app_id_columns),
-              comment_id => $current->{comment_id},
-            });
-          });
-          # XXX notifications
-        })->then (sub {
+        return $self->edit_comment ($tr, $comment_id,
+          data_delta => $self->optional_json_object_param ('data_delta'),
+          internal_data_delta => $self->optional_json_object_param ('internal_data_delta'),
+          validate_operator_is_author => $self->{app}->bare_param ('validate_operator_is_author'),
+          operator_nobj => $operator,
+          comment_nobj => $cnobj,
+          set_status_nobj => $ssnobj,
+          author_status => $self->{app}->bare_param ('author_status'),
+          owner_status => $self->{app}->bare_param ('owner_status'),
+          admin_status => $self->{app}->bare_param ('admin_status'),
+          status_info_author_data => $self->optional_json_object_param ('status_info_author_data'),
+          status_info_owner_data => $self->optional_json_object_param ('status_info_owner_data'),
+          status_info_admin_data => $self->optional_json_object_param ('status_info_admin_data'),
+        )->then (sub {
           return $tr->commit->then (sub { undef $tr });
         })->finally (sub {
           return $tr->rollback if defined $tr;
         }); # transaction
       })->then (sub {
         return $self->json ({});
+      });
+    } elsif (@{$self->{path}} == 1 and $self->{path}->[0] eq 'attachform.json') {
+      ## /{app_id}/comment/attachform.json - Create a form to attach a
+      ## file to the comment.
+      ##
+      ## Parameters.
+      ##
+      ##   |comment_id| : ID : The comment's ID.
+      ##
+      ##   NObj (|operator|) : The operator of this editing.
+      ##   Required.
+      ##
+      ##   |validate_operator_is_author| : Boolean : Whether the
+      ##   operator has to be the comment's author or not.
+      ##
+      ##   File upload parameters: |mime_type| and |byte_length|.
+      ##
+      ## Response.
+      ##
+      ##   File upload information.
+      ##
+      ## This end point creates a file upload form and associate it
+      ## with the comment.  The comment's data's |files| is set to an
+      ## array which contains the |file| value of the created file
+      ## upload information.
+      my $operator;
+      my $cnobj;
+      my $comment_id = $self->id_param ('comment');
+      return Promise->all ([
+        $self->new_nobj_list (['operator',
+                               \('apploach-comment-' . $comment_id)]),
+      ])->then (sub {
+        ($operator, $cnobj) = @{$_[0]->[0]};
+        return $self->db->transaction;
+      })->then (sub {
+        my $tr = $_[0];
+        return $self->prepare_upload ($tr,
+          mime_type => $self->{app}->bare_param ('mime_type'),
+          byte_length => $self->{app}->bare_param ('byte_length'),
+          prefix => 'apploach/comment/' . $comment_id,
+        )->then (sub {
+          my $result = $_[0];
+          return $self->edit_comment ($tr, $comment_id,
+            files_delta => [$result->{file}],
+            validate_operator_is_author => $self->{app}->bare_param ('validate_operator_is_author'),
+            operator_nobj => $operator,
+            comment_nobj => $cnobj,
+          )->then (sub {
+            return $tr->commit->then (sub { undef $tr });
+          })->then (sub {
+            return $self->json ($result);
+          });
+        })->finally (sub {
+          return $tr->rollback if defined $tr;
+        }); # transaction
       });
     }
   } # comment

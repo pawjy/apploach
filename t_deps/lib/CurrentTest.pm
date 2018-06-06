@@ -30,10 +30,15 @@ sub url ($$) {
 
 sub client ($) {
   my ($self) = @_;
-  $self->{client} ||= Web::Transport::BasicClient->new_from_url ($self->url ('/'), {
+  return $self->client_for ($self->url ('/'));
+} # client
+
+sub client_for ($$) {
+  my ($self, $url) = @_;
+  $self->{clients}->{$url->get_origin->to_ascii} ||= Web::Transport::BasicClient->new_from_url ($url, {
     proxy_manager => Web::Transport::ENVProxyManager->new_from_envs ($self->{server_data}->{local_envs}),
   });
-} # client
+} # client_for
 
 sub o ($$) {
   my ($self, $name) = @_;
@@ -355,7 +360,7 @@ sub pages_ok ($$$$;$) {
 sub close ($) {
   my $self = $_[0];
   return Promise->all ([
-    defined $self->{client} ? $self->{client}->close : undef,
+    map { $_->close } grep { defined $_ } values %{$self->{clients} or {}},
   ]);
 } # close
 
