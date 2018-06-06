@@ -16,7 +16,10 @@ Test {
                    data => {foo => $current->generate_text (g1 => {})}}],
     [l2 => log => {status_info => 1, operator => 'a1',
                    target => 't2', verb => 'v1',
-                   data => {foo => $current->generate_text (g2 => {})}}],
+                   data => {foo => $current->generate_text (g2 => {})},
+                   author_data => {foo => $current->generate_text (g3 => {})},
+                   owner_data => {foo => $current->generate_text (g4 => {})},
+                   admin_data => {foo => $current->generate_text (g5 => {})}}],
   )->then (sub {
     return $current->json (['nobj', 'statusinfo.json'], {
       target_nobj_key => $current->o ('t1')->{nobj_key},
@@ -26,9 +29,12 @@ Test {
     test {
       is 0+keys %{$result->{json}->{info}}, 1;
       my $log = $result->{json}->{info}->{$current->o ('t1')->{nobj_key}};
-      is $log->{log_id}, $current->o ('l1')->{log_id};
-      is $log->{timestamp}, $current->o ('l1')->{timestamp};
-      is $log->{foo}, $current->o ('g1');
+      is $log->{data}->{log_id}, $current->o ('l1')->{log_id};
+      is $log->{data}->{timestamp}, $current->o ('l1')->{timestamp};
+      is $log->{data}->{foo}, $current->o ('g1');
+      is 0+keys %{$log->{author_data}}, 0;
+      is 0+keys %{$log->{owner_data}}, 0;
+      is 0+keys %{$log->{admin_data}}, 0;
     } $current->c, name => 'statusinfo.json';
     return $current->json (['nobj', 'statusinfo.json'], {
       target_nobj_key => [$current->o ('t1')->{nobj_key},
@@ -41,13 +47,19 @@ Test {
     test {
       is 0+keys %{$result->{json}->{info}}, 2;
       my $log = $result->{json}->{info}->{$current->o ('t1')->{nobj_key}};
-      is $log->{log_id}, $current->o ('l1')->{log_id};
-      is $log->{timestamp}, $current->o ('l1')->{timestamp};
-      is $log->{foo}, $current->o ('g1');
+      is $log->{data}->{log_id}, $current->o ('l1')->{log_id};
+      is $log->{data}->{timestamp}, $current->o ('l1')->{timestamp};
+      is $log->{data}->{foo}, $current->o ('g1');
+      is 0+keys %{$log->{author_data}}, 0;
+      is 0+keys %{$log->{owner_data}}, 0;
+      is 0+keys %{$log->{admin_data}}, 0;
       my $log2 = $result->{json}->{info}->{$current->o ('t2')->{nobj_key}};
-      is $log2->{log_id}, $current->o ('l2')->{log_id};
-      is $log2->{timestamp}, $current->o ('l2')->{timestamp};
-      is $log2->{foo}, $current->o ('g2');
+      is $log2->{data}->{log_id}, $current->o ('l2')->{log_id};
+      is $log2->{data}->{timestamp}, $current->o ('l2')->{timestamp};
+      is $log2->{data}->{foo}, $current->o ('g2');
+      is $log2->{author_data}->{foo}, $current->o ('g3');
+      is $log2->{owner_data}->{foo}, $current->o ('g4');
+      is $log2->{admin_data}->{foo}, $current->o ('g5');
     } $current->c, name => 'statusinfo.json';
     return $current->json (['nobj', 'statusinfo.json'], {
     });
@@ -57,7 +69,7 @@ Test {
       is 0+keys %{$result->{json}->{info}}, 0;
     } $current->c, name => 'statusinfo.json';
   });
-} n => 12, name => 'statusinfo';
+} n => 21, name => 'statusinfo';
 
 RUN;
 

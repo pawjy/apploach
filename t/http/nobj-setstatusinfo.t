@@ -19,6 +19,9 @@ Test {
         verb_nobj_key => $current->o ('v1')->{nobj_key},
         operator_nobj_key => $current->o ('a1')->{nobj_key},
         data => {foo => $current->generate_text ('g1' => {})},
+        author_data => {foo => $current->generate_text ('g2' => {})},
+        owner_data => {foo => $current->generate_text ('g3' => {})},
+        admin_data => {foo => $current->generate_text ('g4' => {})},
       }],
       [
         ['new_nobj', 'target'],
@@ -33,6 +36,9 @@ Test {
       verb_nobj_key => $current->o ('v1')->{nobj_key},
       operator_nobj_key => $current->o ('a1')->{nobj_key},
       data => {foo => $current->o ('g1')},
+      author_data => {foo => $current->o ('g2')},
+      owner_data => {foo => $current->o ('g3')},
+      admin_data => {foo => $current->o ('g4')},
     });
   })->then (sub {
     my $result = $_[0];
@@ -53,7 +59,10 @@ Test {
       is $log->{log_id}, $current->o ('l1')->{log_id};
       is $log->{timestamp}, undef;
       is $log->{data}->{timestamp}, $current->o ('l1')->{timestamp};
-      is $log->{data}->{foo}, $current->o ('g1');
+      is $log->{data}->{data}->{foo}, $current->o ('g1');
+      is $log->{data}->{author_data}->{foo}, $current->o ('g2');
+      is $log->{data}->{owner_data}->{foo}, $current->o ('g3');
+      is $log->{data}->{admin_data}->{foo}, $current->o ('g4');
       is $log->{data}->{log_id}, undef;
       is $log->{target_nobj_key}, $current->o ('t1')->{nobj_key};
       is $log->{operator_nobj_key}, $current->o ('a1')->{nobj_key};
@@ -67,15 +76,18 @@ Test {
     test {
       is 0+keys %{$result->{json}->{info}}, 1;
       my $log = $result->{json}->{info}->{$current->o ('t1')->{nobj_key}};
-      is $log->{log_id}, $current->o ('l1')->{log_id};
-      is $log->{timestamp}, $current->o ('l1')->{timestamp};
-      is $log->{foo}, $current->o ('g1');
+      is $log->{data}->{log_id}, $current->o ('l1')->{log_id};
+      is $log->{data}->{timestamp}, $current->o ('l1')->{timestamp};
+      is $log->{data}->{foo}, $current->o ('g1');
+      is $log->{author_data}->{foo}, $current->o ('g2');
+      is $log->{owner_data}->{foo}, $current->o ('g3');
+      is $log->{admin_data}->{foo}, $current->o ('g4');
     } $current->c, name => 'statusinfo.json';
     return $current->json (['nobj', 'setstatusinfo.json'], {
       target_nobj_key => $current->o ('t1')->{nobj_key},
       verb_nobj_key => $current->o ('v2')->{nobj_key},
       operator_nobj_key => $current->o ('a2')->{nobj_key},
-      data => {foo => $current->generate_text ('g2', {})},
+      data => {foo => $current->generate_text ('g5', {})},
     });
   })->then (sub {
     my $result = $_[0];
@@ -95,7 +107,10 @@ Test {
       is $log2->{log_id}, $current->o ('l2')->{log_id};
       is $log2->{timestamp}, undef;
       is $log2->{data}->{timestamp}, $current->o ('l2')->{timestamp};
-      is $log2->{data}->{foo}, $current->o ('g2');
+      is $log2->{data}->{data}->{foo}, $current->o ('g5');
+      is $log2->{data}->{author_data}, undef;
+      is $log2->{data}->{owner_data}, undef;
+      is $log2->{data}->{admin_data}, undef;
       is $log2->{data}->{log_id}, undef;
       is $log2->{target_nobj_key}, $current->o ('t1')->{nobj_key};
       is $log2->{operator_nobj_key}, $current->o ('a2')->{nobj_key};
@@ -104,7 +119,10 @@ Test {
       is $log->{log_id}, $current->o ('l1')->{log_id};
       is $log->{timestamp}, undef;
       is $log->{data}->{timestamp}, $current->o ('l1')->{timestamp};
-      is $log->{data}->{foo}, $current->o ('g1');
+      is $log->{data}->{data}->{foo}, $current->o ('g1');
+      is $log->{data}->{author_data}->{foo}, $current->o ('g2');
+      is $log->{data}->{owner_data}->{foo}, $current->o ('g3');
+      is $log->{data}->{admin_data}->{foo}, $current->o ('g4');
       is $log->{data}->{log_id}, undef;
       is $log->{target_nobj_key}, $current->o ('t1')->{nobj_key};
       is $log->{operator_nobj_key}, $current->o ('a1')->{nobj_key};
@@ -118,12 +136,46 @@ Test {
     test {
       is 0+keys %{$result->{json}->{info}}, 1;
       my $log = $result->{json}->{info}->{$current->o ('t1')->{nobj_key}};
-      is $log->{log_id}, $current->o ('l2')->{log_id};
-      is $log->{timestamp}, $current->o ('l2')->{timestamp};
-      is $log->{foo}, $current->o ('g2');
+      is $log->{data}->{log_id}, $current->o ('l2')->{log_id};
+      is $log->{data}->{timestamp}, $current->o ('l2')->{timestamp};
+      is $log->{data}->{foo}, $current->o ('g5');
+      is $log->{author_data}->{foo}, $current->o ('g2');
+      is $log->{owner_data}->{foo}, $current->o ('g3');
+      is $log->{admin_data}->{foo}, $current->o ('g4');
+    } $current->c, name => 'statusinfo.json';
+    return $current->json (['nobj', 'setstatusinfo.json'], {
+      target_nobj_key => $current->o ('t1')->{nobj_key},
+      verb_nobj_key => $current->o ('v2')->{nobj_key},
+      operator_nobj_key => $current->o ('a2')->{nobj_key},
+      data => {foo => $current->generate_text ('g6', {})},
+      author_data => {foo => $current->generate_text ('g7', {})},
+      owner_data => {foo => $current->generate_text ('g8', {})},
+      admin_data => {foo => $current->generate_text ('g9', {})},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      ok $result->{json}->{log_id};
+      ok $result->{json}->{timestamp};
+      $current->set_o (l3 => $result->{json});
+    } $current->c;
+    return $current->json (['nobj', 'statusinfo.json'], {
+      target_nobj_key => $current->o ('t1')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+keys %{$result->{json}->{info}}, 1;
+      my $log = $result->{json}->{info}->{$current->o ('t1')->{nobj_key}};
+      is $log->{data}->{log_id}, $current->o ('l3')->{log_id};
+      is $log->{data}->{timestamp}, $current->o ('l3')->{timestamp};
+      is $log->{data}->{foo}, $current->o ('g6');
+      is $log->{author_data}->{foo}, $current->o ('g7');
+      is $log->{owner_data}->{foo}, $current->o ('g8');
+      is $log->{admin_data}->{foo}, $current->o ('g9');
     } $current->c, name => 'statusinfo.json';
   });
-} n => 40, name => 'setstatusinfo';
+} n => 64, name => 'setstatusinfo';
 
 RUN;
 
