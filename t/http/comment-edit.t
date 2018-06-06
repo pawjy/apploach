@@ -296,16 +296,18 @@ Test {
     my $result = $_[0];
     test {
       my $v = $result->{json}->{info}->{$current->o ('c1')->{nobj_key}};
-      $current->set_o (l1 => $v);
-      ok $v->{log_id};
-      ok $v->{timestamp};
-      is 0+keys %{$v->{details}}, 0;
-      is $v->{old}->{author_status}, 2;
-      is $v->{old}->{owner_status}, 2;
-      is $v->{old}->{admin_status}, 2;
-      is $v->{new}->{author_status}, 4;
-      is $v->{new}->{owner_status}, 2;
-      is $v->{new}->{admin_status}, 2;
+      $current->set_o (l1 => $v->{data});
+      ok $v->{data}->{log_id};
+      ok $v->{data}->{timestamp};
+      is $v->{data}->{old}->{author_status}, 2;
+      is $v->{data}->{old}->{owner_status}, 2;
+      is $v->{data}->{old}->{admin_status}, 2;
+      is $v->{data}->{new}->{author_status}, 4;
+      is $v->{data}->{new}->{owner_status}, 2;
+      is $v->{data}->{new}->{admin_status}, 2;
+      is 0+keys %{$v->{author_data}}, 0;
+      is 0+keys %{$v->{owner_data}}, 0;
+      is 0+keys %{$v->{admin_data}}, 0;
     } $current->c;
     return $current->json (['nobj', 'logs.json'], {
       log_id => $current->o ('l1')->{log_id},
@@ -316,19 +318,21 @@ Test {
       my $v = $result->{json}->{items}->[0];
       is $v->{log_id}, $current->o ('l1')->{log_id};
       is $v->{data}->{timestamp}, $current->o ('l1')->{timestamp};
-      is 0+keys %{$v->{data}->{details}}, 0;
-      is $v->{data}->{old}->{author_status}, 2;
-      is $v->{data}->{old}->{owner_status}, 2;
-      is $v->{data}->{old}->{admin_status}, 2;
-      is $v->{data}->{new}->{author_status}, 4;
-      is $v->{data}->{new}->{owner_status}, 2;
-      is $v->{data}->{new}->{admin_status}, 2;
+      is $v->{data}->{data}->{old}->{author_status}, 2;
+      is $v->{data}->{data}->{old}->{owner_status}, 2;
+      is $v->{data}->{data}->{old}->{admin_status}, 2;
+      is $v->{data}->{data}->{new}->{author_status}, 4;
+      is $v->{data}->{data}->{new}->{owner_status}, 2;
+      is $v->{data}->{data}->{new}->{admin_status}, 2;
+      is 0+keys %{$v->{data}->{author_data}}, 0;
+      is 0+keys %{$v->{data}->{owner_data}}, 0;
+      is 0+keys %{$v->{data}->{admin_data}}, 0;
       is $v->{operator_nobj_key}, $current->o ('a1')->{nobj_key};
       is $v->{target_nobj_key}, $current->o ('c1')->{nobj_key};
       is $v->{verb_nobj_key}, 'apploach-set-status';
     } $current->c;
   });
-} n => 21, name => 'status, logs';
+} n => 25, name => 'status, logs';
 
 Test {
   my $current = shift;
@@ -340,8 +344,14 @@ Test {
       comment_id => $current->o ('c1')->{comment_id},
       operator_nobj_key => $current->o ('a1')->{nobj_key},
       owner_status => 4,
-      status_info_details => {
+      status_info_author_data => {
         hoge => $current->generate_text (t1 => {}),
+      },
+      status_info_owner_data => {
+        hoge => $current->generate_text (t2 => {}),
+      },
+      status_info_admin_data => {
+        hoge => $current->generate_text (t3 => {}),
       },
     });
   })->then (sub {
@@ -352,17 +362,18 @@ Test {
     my $result = $_[0];
     test {
       my $v = $result->{json}->{info}->{$current->o ('c1')->{nobj_key}};
-      $current->set_o (l1 => $v);
-      ok $v->{log_id};
-      ok $v->{timestamp};
-      is 0+keys %{$v->{details}}, 1;
-      is $v->{details}->{hoge}, $current->o ('t1');
-      is $v->{old}->{author_status}, 2;
-      is $v->{old}->{owner_status}, 2;
-      is $v->{old}->{admin_status}, 2;
-      is $v->{new}->{author_status}, 2;
-      is $v->{new}->{owner_status}, 4;
-      is $v->{new}->{admin_status}, 2;
+      $current->set_o (l1 => $v->{data});
+      ok $v->{data}->{log_id};
+      ok $v->{data}->{timestamp};
+      is $v->{data}->{old}->{author_status}, 2;
+      is $v->{data}->{old}->{owner_status}, 2;
+      is $v->{data}->{old}->{admin_status}, 2;
+      is $v->{data}->{new}->{author_status}, 2;
+      is $v->{data}->{new}->{owner_status}, 4;
+      is $v->{data}->{new}->{admin_status}, 2;
+      is $v->{author_data}->{hoge}, $current->o ('t1');
+      is $v->{owner_data}->{hoge}, $current->o ('t2');
+      is $v->{admin_data}->{hoge}, $current->o ('t3');
     } $current->c;
     return $current->json (['nobj', 'logs.json'], {
       log_id => $current->o ('l1')->{log_id},
@@ -373,20 +384,40 @@ Test {
       my $v = $result->{json}->{items}->[0];
       is $v->{log_id}, $current->o ('l1')->{log_id};
       is $v->{data}->{timestamp}, $current->o ('l1')->{timestamp};
-      is 0+keys %{$v->{data}->{details}}, 1;
-      is $v->{data}->{details}->{hoge}, $current->o ('t1');
-      is $v->{data}->{old}->{author_status}, 2;
-      is $v->{data}->{old}->{owner_status}, 2;
-      is $v->{data}->{old}->{admin_status}, 2;
-      is $v->{data}->{new}->{author_status}, 2;
-      is $v->{data}->{new}->{owner_status}, 4;
-      is $v->{data}->{new}->{admin_status}, 2;
+      is $v->{data}->{data}->{old}->{author_status}, 2;
+      is $v->{data}->{data}->{old}->{owner_status}, 2;
+      is $v->{data}->{data}->{old}->{admin_status}, 2;
+      is $v->{data}->{data}->{new}->{author_status}, 2;
+      is $v->{data}->{data}->{new}->{owner_status}, 4;
+      is $v->{data}->{data}->{new}->{admin_status}, 2;
+      is $v->{data}->{author_data}->{hoge}, $current->o ('t1');
+      is $v->{data}->{owner_data}->{hoge}, $current->o ('t2');
+      is $v->{data}->{admin_data}->{hoge}, $current->o ('t3');
       is $v->{operator_nobj_key}, $current->o ('a1')->{nobj_key};
       is $v->{target_nobj_key}, $current->o ('c1')->{nobj_key};
       is $v->{verb_nobj_key}, 'apploach-set-status';
     } $current->c;
+    return $current->json (['comment', 'edit.json'], {
+      comment_id => $current->o ('c1')->{comment_id},
+      operator_nobj_key => $current->o ('a1')->{nobj_key},
+      status_info_owner_data => {
+        hoge => $current->generate_text (t5 => {}),
+      },
+    });
+  })->then (sub {
+    return $current->json (['nobj', 'statusinfo.json'], {
+      target_nobj_key => $current->o ('c1')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      my $v = $result->{json}->{info}->{$current->o ('c1')->{nobj_key}};
+      is $v->{author_data}->{hoge}, $current->o ('t1');
+      is $v->{owner_data}->{hoge}, $current->o ('t5');
+      is $v->{admin_data}->{hoge}, $current->o ('t3');
+    } $current->c;
   });
-} n => 23, name => 'status, logs - 2';
+} n => 28, name => 'status, logs - 2';
 
 RUN;
 

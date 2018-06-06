@@ -447,6 +447,9 @@ sub create_log ($$$) {
     ($self->_nobj ('target', $opts)),
     ($self->_nobj ('verb', $opts)),
     data => $opts->{data} // {},
+    author_data => $opts->{author_data}, # or undef
+    owner_data => $opts->{owner_data}, # or undef
+    admin_data => $opts->{admin_data}, # or undef
   }, app => $opts->{app})->then (sub {
     my $result = $_[0];
     $self->set_o ($name => $result->{json});

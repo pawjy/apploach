@@ -469,18 +469,29 @@ sub write_log ($$$$$$) {
   });
 } # write_log
 
-sub set_status_info ($$$$) {
-  my ($self, $db_or_tr, $operator, $target, $verb, $data) = @_;
-  return $self->write_log ($db_or_tr, $operator, $target, $verb, $data)->then (sub {
-    $data->{timestamp} = $_[0]->{timestamp}; # redundant
+sub set_status_info ($$$$$$$) {
+  my ($self, $db_or_tr, $operator, $target, $verb, $data, $d1, $d2, $d3) = @_;
+  return $self->write_log ($db_or_tr, $operator, $target, $verb, {
+    data => $data,
+    author_data => $d1,
+    owner_data => $d2,
+    admin_data => $d3,
+  })->then (sub {
+    $data->{timestamp} = $_[0]->{timestamp};
     $data->{log_id} = $_[0]->{log_id};
     return $db_or_tr->insert ('status_info', [{
       ($self->app_id_columns),
       ($target->to_columns ('target')),
       data => Dongry::Type->serialize ('json', $data),
+      author_data => Dongry::Type->serialize ('json', $d1 // {}),
+      owner_data => Dongry::Type->serialize ('json', $d2 // {}),
+      admin_data => Dongry::Type->serialize ('json', $d3 // {}),
       timestamp => 0+$data->{timestamp},
     }], source_name => 'master', duplicate => {
       data => $self->db->bare_sql_fragment ('VALUES(`data`)'),
+      (defined $d1 ? (author_data => $self->db->bare_sql_fragment ('VALUES(`author_data`)')) : ()),
+      (defined $d2 ? (owner_data => $self->db->bare_sql_fragment ('VALUES(`owner_data`)')) : ()),
+      (defined $d3 ? (admin_data => $self->db->bare_sql_fragment ('VALUES(`admin_data`)')) : ()),
       timestamp => $self->db->bare_sql_fragment ('VALUES(`timestamp`)'),
     });
   })->then (sub {
@@ -654,10 +665,14 @@ sub run ($) {
       ##   change.  When statuses are changed, the comment NObj's
       ##   status info is updated (and a log is added).
       ##
-      ##   |status_info_details| : JSON Object : The comment NObj's
-      ##   status info's |details|.  Optional if none of statuses is
-      ##   updated.  If statuses are updated but this is omitted,
-      ##   defaulted to an empty JSON object.
+      ##   |status_info_author_data| : JSON Object : The comment
+      ##   NObj's status info's author data.  Optional if no change.
+      ##
+      ##   |status_info_owner_data| : JSON Object : The comment NObj's
+      ##   status info's owner data.  Optional if no change.
+      ##
+      ##   |status_info_admin_data| : JSON Object : The comment NObj's
+      ##   status info's admin data.  Optional if no change.
       ##
       ##   NObj (|operator|) : The operator of this editing.
       ##   Required.
@@ -741,18 +756,15 @@ sub run ($) {
                 if defined $updates->{$_};
           }
           
-          unless (keys %$updates) {
-            $self->json ({});
-            return $self->{app}->throw;
-          }
-
-          my $sid = $self->optional_json_object_param ('status_info_details');
+          my $d1 = $self->optional_json_object_param ('status_info_author_data');
+          my $d2 = $self->optional_json_object_param ('status_info_owner_data');
+          my $d3 = $self->optional_json_object_param ('status_info_admin_data');
           return Promise->resolve->then (sub {
             return unless $updates->{author_status} or
                 $updates->{owner_status} or
                 $updates->{admin_status} or
-                defined $sid;
-            my $status_info = {
+                defined $d1 or defined $d2 or defined $d3;
+            my $data = {
               old => {
                 author_status => $current->{author_status},
                 owner_status => $current->{owner_status},
@@ -763,10 +775,11 @@ sub run ($) {
                 owner_status => $updates->{owner_status} // $current->{owner_status},
                 admin_status => $updates->{admin_status} // $current->{admin_status},
               },
-              details => $sid // {},
             };
-            return $self->set_status_info ($tr, $operator, $cnobj, $ssnobj, $status_info);
+            return $self->set_status_info
+                ($tr, $operator, $cnobj, $ssnobj, $data, $d1, $d2, $d3);
           })->then (sub {
+            return unless keys %$updates;
             return $tr->update ('comment', $updates, where => {
               ($self->app_id_columns),
               comment_id => $current->{comment_id},
@@ -1200,7 +1213,10 @@ sub run ($) {
     ## data on the current statuses of the NObj, such as reasons of
     ## admin's action of hiding the object from the public.  A status
     ## info have target NObj, which is an NObj to which the status
-    ## info is associated, and data, which is an JSON object.
+    ## info is associated, and data, author data, owner data, and
+    ## admin data, which are JSON objects.  Author, owner, and admin
+    ## data are intended to be used to have additional data associated
+    ## with author, owner, and admin statuses.
     if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'setstatusinfo.json') {
       ## /{app_id}/nobj/setstatusinfo.json - Set status info of an
       ## NObj.
@@ -1212,6 +1228,18 @@ sub run ($) {
       ##   |data| : JSON object : The status info's data.  Its
       ##   |timestamp| is replaced by the time Apploach receives the
       ##   new status info.
+      ##
+      ##   |author_data| : JSON object : The status info's author
+      ##   data.  Defaulted to the current author data, if any, or an
+      ##   empty object.
+      ##
+      ##   |owner_data| : JSON object : The status info's owner data.
+      ##   Defaulted to the current owner data, if any, or an empty
+      ##   object.
+      ##
+      ##   |admin_data| : JSON object : The status info's admin data.
+      ##   Defaulted to the current admin data, if any, or an empty
+      ##   object.
       ##
       ##   NObj (|operator|) : The status info's log's operator NObj.
       ##
@@ -1231,8 +1259,12 @@ sub run ($) {
       ])->then (sub {
         my ($target, $operator, $verb) = @{$_[0]->[0]};
         my $data = $self->json_object_param ('data');
+        my $data1 = $self->optional_json_object_param ('author_data');
+        my $data2 = $self->optional_json_object_param ('owner_data');
+        my $data3 = $self->optional_json_object_param ('admin_data');
         return $self->set_status_info
-            ($self->db, $operator, $target, $verb, $data);
+            ($self->db, $operator, $target, $verb,
+             $data, $data1, $data2, $data3);
       })->then (sub {
         return $self->json ($_[0]);
       });
@@ -1248,8 +1280,18 @@ sub run ($) {
       ##
       ##   |info| : Object.
       ##
-      ##     {NObj (|target|) : The status info's target NObj} : Array
-      ##     of status info's data.
+      ##     {NObj (|target|) : The status info's target NObj} : Array.
+      ##
+      ##       |data| : JSON object : The status info's data.
+      ##
+      ##       |author_data| : JSON object : The status info's author
+      ##       data.
+      ##
+      ##       |owner_data| : JSON object : The status info's owner
+      ##       data.
+      ##
+      ##       |admin_data| : JSON object : The status info's admin
+      ##       data.
       return Promise->all ([
         $self->nobj_list ('target'),
       ])->then (sub {
@@ -1264,15 +1306,22 @@ sub run ($) {
         return $self->db->select ('status_info', {
           ($self->app_id_columns),
           target_nobj_id => {-in => \@nobj_id},
-        }, fields => ['target_nobj_id', 'data'], source_name => 'master')->then (sub {
+        }, fields => [
+          'target_nobj_id', 'data', 'author_data', 'owner_data', 'admin_data',
+        ], source_name => 'master')->then (sub {
           return $self->replace_nobj_ids ($_[0]->all->to_a, ['target']);
         });
       })->then (sub {
         my $items = $_[0];
         for (@$items) {
           $_->{data} = Dongry::Type->parse ('json', $_->{data});
+          $_->{author_data} = Dongry::Type->parse ('json', $_->{author_data});
+          $_->{owner_data} = Dongry::Type->parse ('json', $_->{owner_data});
+          $_->{admin_data} = Dongry::Type->parse ('json', $_->{admin_data});
         }
-        return $self->json ({info => {map { $_->{target_nobj_key} => $_->{data} } @$items}});
+        return $self->json ({info => {map {
+          (delete $_->{target_nobj_key}) => $_;
+        } @$items}});
       });
     }
 

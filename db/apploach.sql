@@ -1,6 +1,6 @@
 -- create database apploach;
 
-create table `nobj` (
+create table if not exists `nobj` (
   `app_id` bigint unsigned not null,
   `nobj_id` bigint unsigned not null,
   `nobj_key` varbinary(4095) not null,
@@ -12,7 +12,7 @@ create table `nobj` (
   key (`timestamp`)
 ) default charset=binary engine=innodb;
 
-create table `comment` (
+create table if not exists `comment` (
   `app_id` bigint unsigned not null,
   `thread_nobj_id` bigint unsigned not null,
   `comment_id` bigint unsigned not null,
@@ -30,7 +30,7 @@ create table `comment` (
   key (`timestamp`)
 ) default charset=binary engine=innodb;
 
-create table `star` (
+create table if not exists `star` (
   `app_id` bigint unsigned not null,
   `starred_nobj_id` bigint unsigned not null,
   `starred_author_nobj_id` bigint unsigned not null,
@@ -51,7 +51,7 @@ create table `star` (
   key (`updated`)
 ) default charset=binary engine=innodb;
 
-create table `follow` (
+create table if not exists `follow` (
   `app_id` bigint unsigned not null,
   `subject_nobj_id` bigint unsigned not null,
   `object_nobj_id` bigint unsigned not null,
@@ -65,7 +65,7 @@ create table `follow` (
   key (`timestamp`)
 ) default charset=binary engine=innodb;
 
-create table `log` (
+create table if not exists `log` (
   `app_id` bigint unsigned not null,
   `log_id` bigint unsigned not null,
   `target_nobj_id` bigint unsigned not null,
@@ -81,7 +81,7 @@ create table `log` (
   key (`timestamp`)
 ) default charset=binary engine=innodb;
 
-create table `status_info` (
+create table if not exists `status_info` (
   `app_id` bigint unsigned not null,
   `target_nobj_id` bigint unsigned not null,
   `data` mediumblob not null,
@@ -90,3 +90,8 @@ create table `status_info` (
   key (`app_id`, `timestamp`),
   key (`timestamp`)
 ) default charset=binary engine=innodb;
+
+alter table `status_info`
+  add column `author_data` mediumblob not null,
+  add column `owner_data` mediumblob not null,
+  add column `admin_data` mediumblob not null;
