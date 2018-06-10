@@ -1,8 +1,9 @@
 {
    "dependencies" : {
       "override" : [
+         "docker info",
          {
-            " docker pull quay.io/wakaba/docker-perl-app-base && docker pull minio/minio && docker pull mysql/mysql-server" : {
+            "docker pull quay.io/wakaba/docker-perl-app-base && docker pull minio/minio && docker pull mysql/mysql-server" : {
                "background" : 1
             }
          },
@@ -41,6 +42,7 @@
    },
    "machine" : {
       "services" : [
+         "docker",
          "docker"
       ]
    },
