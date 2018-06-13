@@ -55,7 +55,9 @@ sub wait_for_http ($$) {
     die Promise::AbortError->new if $signal->aborted; # XXX abortsignal
     return (promised_timeout {
       return $client->request (url => $url)->then (sub {
-        return not $_[0]->is_network_error;
+        return 0 if $_[0]->is_network_error;
+        return 0 if $_[0]->status == 502 or $_[0]->status == 503;
+        return 1;
       });
     } 1)->catch (sub {
       $client->abort;
