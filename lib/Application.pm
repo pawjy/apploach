@@ -769,57 +769,57 @@ sub edit_comment ($$$%) {
   });
 } # edit_comment
 
-sub run ($) {
+sub run_comment ($) {
   my $self = $_[0];
 
-  if ($self->{type} eq 'comment') {
-    ## Comments.  A thread can have zero or more comments.  A comment
-    ## has ID : ID, thread : NObj, author : NObj, data : JSON object,
-    ## internal data : JSON object, statuses : Statuses.  A comment's
-    ## NObj key is |apploach-comment-| followed by the comment's ID.
-    if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'list.json') {
-      ## /{app_id}/comment/list.json - Get comments.
-      ##
-      ## Parameters.
-      ##
-      ##   NObj (|thread|) : The comment's thread.
-      ##
-      ##   |comment_id| : ID : The comment's ID.  Either the thread or
-      ##   the ID, or both, is required.  If the thread is specified,
-      ##   returned comments are limited to those for the thread.  If
-      ##   |comment_id| is specified, it is further limited to one
-      ##   with that |comment_id|.
-      ##
-      ##   |with_internal_data| : Boolean : Whether |internal_data|
-      ##   should be returned or not.
-      ##
-      ##   Status filters.
-      ##
-      ##   Pages.
-      ##
-      ##   |signed_url_max_age| : Integer : The lifetime of the
-      ##   |signed_url| in the |files| of the comment's data, if any.
-      ##
-      ## List response of comments.
-      ##
-      ##   NObj (|thread|) : The comment's thread.
-      ##
-      ##   |comment_id| : ID : The comment's ID.
-      ##
-      ##   NObj (|author|) : The comment's author.
-      ##
-      ##   |data| : JSON object : The comment's data.
-      ##
-      ##   |internal_data| : JSON object: The comment's internal data.
-      ##   Only when |with_internal_data| is true.
-      ##
-      ##   Statuses.
-      my $page = Pager::this_page ($self, limit => 10, max_limit => 100);
-      return Promise->all ([
-        $self->nobj ('thread'),
-      ])->then (sub {
-        my $thread = $_[0]->[0];
-        return [] if $thread->not_found;
+  ## Comments.  A thread can have zero or more comments.  A comment
+  ## has ID : ID, thread : NObj, author : NObj, data : JSON object,
+  ## internal data : JSON object, statuses : Statuses.  A comment's
+  ## NObj key is |apploach-comment-| followed by the comment's ID.
+
+  if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'list.json') {
+    ## /{app_id}/comment/list.json - Get comments.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|thread|) : The comment's thread.
+    ##
+    ##   |comment_id| : ID : The comment's ID.  Either the thread or
+    ##   the ID, or both, is required.  If the thread is specified,
+    ##   returned comments are limited to those for the thread.  If
+    ##   |comment_id| is specified, it is further limited to one
+    ##   with that |comment_id|.
+    ##
+    ##   |with_internal_data| : Boolean : Whether |internal_data|
+    ##   should be returned or not.
+    ##
+    ##   Status filters.
+    ##
+    ##   Pages.
+    ##
+    ##   |signed_url_max_age| : Integer : The lifetime of the
+    ##   |signed_url| in the |files| of the comment's data, if any.
+    ##
+    ## List response of comments.
+    ##
+    ##   NObj (|thread|) : The comment's thread.
+    ##
+    ##   |comment_id| : ID : The comment's ID.
+    ##
+    ##   NObj (|author|) : The comment's author.
+    ##
+    ##   |data| : JSON object : The comment's data.
+    ##
+    ##   |internal_data| : JSON object: The comment's internal data.
+    ##   Only when |with_internal_data| is true.
+    ##
+    ##   Statuses.
+    my $page = Pager::this_page ($self, limit => 10, max_limit => 100);
+    return Promise->all ([
+      $self->nobj ('thread'),
+    ])->then (sub {
+      my $thread = $_[0]->[0];
+      return [] if $thread->not_found;
 
         my $where = {
           ($self->app_id_columns),
@@ -1059,13 +1059,17 @@ sub run ($) {
         }); # transaction
       });
     }
-  } # comment
 
-  if ($self->{type} eq 'star') {
-    ## Stars.  A starred NObj can have zero or more stars.  A star has
-    ## starred NObj : NObj, author : NObj, item : NObj, count :
-    ## Integer.
-    if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'add.json') {
+  return $self->throw_error (404);
+} # run_comment
+
+sub run_star ($) {
+  my $self = $_[0];
+
+  ## Stars.  A starred NObj can have zero or more stars.  A star has
+  ## starred NObj : NObj, author : NObj, item : NObj, count : Integer.
+
+  if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'add.json') {
       ## /{app_id}/star/add.json - Add a star.
       ##
       ## Parameters.
@@ -1225,13 +1229,18 @@ sub run ($) {
         return $self->json ({items => $items, %$next_page});
       });
     }
-  } # star
 
-  if ($self->{type} eq 'follow') {
-    ## A follow is a relation from subject NObj to object NObj of verb
-    ## (type) NObj.  It can have a value of 8-bit unsigned integer,
-    ## where value |0| is equivalent to not having any relation.
-    if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'set.json') {
+  return $self->throw_error (404);
+} # run_star
+
+sub run_follow ($) {
+  my $self = $_[0];
+
+  ## A follow is a relation from subject NObj to object NObj of verb
+  ## (type) NObj.  It can have a value of 8-bit unsigned integer,
+  ## where value |0| is equivalent to not having any relation.
+
+  if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'set.json') {
       ## /{app_id}/follow/set.json - Set a follow.
       ##
       ## Parameters.
@@ -1347,17 +1356,21 @@ sub run ($) {
         return $self->json ({items => $items, %$next_page});
       });
     }
-  } # follow
 
-  if ($self->{type} eq 'nobj') {
-    ## Logs.  An NObj can have zero or more logs.  A log has ID, which
-    ## identifies the log, target NObj, which represents the NObj to
-    ## which the log is associated, operator NObj, which is intended
-    ## to represent who causes the log being recorded, verb NObj,
-    ## which is intended to represent the type of the log, and data,
-    ## which is a JSON object containing application-specific log
-    ## data.
-    if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'addlog.json') {
+  return $self->throw_error (404);
+} # run_follow
+
+sub run_nobj ($) {
+  my $self = $_[0];
+
+  ## Logs.  An NObj can have zero or more logs.  A log has ID, which
+  ## identifies the log, target NObj, which represents the NObj to
+  ## which the log is associated, operator NObj, which is intended to
+  ## represent who causes the log being recorded, verb NObj, which is
+  ## intended to represent the type of the log, and data, which is a
+  ## JSON object containing application-specific log data.
+
+  if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'addlog.json') {
       ## /{app_id}/nobj/addlog.json - Add a log entry.
       ##
       ## Parameters.
@@ -1614,7 +1627,20 @@ sub run ($) {
         });
       });
     }
-  } # nobj
+
+  return $self->throw_error (404);
+} # run_nobj
+
+sub run ($) {
+  my $self = $_[0];
+
+  if ($self->{type} eq 'comment' or
+      $self->{type} eq 'star' or
+      $self->{type} eq 'follow' or
+      $self->{type} eq 'nobj') {
+    my $method = 'run_'.$self->{type};
+    return $self->$method;
+  }
   
   return $self->{app}->throw_error (404);
 } # run
