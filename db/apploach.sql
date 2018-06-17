@@ -95,3 +95,19 @@ alter table `status_info`
   add column `author_data` mediumblob not null,
   add column `owner_data` mediumblob not null,
   add column `admin_data` mediumblob not null;
+
+create table if not exists `blog_entry` (
+  `app_id` bigint unsigned not null,
+  `blog_nobj_id` bigint unsigned not null,
+  `blog_entry_id` bigint unsigned not null,
+  `data` mediumblob not null,
+  `internal_data` mediumblob not null,
+  `author_status` tinyint unsigned not null,
+  `owner_status` tinyint unsigned not null,
+  `admin_status` tinyint unsigned not null,
+  `timestamp` double not null,
+  primary key (`blog_entry_id`),
+  key (`app_id`, `blog_nobj_id`, `timestamp`),
+  key (`app_id`, `timestamp`),
+  key (`timestamp`)
+) default charset=binary engine=innodb;

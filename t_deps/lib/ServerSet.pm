@@ -55,7 +55,9 @@ sub wait_for_http ($$) {
     die Promise::AbortError->new if $signal->aborted; # XXX abortsignal
     return (promised_timeout {
       return $client->request (url => $url)->then (sub {
-        return not $_[0]->is_network_error;
+        return 0 if $_[0]->is_network_error;
+        return 0 if $_[0]->status == 502 or $_[0]->status == 503;
+        return 1;
       });
     } 1)->catch (sub {
       $client->abort;
@@ -412,6 +414,45 @@ sub _docker ($%) {
           return wait_for_http $self->_local_url ('storage'), $signal;
         });
       }, # wait
+      init => sub {
+        my ($self, $data, $signal) = @_;
+        my $bucket_domain = $self->_key ('storage_bucket_domain_id') . '.storage.test';
+        $bucket_domain =~ tr/A-Z_-/a-z/;
+        my $s3_url = Web::URL->parse_string
+            ("/$bucket_domain/", $self->_local_url ('storage'));
+        my $client = Web::Transport::BasicClient->new_from_url ($s3_url);
+        return $client->request (
+          url => $s3_url, method => 'PUT',
+          aws4 => $data->{aws4},
+        )->then (sub {
+          die $_[0] unless $_[0]->status == 200;
+          #my $body = qq{{
+          #  "Version": "2012-10-17",
+          #  "Statement": [{
+          #    "Action": ["s3:GetObject"],
+          #    "Effect": "Allow",
+          #    "Principal": {"AWS": ["*"]},
+          #    "Resource": ["arn:aws:s3:::$bucket_domain/*"],
+          #    "Sid": ""
+          #  }]
+          #}};
+          #return $client->request (
+          #  url => Web::URL->parse_string ('./?policy', $s3_url),
+          #  method => 'PUT', aws4 => $data->{aws4}, body => $body,
+          #);
+        })->then (sub {
+          #die $_[0] unless $_[0]->is_success;
+
+          return promised_sleep 3;
+        })->then (sub {
+          $data->{bucket_domain} = $bucket_domain;
+          $data->{file_root_client_url} =
+          $data->{form_client_url} = Web::URL->parse_string
+              ("/$bucket_domain/", $self->_client_url ('storage'));
+        })->finally (sub {
+          return $client->close;
+        });
+      }, # init
     }, # storage
   }; # $servers
 
@@ -460,8 +501,13 @@ sub _docker ($%) {
     my $acs = [];
     my $waits = [
       map {
+        my $v = $_;
         my $ac = AbortController->new;
-        ($servers->{$_}->{wait} or sub { })->($self, $data->{$_}, $ac->signal),
+        my $ac2 = AbortController->new;
+        push @$acs, $ac, $ac2;
+        ($servers->{$v}->{wait} or sub { })->($self, $data->{$v}, $ac->signal)->then (sub {
+          ($servers->{$v}->{init} or sub { })->($self, $data->{$v}, $ac2->signal);
+        });
       } keys %$servers,
     ];
     $args{signal}->manakai_onabort (sub {
@@ -503,8 +549,13 @@ sub _docker_app ($%) {
           my $config = {};
 
           $config->{bearer} = $self->_key ('app_bearer');
-          
           $config->{dsn} = $docker_data->{mysqld}->{docker_dsn}->{apploach};
+          $config->{s3_aws4} = $docker_data->{storage}->{aws4};
+          #"s3_sts_role_arn"
+          $config->{s3_bucket} = $docker_data->{storage}->{bucket_domain};
+          $config->{s3_form_url} = $docker_data->{storage}->{form_client_url}->stringify;
+          $config->{s3_file_url_prefix} = $docker_data->{storage}->{file_root_client_url}->stringify;
+          
           $self->_set_docker_envs ('proxy' => $envs);
           
           return $self->_write_json ('app-config.json', $config);
@@ -528,7 +579,7 @@ sub _docker_app ($%) {
         my ($self, $data, $signal) = @_;
         return wait_for_http $self->_local_url ('app'), $signal;
       }, # wait
-    }, # storage
+    }, # app
   }; # $servers
 
   my $stop = sub {
@@ -583,8 +634,13 @@ sub _docker_app ($%) {
     $started = 1;
     my $waits = [
       map {
+        my $v = $_;
         my $ac = AbortController->new;
-        ($servers->{$_}->{wait} or sub { })->($self, $data->{$_}, $ac->signal),
+        my $ac2 = AbortController->new;
+        push @$acs, $ac, $ac2;
+        ($servers->{$v}->{wait} or sub { })->($self, $data->{$v}, $ac->signal)->then (sub {
+          ($servers->{$v}->{init} or sub { })->($self, $data->{$v}, $ac2->signal);
+        });
       } keys %$servers,
     ];
     $args{signal}->manakai_onabort (sub {
@@ -630,8 +686,13 @@ sub _app ($%) {
     my $config = {};
 
     $config->{bearer} = $self->_key ('app_bearer');
-    
     $config->{dsn} = $docker_data->{mysqld}->{local_dsn}->{apploach};
+    $config->{s3_aws4} = $docker_data->{storage}->{aws4};
+    #"s3_sts_role_arn"
+    $config->{s3_bucket} = $docker_data->{storage}->{bucket_domain};
+    $config->{s3_form_url} = $docker_data->{storage}->{form_client_url}->stringify;
+    $config->{s3_file_url_prefix} = $docker_data->{storage}->{file_root_client_url}->stringify;
+
     $self->_set_local_envs ('proxy' => $sarze->envs);
     
     $sarze->envs->{APP_CONFIG} = $self->_path ('app-config.json');
