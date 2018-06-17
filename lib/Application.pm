@@ -673,13 +673,20 @@ sub edit_comment ($$$%) {
       'comment_id', 'data', 'internal_data',
       'author_nobj_id',
       'author_status', 'owner_status', 'admin_status',
-    ], lock => 'update');
+    ], lock => 'update') if $args{comment};
+    return $tr->select ('blog_entry', {
+      ($self->app_id_columns),
+      blog_entry_id => Dongry::Type->serialize ('text', $comment_id),
+    }, fields => [
+      'blog_entry_id', 'data', 'internal_data',
+      'author_status', 'owner_status', 'admin_status',
+    ], lock => 'update') if $args{blog};
   })->then (sub {
     my $current = $_[0]->first;
     return $self->throw ({reason => 'Object not found'})
         unless defined $current;
 
-    if ($args{validate_operator_is_author}) {
+    if ($args{validate_operator_is_author}) { # $args{comment} only
       if (not $current->{author_nobj_id} eq $args{operator_nobj}->nobj_id) {
         return $self->throw ({reason => 'Bad operator'});
       }
@@ -689,7 +696,7 @@ sub edit_comment ($$$%) {
     for my $name (qw(data internal_data)) {
       my $delta = $args{$name.'_delta'};
       $updates->{$name} = Dongry::Type->parse ('json', $current->{$name});
-      if ($name eq 'data' and @{$args{files_delta} or []}) {
+      if ($name eq 'data' and @{$args{files_delta} or []}) { # $args{comment}
         $delta->{files} = $updates->{$name}->{files} || [];
         $delta->{files} = [] unless ref $delta->{files} eq 'ARRAY';
         push @{$delta->{files}}, @{$args{files_delta}};
@@ -763,8 +770,13 @@ sub edit_comment ($$$%) {
       return $tr->update ('comment', $updates, where => {
         ($self->app_id_columns),
         comment_id => $current->{comment_id},
-      });
+      }) if $args{comment};
+      return $tr->update ('blog_entry', $updates, where => {
+        ($self->app_id_columns),
+        blog_entry_id => $current->{blog_entry_id},
+      }) if $args{blog};
     });
+    # XXX revision if $args{blog}
     # XXX notifications
   });
 } # edit_comment
@@ -821,247 +833,460 @@ sub run_comment ($) {
       my $thread = $_[0]->[0];
       return [] if $thread->not_found;
 
-        my $where = {
-          ($self->app_id_columns),
-          ($thread->missing ? () : ($thread->to_columns ('thread'))),
-          ($self->status_filter_columns),
-        };
-        $where->{timestamp} = $page->{value} if defined $page->{value};
-        
-        my $comment_id = $self->{app}->bare_param ('comment_id');
-        if (defined $comment_id) {
-          $where->{comment_id} = $comment_id;
-        } else {
-          return $self->throw
-              ({reason => 'Either thread or |comment_id| is required'})
-              if $thread->missing;
-        }
+      my $where = {
+        ($self->app_id_columns),
+        ($thread->missing ? () : ($thread->to_columns ('thread'))),
+        ($self->status_filter_columns),
+      };
+      $where->{timestamp} = $page->{value} if defined $page->{value};
+      
+      my $comment_id = $self->{app}->bare_param ('comment_id');
+      if (defined $comment_id) {
+        $where->{comment_id} = $comment_id;
+      } else {
+        return $self->throw
+            ({reason => 'Either thread or |comment_id| is required'})
+            if $thread->missing;
+      }
 
-        return $self->db->select ('comment', $where, fields => [
-          'comment_id',
-          'thread_nobj_id',
-          'author_nobj_id',
-          'data',
-          ($self->{app}->bare_param ('with_internal_data') ? ('internal_data') : ()),
-          'author_status', 'owner_status', 'admin_status',
-          'timestamp',
-        ], source_name => 'master',
-          offset => $page->{offset}, limit => $page->{limit},
-          order => ['timestamp', $page->{order_direction}],
-        )->then (sub {
-          return $_[0]->all->to_a;
-        });
-      })->then (sub {
-        my $items = $_[0];
-        my $signed_max_age = $self->{app}->bare_param ('signed_url_max_age') // 60*10;
-        for my $item (@$items) {
-          $item->{comment_id} .= '';
-          $item->{data} = Dongry::Type->parse ('json', $item->{data});
-          $item->{internal_data} = Dongry::Type->parse ('json', $item->{internal_data})
-              if defined $item->{internal_data};
-          if (ref $item->{data}->{files} eq 'ARRAY') {
-            for (@{$item->{data}->{files}}) {
-              my $url = Web::URL->parse_string ($_->{file_url});
-              next unless defined $url and $url->is_http_s;
-              my $signed = Web::Transport::AWS->aws4_signed_url
-                  (clock => Web::DateTime::Clock->realtime_clock,
-                   max_age => $signed_max_age,
-                   access_key_id => $self->{config}->{s3_aws4}->[0],
-                   secret_access_key => $self->{config}->{s3_aws4}->[1],
-                   #security_token => 
-                   region => $self->{config}->{s3_aws4}->[2],
-                   service => 's3',
-                   method => 'GET',
-                   url => $url);
-              $_->{signed_url} = $signed->stringify;
-            }
+      return $self->db->select ('comment', $where, fields => [
+        'comment_id',
+        'thread_nobj_id',
+        'author_nobj_id',
+        'data',
+        ($self->{app}->bare_param ('with_internal_data') ? ('internal_data') : ()),
+        'author_status', 'owner_status', 'admin_status',
+        'timestamp',
+      ], source_name => 'master',
+        offset => $page->{offset}, limit => $page->{limit},
+        order => ['timestamp', $page->{order_direction}],
+      )->then (sub {
+        return $_[0]->all->to_a;
+      });
+    })->then (sub {
+      my $items = $_[0];
+      my $signed_max_age = $self->{app}->bare_param ('signed_url_max_age') // 60*10;
+      for my $item (@$items) {
+        $item->{comment_id} .= '';
+        $item->{data} = Dongry::Type->parse ('json', $item->{data});
+        $item->{internal_data} = Dongry::Type->parse ('json', $item->{internal_data})
+            if defined $item->{internal_data};
+        if (ref $item->{data}->{files} eq 'ARRAY') {
+          for (@{$item->{data}->{files}}) {
+            my $url = Web::URL->parse_string ($_->{file_url});
+            next unless defined $url and $url->is_http_s;
+            my $signed = Web::Transport::AWS->aws4_signed_url
+                (clock => Web::DateTime::Clock->realtime_clock,
+                 max_age => $signed_max_age,
+                 access_key_id => $self->{config}->{s3_aws4}->[0],
+                 secret_access_key => $self->{config}->{s3_aws4}->[1],
+                 #security_token => 
+                 region => $self->{config}->{s3_aws4}->[2],
+                 service => 's3',
+                 method => 'GET',
+                 url => $url);
+            $_->{signed_url} = $signed->stringify;
           }
         }
-        return $self->replace_nobj_ids ($items, ['author', 'thread'])->then (sub {
-          my $next_page = Pager::next_page $page, $items, 'timestamp';
-          delete $_->{timestamp} for @$items;
-          return $self->json ({items => $items, %$next_page});
-        });
+      }
+      return $self->replace_nobj_ids ($items, ['author', 'thread'])->then (sub {
+        my $next_page = Pager::next_page $page, $items, 'timestamp';
+        delete $_->{timestamp} for @$items;
+        return $self->json ({items => $items, %$next_page});
       });
-    } elsif (@{$self->{path}} == 1 and $self->{path}->[0] eq 'post.json') {
-      ## /{app_id}/comment/post.json - Add a new comment.
-      ##
-      ## Parameters.
-      ##
-      ##   NObj (|thread|) : The comment's thread.
-      ##
-      ##   Statuses : The comment's statuses.
-      ##
-      ##   NObj (|author|) : The comment's author.
-      ##
-      ##   |data| : JSON object : The comment's data.  Its |timestamp|
-      ##   is replaced by the time Apploach accepts the comment.
-      ##
-      ##   |internal_data| : JSON object : The comment's internal
-      ##   data, intended for storing private data such as author's IP
-      ##   address.
-      ##
-      ## Created object response.
-      ##
-      ##   |comment_id| : ID : The comment's ID.
-      ##
-      ##   |timestamp| : Timestamp : The comment's data's timestamp.
-      return Promise->all ([
-        $self->new_nobj_list (['thread', 'author']),
-        $self->ids (1),
-      ])->then (sub {
-        my (undef, $ids) = @{$_[0]};
-        my ($thread, $author) = @{$_[0]->[0]};
-        my $data = $self->json_object_param ('data');
-        my $time = time;
-        $data->{timestamp} = $time;
-        return $self->db->insert ('comment', [{
-          ($self->app_id_columns),
-          ($thread->to_columns ('thread')),
-          comment_id => $ids->[0],
-          ($author->to_columns ('author')),
-          data => Dongry::Type->serialize ('json', $data),
-          internal_data => Dongry::Type->serialize ('json', $self->json_object_param ('internal_data')),
-          ($self->status_columns),
+    });
+  } elsif (@{$self->{path}} == 1 and $self->{path}->[0] eq 'post.json') {
+    ## /{app_id}/comment/post.json - Add a new comment.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|thread|) : The comment's thread.
+    ##
+    ##   Statuses : The comment's statuses.
+    ##
+    ##   NObj (|author|) : The comment's author.
+    ##
+    ##   |data| : JSON object : The comment's data.  Its |timestamp|
+    ##   is replaced by the time Apploach accepts the comment.
+    ##
+    ##   |internal_data| : JSON object : The comment's internal
+    ##   data, intended for storing private data such as author's IP
+    ##   address.
+    ##
+    ## Created object response.
+    ##
+    ##   |comment_id| : ID : The comment's ID.
+    ##
+    ##   |timestamp| : Timestamp : The comment's data's timestamp.
+    return Promise->all ([
+      $self->new_nobj_list (['thread', 'author']),
+      $self->ids (1),
+    ])->then (sub {
+      my (undef, $ids) = @{$_[0]};
+      my ($thread, $author) = @{$_[0]->[0]};
+      my $data = $self->json_object_param ('data');
+      my $time = time;
+      $data->{timestamp} = $time;
+      return $self->db->insert ('comment', [{
+        ($self->app_id_columns),
+        ($thread->to_columns ('thread')),
+        comment_id => $ids->[0],
+        ($author->to_columns ('author')),
+        data => Dongry::Type->serialize ('json', $data),
+        internal_data => Dongry::Type->serialize ('json', $self->json_object_param ('internal_data')),
+        ($self->status_columns),
+        timestamp => $time,
+      }])->then (sub {
+        return $self->json ({
+          comment_id => ''.$ids->[0],
           timestamp => $time,
-        }])->then (sub {
-          return $self->json ({
-            comment_id => ''.$ids->[0],
-            timestamp => $time,
-          });
         });
-        # XXX kick notifications
       });
-    } elsif (@{$self->{path}} == 1 and $self->{path}->[0] eq 'edit.json') {
-      ## /{app_id}/comment/edit.json - Edit a comment.
-      ##
-      ## Parameters.
-      ##
-      ##   |comment_id| : ID : The comment's ID.
-      ##
-      ##   |data_delta| : JSON object : The comment's new data.
-      ##   Unchanged name/value pairs can be omitted.  Removed names
-      ##   should be set to |null| values.  Optional if nothing to
-      ##   change.
-      ##
-      ##   |internal_data_delta| : JSON object : The comment's new
-      ##   internal data.  Unchanged name/value pairs can be omitted.
-      ##   Removed names should be set to |null| values.  Optional if
-      ##   nothing to change.
-      ##
-      ##   Statuses : The comment's statuses.  Optional if nothing to
-      ##   change.  When statuses are changed, the comment NObj's
-      ##   status info is updated (and a log is added).
-      ##
-      ##   |status_info_author_data| : JSON Object : The comment
-      ##   NObj's status info's author data.  Optional if no change.
-      ##
-      ##   |status_info_owner_data| : JSON Object : The comment NObj's
-      ##   status info's owner data.  Optional if no change.
-      ##
-      ##   |status_info_admin_data| : JSON Object : The comment
-      ##   NObj's status info's admin data.  Optional if no change.
-      ##
-      ##   NObj (|operator|) : The operator of this editing.
-      ##   Required.
-      ##
-      ##   |validate_operator_is_author| : Boolean : Whether the
-      ##   operator has to be the comment's author or not.
-      ##
-      ## Response.  No additional data.
-      my $operator;
-      my $cnobj;
-      my $ssnobj;
-      my $comment_id = $self->id_param ('comment');
-      return Promise->all ([
-        $self->new_nobj_list (['operator',
-                               \('apploach-comment-' . $comment_id),
-                               \'apploach-set-status']),
-      ])->then (sub {
-        ($operator, $cnobj, $ssnobj) = @{$_[0]->[0]};
-        return $self->db->transaction;
-      })->then (sub {
-        my $tr = $_[0];
+      # XXX kick notifications
+    });
+  } elsif (@{$self->{path}} == 1 and $self->{path}->[0] eq 'edit.json') {
+    ## /{app_id}/comment/edit.json - Edit a comment.
+    ##
+    ## Parameters.
+    ##
+    ##   |comment_id| : ID : The comment's ID.
+    ##
+    ##   |data_delta| : JSON object : The comment's new data.
+    ##   Unchanged name/value pairs can be omitted.  Removed names
+    ##   should be set to |null| values.  Optional if nothing to
+    ##   change.
+    ##
+    ##   |internal_data_delta| : JSON object : The comment's new
+    ##   internal data.  Unchanged name/value pairs can be omitted.
+    ##   Removed names should be set to |null| values.  Optional if
+    ##   nothing to change.
+    ##
+    ##   Statuses : The comment's statuses.  Optional if nothing to
+    ##   change.  When statuses are changed, the comment NObj's
+    ##   status info is updated (and a log is added).
+    ##
+    ##   |status_info_author_data| : JSON Object : The comment
+    ##   NObj's status info's author data.  Optional if no change.
+    ##
+    ##   |status_info_owner_data| : JSON Object : The comment NObj's
+    ##   status info's owner data.  Optional if no change.
+    ##
+    ##   |status_info_admin_data| : JSON Object : The comment
+    ##   NObj's status info's admin data.  Optional if no change.
+    ##
+    ##   NObj (|operator|) : The operator of this editing.
+    ##   Required.
+    ##
+    ##   |validate_operator_is_author| : Boolean : Whether the
+    ##   operator has to be the comment's author or not.
+    ##
+    ## Response.  No additional data.
+    my $operator;
+    my $cnobj;
+    my $ssnobj;
+    my $comment_id = $self->id_param ('comment');
+    return Promise->all ([
+      $self->new_nobj_list (['operator',
+                             \('apploach-comment-' . $comment_id),
+                             \'apploach-set-status']),
+    ])->then (sub {
+      ($operator, $cnobj, $ssnobj) = @{$_[0]->[0]};
+      return $self->db->transaction;
+    })->then (sub {
+      my $tr = $_[0];
+      return $self->edit_comment ($tr, $comment_id,
+        comment => 1,
+        data_delta => $self->optional_json_object_param ('data_delta'),
+        internal_data_delta => $self->optional_json_object_param ('internal_data_delta'),
+        validate_operator_is_author => $self->{app}->bare_param ('validate_operator_is_author'),
+        operator_nobj => $operator,
+        comment_nobj => $cnobj,
+        set_status_nobj => $ssnobj,
+        author_status => $self->{app}->bare_param ('author_status'),
+        owner_status => $self->{app}->bare_param ('owner_status'),
+        admin_status => $self->{app}->bare_param ('admin_status'),
+        status_info_author_data => $self->optional_json_object_param ('status_info_author_data'),
+        status_info_owner_data => $self->optional_json_object_param ('status_info_owner_data'),
+        status_info_admin_data => $self->optional_json_object_param ('status_info_admin_data'),
+      )->then (sub {
+        return $tr->commit->then (sub { undef $tr });
+      })->finally (sub {
+        return $tr->rollback if defined $tr;
+      }); # transaction
+    })->then (sub {
+      return $self->json ({});
+    });
+  } elsif (@{$self->{path}} == 1 and $self->{path}->[0] eq 'attachform.json') {
+    ## /{app_id}/comment/attachform.json - Create a form to attach a
+    ## file to the comment.
+    ##
+    ## Parameters.
+    ##
+    ##   |comment_id| : ID : The comment's ID.
+    ##
+    ##   NObj (|operator|) : The operator of this editing.
+    ##   Required.
+    ##
+    ##   |validate_operator_is_author| : Boolean : Whether the
+    ##   operator has to be the comment's author or not.
+    ##
+    ##   File upload parameters: |mime_type| and |byte_length|.
+    ##
+    ## Response.
+    ##
+    ##   File upload information.
+    ##
+    ## This end point creates a file upload form and associate it
+    ## with the comment.  The comment's data's |files| is set to an
+    ## array which contains the |file| value of the created file
+    ## upload information.
+    my $operator;
+    my $cnobj;
+    my $comment_id = $self->id_param ('comment');
+    return Promise->all ([
+      $self->new_nobj_list (['operator',
+                             \('apploach-comment-' . $comment_id)]),
+    ])->then (sub {
+      ($operator, $cnobj) = @{$_[0]->[0]};
+      return $self->db->transaction;
+    })->then (sub {
+      my $tr = $_[0];
+      return $self->prepare_upload ($tr,
+        mime_type => $self->{app}->bare_param ('mime_type'),
+        byte_length => $self->{app}->bare_param ('byte_length'),
+        prefix => 'apploach/comment/' . $comment_id,
+      )->then (sub {
+        my $result = $_[0];
         return $self->edit_comment ($tr, $comment_id,
-          data_delta => $self->optional_json_object_param ('data_delta'),
-          internal_data_delta => $self->optional_json_object_param ('internal_data_delta'),
+          comment => 1,
+          files_delta => [$result->{file}],
           validate_operator_is_author => $self->{app}->bare_param ('validate_operator_is_author'),
           operator_nobj => $operator,
           comment_nobj => $cnobj,
-          set_status_nobj => $ssnobj,
-          author_status => $self->{app}->bare_param ('author_status'),
-          owner_status => $self->{app}->bare_param ('owner_status'),
-          admin_status => $self->{app}->bare_param ('admin_status'),
-          status_info_author_data => $self->optional_json_object_param ('status_info_author_data'),
-          status_info_owner_data => $self->optional_json_object_param ('status_info_owner_data'),
-          status_info_admin_data => $self->optional_json_object_param ('status_info_admin_data'),
         )->then (sub {
           return $tr->commit->then (sub { undef $tr });
-        })->finally (sub {
-          return $tr->rollback if defined $tr;
-        }); # transaction
-      })->then (sub {
-        return $self->json ({});
-      });
-    } elsif (@{$self->{path}} == 1 and $self->{path}->[0] eq 'attachform.json') {
-      ## /{app_id}/comment/attachform.json - Create a form to attach a
-      ## file to the comment.
-      ##
-      ## Parameters.
-      ##
-      ##   |comment_id| : ID : The comment's ID.
-      ##
-      ##   NObj (|operator|) : The operator of this editing.
-      ##   Required.
-      ##
-      ##   |validate_operator_is_author| : Boolean : Whether the
-      ##   operator has to be the comment's author or not.
-      ##
-      ##   File upload parameters: |mime_type| and |byte_length|.
-      ##
-      ## Response.
-      ##
-      ##   File upload information.
-      ##
-      ## This end point creates a file upload form and associate it
-      ## with the comment.  The comment's data's |files| is set to an
-      ## array which contains the |file| value of the created file
-      ## upload information.
-      my $operator;
-      my $cnobj;
-      my $comment_id = $self->id_param ('comment');
-      return Promise->all ([
-        $self->new_nobj_list (['operator',
-                               \('apploach-comment-' . $comment_id)]),
-      ])->then (sub {
-        ($operator, $cnobj) = @{$_[0]->[0]};
-        return $self->db->transaction;
-      })->then (sub {
-        my $tr = $_[0];
-        return $self->prepare_upload ($tr,
-          mime_type => $self->{app}->bare_param ('mime_type'),
-          byte_length => $self->{app}->bare_param ('byte_length'),
-          prefix => 'apploach/comment/' . $comment_id,
-        )->then (sub {
-          my $result = $_[0];
-          return $self->edit_comment ($tr, $comment_id,
-            files_delta => [$result->{file}],
-            validate_operator_is_author => $self->{app}->bare_param ('validate_operator_is_author'),
-            operator_nobj => $operator,
-            comment_nobj => $cnobj,
-          )->then (sub {
-            return $tr->commit->then (sub { undef $tr });
-          })->then (sub {
-            return $self->json ($result);
-          });
-        })->finally (sub {
-          return $tr->rollback if defined $tr;
-        }); # transaction
-      });
-    }
+        })->then (sub {
+          return $self->json ($result);
+        });
+      })->finally (sub {
+        return $tr->rollback if defined $tr;
+      }); # transaction
+    });
+  }
 
   return $self->throw_error (404);
 } # run_comment
+
+sub run_blog ($) {
+  my $self = $_[0];
+
+  ## Blogs.  A blog can have zero or more blog entries.  A blog entry
+  ## has ID : ID, blog : NObj, data : JSON object, internal data :
+  ## JSON object, statuses : Statuses.  A blog entry's NObj key is
+  ## |apploach-bentry-| followed by the blog entry's ID.
+
+  if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'list.json') {
+    ## /{app_id}/blog/list.json - Get blog entries.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|blog|) : The blog entry's blog.
+    ##
+    ##   |blog_entry_id| : ID : The blog entry's ID.  Either the blog
+    ##   or the ID, or both, is required.  If the blog is specified,
+    ##   returned blog entries are limited to those in the blog.  If
+    ##   |blog_entry_id| is specified, it is further limited to one
+    ##   with that |blog_entry_id|.
+    ##
+    ##   |with_internal_data| : Boolean : Whether |internal_data|
+    ##   should be returned or not.
+    ##
+    ##   Status filters.
+    ##
+    ##   Pages.
+    ##
+    ## List response of blog entries.
+    ##
+    ##   NObj (|blog|) : The blog entry's blog.
+    ##
+    ##   |blog_entry_id| : ID : The blog entry's ID.
+    ##
+    ##   |data| : JSON object : The blog entry's data.
+    ##
+    ##   |internal_data| : JSON object: The blog entry's internal
+    ##   data.  Only when |with_internal_data| is true.
+    ##
+    ##   Statuses.
+    my $page = Pager::this_page ($self, limit => 10, max_limit => 100);
+    return Promise->all ([
+      $self->nobj ('blog'),
+    ])->then (sub {
+      my $thread = $_[0]->[0];
+      return [] if $thread->not_found;
+
+      my $where = {
+        ($self->app_id_columns),
+        ($thread->missing ? () : ($thread->to_columns ('blog'))),
+        ($self->status_filter_columns),
+      };
+      $where->{timestamp} = $page->{value} if defined $page->{value};
+      
+      my $comment_id = $self->{app}->bare_param ('blog_entry_id');
+      if (defined $comment_id) {
+        $where->{blog_entry_id} = $comment_id;
+      } else {
+        return $self->throw
+            ({reason => 'Either blog or |blog_entry_id| is required'})
+            if $thread->missing;
+      }
+
+      return $self->db->select ('blog_entry', $where, fields => [
+        'blog_entry_id',
+        'blog_nobj_id',
+        'data',
+        ($self->{app}->bare_param ('with_internal_data') ? ('internal_data') : ()),
+        'author_status', 'owner_status', 'admin_status',
+        'timestamp',
+      ], source_name => 'master',
+        offset => $page->{offset}, limit => $page->{limit},
+        order => ['timestamp', $page->{order_direction}],
+      )->then (sub {
+        return $_[0]->all->to_a;
+      });
+    })->then (sub {
+      my $items = $_[0];
+      for my $item (@$items) {
+        $item->{blog_entry_id} .= '';
+        $item->{data} = Dongry::Type->parse ('json', $item->{data});
+        $item->{internal_data} = Dongry::Type->parse ('json', $item->{internal_data})
+            if defined $item->{internal_data};
+      }
+      return $self->replace_nobj_ids ($items, ['blog'])->then (sub {
+        my $next_page = Pager::next_page $page, $items, 'timestamp';
+        delete $_->{timestamp} for @$items;
+        return $self->json ({items => $items, %$next_page});
+      });
+    });
+  } elsif (@{$self->{path}} == 1 and $self->{path}->[0] eq 'post.json') {
+    ## /{app_id}/blog/post.json - Add a new blog entry.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|blog|) : The blog entry's blog.
+    ##
+    ##   Statuses : The blog entry's statuses.
+    ##
+    ##   |data| : JSON object : The blog entry's data.  Its
+    ##   |timestamp| is replaced by the time Apploach accepts the blog
+    ##   entry unless it is a primitive value.
+    ##
+    ##   |internal_data| : JSON object : The blog entry's internal
+    ##   data, intended for storing private data such as author's IP
+    ##   address.
+    ##
+    ## Created object response.
+    ##
+    ##   |blog_entry_id| : ID : The blog entry's ID.
+    ##
+    ##   |timestamp| : Timestamp : The blog entry's data's timestamp.
+    return Promise->all ([
+      $self->new_nobj_list (['blog']),
+      $self->ids (1),
+    ])->then (sub {
+      my (undef, $ids) = @{$_[0]};
+      my ($thread) = @{$_[0]->[0]};
+      my $data = $self->json_object_param ('data');
+      my $time = time;
+      $data->{timestamp} = $time
+          unless defined $data->{timestamp} and not ref $data->{timestamp};
+      return $self->db->insert ('blog_entry', [{
+        ($self->app_id_columns),
+        ($thread->to_columns ('blog')),
+        blog_entry_id => $ids->[0],
+        data => Dongry::Type->serialize ('json', $data),
+        internal_data => Dongry::Type->serialize ('json', $self->json_object_param ('internal_data')),
+        ($self->status_columns),
+        timestamp => $time,
+      }])->then (sub {
+        return $self->json ({
+          blog_entry_id => ''.$ids->[0],
+          timestamp => $time,
+        });
+      });
+      # XXX kick notifications
+    });
+  } elsif (@{$self->{path}} == 1 and $self->{path}->[0] eq 'edit.json') {
+    ## /{app_id}/blog/edit.json - Edit a blog entry.
+    ##
+    ## Parameters.
+    ##
+    ##   |blog_entry_id| : ID : The blog entry's ID.
+    ##
+    ##   |data_delta| : JSON object : The blog entry's new data.
+    ##   Unchanged name/value pairs can be omitted.  Removed names
+    ##   should be set to |null| values.  Optional if nothing to
+    ##   change.
+    ##
+    ##   |internal_data_delta| : JSON object : The blog entry's new
+    ##   internal data.  Unchanged name/value pairs can be omitted.
+    ##   Removed names should be set to |null| values.  Optional if
+    ##   nothing to change.
+    ##
+    ##   Statuses : The blog entry's statuses.  Optional if nothing to
+    ##   change.  When statuses are changed, the blog entry NObj's
+    ##   status info is updated (and a log is added).
+    ##
+    ##   |status_info_author_data| : JSON Object : The blog entry
+    ##   NObj's status info's author data.  Optional if no change.
+    ##
+    ##   |status_info_owner_data| : JSON Object : The blog entry
+    ##   NObj's status info's owner data.  Optional if no change.
+    ##
+    ##   |status_info_admin_data| : JSON Object : The blog entry
+    ##   NObj's status info's admin data.  Optional if no change.
+    ##
+    ##   NObj (|operator|) : The operator of this editing.
+    ##   Required.
+    ##
+    ## Response.  No additional data.
+    my $operator;
+    my $cnobj;
+    my $ssnobj;
+    my $comment_id = $self->id_param ('blog_entry');
+    return Promise->all ([
+      $self->new_nobj_list (['operator',
+                             \('apploach-bentry-' . $comment_id),
+                             \'apploach-set-status']),
+    ])->then (sub {
+      ($operator, $cnobj, $ssnobj) = @{$_[0]->[0]};
+      return $self->db->transaction;
+    })->then (sub {
+      my $tr = $_[0];
+      return $self->edit_comment ($tr, $comment_id,
+        blog => 1,
+        data_delta => $self->optional_json_object_param ('data_delta'),
+        internal_data_delta => $self->optional_json_object_param ('internal_data_delta'),
+        operator_nobj => $operator,
+        comment_nobj => $cnobj,
+        set_status_nobj => $ssnobj,
+        author_status => $self->{app}->bare_param ('author_status'),
+        owner_status => $self->{app}->bare_param ('owner_status'),
+        admin_status => $self->{app}->bare_param ('admin_status'),
+        status_info_author_data => $self->optional_json_object_param ('status_info_author_data'),
+        status_info_owner_data => $self->optional_json_object_param ('status_info_owner_data'),
+        status_info_admin_data => $self->optional_json_object_param ('status_info_admin_data'),
+      )->then (sub {
+        return $tr->commit->then (sub { undef $tr });
+      })->finally (sub {
+        return $tr->rollback if defined $tr;
+      }); # transaction
+    })->then (sub {
+      return $self->json ({});
+    });
+  }
+
+  return $self->throw_error (404);
+} # run_blog
 
 sub run_star ($) {
   my $self = $_[0];
@@ -1636,6 +1861,7 @@ sub run ($) {
 
   if ($self->{type} eq 'comment' or
       $self->{type} eq 'star' or
+      $self->{type} eq 'blog' or
       $self->{type} eq 'follow' or
       $self->{type} eq 'nobj') {
     my $method = 'run_'.$self->{type};

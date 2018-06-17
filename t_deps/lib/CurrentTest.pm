@@ -415,6 +415,22 @@ sub create_comment ($$$) {
   });
 } # create_comment
 
+sub create_blog_entry ($$$) {
+  my ($self, $name, $opts) = @_;
+  return $self->json (['blog', 'post.json'], {
+    ($self->_nobj ('blog', $opts)),
+    data => perl2json_chars ($opts->{data} or {}),
+    internal_data => perl2json_chars ($opts->{internal_data} or {}),
+    author_status => $opts->{author_status} // 2,
+    owner_status => $opts->{owner_status} // 2,
+    admin_status => $opts->{admin_status} // 2,
+  }, app => $opts->{app})->then (sub {
+    my $result = $_[0];
+    $result->{json}->{nobj_key} = 'apploach-bentry-'.$result->{json}->{blog_entry_id};
+    $self->set_o ($name => $result->{json});
+  });
+} # create_blog_entry
+
 sub create_star ($$$) {
   my ($self, $name, $opts) = @_;
   return $self->json (['star', 'add.json'], {
