@@ -70,6 +70,7 @@ Test {
       my $c = $result->{json}->{items}->[0];
       is $c->{blog_entry_id}, $current->o ('c1')->{blog_entry_id};
       is $c->{data}->{timestamp}, $current->o ('c1')->{timestamp};
+      ok $c->{data}->{modified} > $c->{data}->{timestamp};
       is $c->{data}->{body}, $current->o ('text4');
       is $c->{data}->{abc}, undef;
       is $c->{data}->{foo}, $current->o ('text5'),
@@ -79,7 +80,7 @@ Test {
       is $c->{admin_status}, 7;
     } $current->c;
   });
-} n => 11, name => 'edit.json modify data';
+} n => 12, name => 'edit.json modify data';
 
 Test {
   my $current = shift;
@@ -125,6 +126,7 @@ Test {
       my $c = $result->{json}->{items}->[0];
       is $c->{blog_entry_id}, $current->o ('c1')->{blog_entry_id};
       is $c->{data}->{timestamp}, 63463444;
+      ok $c->{data}->{modified} > $c->{data}->{timestamp};
       is $c->{data}->{body}, $current->o ('text1');
       is $c->{data}->{abc}, $current->o ('text3');
       is $c->{internal_data}->{abc}, $current->o ('text5');
@@ -134,7 +136,65 @@ Test {
       is $c->{admin_status}, 53;
     } $current->c;
   });
-} n => 10, name => 'edit.json modify data and timestamp';
+} n => 11, name => 'edit.json modify data and timestamp';
+
+Test {
+  my $current = shift;
+  return Promise->resolve->then (sub {
+    return $current->create (
+      [t1 => nobj => {}],
+      [a1 => account => {}],
+      [c1 => blog_entry => {
+        thread => 't1',
+        data => {
+          body => $current->generate_text (text1 => {}),
+          abc => $current->generate_text (text3 => {}),
+        },
+        internal_data => {
+          hoge => $current->generate_text (text2 => {}),
+        },
+        author_status => 5,
+        owner_status => 6,
+        admin_status => 7,
+      }],
+    );
+  })->then (sub {
+    return $current->json (['blog', 'edit.json'], {
+      blog_entry_id => $current->o ('c1')->{blog_entry_id},
+      data_delta => {
+        modified => 63463444,
+      },
+      internal_data_delta => {
+        abc => $current->generate_text (text5 => {}),
+      },
+      admin_status => 53,
+      operator_nobj_key => $current->generate_key (rand, {}),
+    });
+  })->then (sub {
+    return $current->json (['blog', 'list.json'], {
+      blog_entry_id => $current->o ('c1')->{blog_entry_id},
+      with_internal_data => 1,
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $c = $result->{json}->{items}->[0];
+      is $c->{blog_entry_id}, $current->o ('c1')->{blog_entry_id};
+      is $c->{data}->{timestamp}, $current->o ('c1')->{timestamp};
+      ok $c->{data}->{modified} > $c->{data}->{timestamp};
+      is $c->{data}->{body}, $current->o ('text1');
+      is $c->{data}->{abc}, $current->o ('text3');
+      is $c->{internal_data}->{abc}, $current->o ('text5');
+      is $c->{internal_data}->{hoge}, $current->o ('text2');
+      is $c->{internal_data}->{timestamp}, undef;
+      is $c->{internal_data}->{modified}, undef;
+      is $c->{author_status}, 5;
+      is $c->{owner_status}, 6;
+      is $c->{admin_status}, 53;
+    } $current->c;
+  });
+} n => 13, name => 'edit.json modify data and modified';
 
 Test {
   my $current = shift;

@@ -724,6 +724,7 @@ sub edit_comment ($$$%) {
           }
         }
       }
+      $updates->{$name}->{modified} = time if $changed and $name eq 'data';
       delete $updates->{$name} unless $changed;
     } # $name
     for (qw(author_status owner_status admin_status)) {
@@ -907,7 +908,8 @@ sub run_comment ($) {
     ##   NObj (|author|) : The comment's author.
     ##
     ##   |data| : JSON object : The comment's data.  Its |timestamp|
-    ##   is replaced by the time Apploach accepts the comment.
+    ##   and |modified| are replaced by the time Apploach accepts the
+    ##   comment.
     ##
     ##   |internal_data| : JSON object : The comment's internal
     ##   data, intended for storing private data such as author's IP
@@ -926,7 +928,7 @@ sub run_comment ($) {
       my ($thread, $author) = @{$_[0]->[0]};
       my $data = $self->json_object_param ('data');
       my $time = time;
-      $data->{timestamp} = $time;
+      $data->{timestamp} = $data->{modified} = $time;
       return $self->db->insert ('comment', [{
         ($self->app_id_columns),
         ($thread->to_columns ('thread')),
@@ -954,7 +956,9 @@ sub run_comment ($) {
     ##   |data_delta| : JSON object : The comment's new data.
     ##   Unchanged name/value pairs can be omitted.  Removed names
     ##   should be set to |null| values.  Optional if nothing to
-    ##   change.
+    ##   change.  If the comment's data is found to be altered, its
+    ##   |modified| is updated to the time Apploach accepts the
+    ##   modification.
     ##
     ##   |internal_data_delta| : JSON object : The comment's new
     ##   internal data.  Unchanged name/value pairs can be omitted.
@@ -1188,7 +1192,7 @@ sub run_blog ($) {
       my (undef, $ids) = @{$_[0]};
       my ($thread) = @{$_[0]->[0]};
       my $time = time;
-      my $data = {timestamp => $time};
+      my $data = {timestamp => $time, modified => $time};
       return $self->db->insert ('blog_entry', [{
         ($self->app_id_columns),
         ($thread->to_columns ('blog')),
@@ -1214,7 +1218,9 @@ sub run_blog ($) {
     ##   |data_delta| : JSON object : The blog entry's new data.
     ##   Unchanged name/value pairs can be omitted.  Removed names
     ##   should be set to |null| values.  Optional if nothing to
-    ##   change.
+    ##   change.  If the blog entry's data is found to be altered, its
+    ##   |modified| is updated to the time Apploach accepts the
+    ##   modification.
     ##
     ##   |internal_data_delta| : JSON object : The blog entry's new
     ##   internal data.  Unchanged name/value pairs can be omitted.

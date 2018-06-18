@@ -52,6 +52,7 @@ Test {
       my $c = $result->{json}->{items}->[0];
       is $c->{comment_id}, $current->o ('c1')->{comment_id};
       is $c->{data}->{timestamp}, $current->o ('c1')->{timestamp};
+      is $c->{data}->{modified}, $c->{data}->{timestamp};
       is $c->{author_nobj_key}, $current->o ('uid1');
       is $c->{thread_nobj_key}, $current->o ('key1');
       is $c->{data}->{a}, 5;
@@ -62,7 +63,7 @@ Test {
       has_json_string $result, 'comment_id';
     } $current->c;
   });
-} n => 15, name => 'post.json';
+} n => 16, name => 'post.json';
 
 RUN;
 
