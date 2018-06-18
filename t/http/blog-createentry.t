@@ -38,6 +38,7 @@ Test {
     } $current->c;
     return $current->json (['blog', 'list.json'], {
       blog_entry_id => $current->o ('c1')->{blog_entry_id},
+      with_data => 1,
       with_internal_data => 1,
     });
   })->then (sub {
@@ -47,6 +48,8 @@ Test {
       my $c = $result->{json}->{items}->[0];
       is $c->{blog_entry_id}, $current->o ('c1')->{blog_entry_id};
       is $c->{data}->{timestamp}, $current->o ('c1')->{timestamp};
+      is $c->{data}->{modified}, $c->{data}->{timestamp};
+      is $c->{data}->{title}, '';
       is $c->{blog_nobj_key}, $current->o ('key1');
       is $c->{data}->{a}, undef;
       is $c->{internal_data}->{c}, undef;
@@ -56,7 +59,7 @@ Test {
       has_json_string $result, 'blog_entry_id';
     } $current->c;
   });
-} n => 14, name => 'createentry.json';
+} n => 16, name => 'createentry.json';
 
 RUN;
 

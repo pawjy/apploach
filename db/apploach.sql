@@ -111,3 +111,6 @@ create table if not exists `blog_entry` (
   key (`app_id`, `timestamp`),
   key (`timestamp`)
 ) default charset=binary engine=innodb;
+
+alter table `blog_entry`
+  add column `title` varbinary(1023) not null;

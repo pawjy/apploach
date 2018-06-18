@@ -712,6 +712,8 @@ sub edit_comment ($$$%) {
             $changed = 1;
             if ($_ eq 'timestamp') {
               $updates->{timestamp} = 0+$updates->{$name}->{$_};
+            } elsif ($_ eq 'title') {
+              $updates->{title} = ''.Dongry::Type->serialize ('text', $updates->{$name}->{$_});
             }
           }
         } else {
@@ -720,10 +722,13 @@ sub edit_comment ($$$%) {
             $changed = 1;
             if ($_ eq 'timestamp') {
               $updates->{timestamp} = 0;
+            } elsif ($_ eq 'title') {
+              $updates->{title} = ''.Dongry::Type->serialize ('text', $updates->{$name}->{$_});
             }
           }
         }
       }
+      $updates->{$name}->{modified} = time if $changed and $name eq 'data';
       delete $updates->{$name} unless $changed;
     } # $name
     for (qw(author_status owner_status admin_status)) {
@@ -907,7 +912,8 @@ sub run_comment ($) {
     ##   NObj (|author|) : The comment's author.
     ##
     ##   |data| : JSON object : The comment's data.  Its |timestamp|
-    ##   is replaced by the time Apploach accepts the comment.
+    ##   and |modified| are replaced by the time Apploach accepts the
+    ##   comment.
     ##
     ##   |internal_data| : JSON object : The comment's internal
     ##   data, intended for storing private data such as author's IP
@@ -926,7 +932,7 @@ sub run_comment ($) {
       my ($thread, $author) = @{$_[0]->[0]};
       my $data = $self->json_object_param ('data');
       my $time = time;
-      $data->{timestamp} = $time;
+      $data->{timestamp} = $data->{modified} = $time;
       return $self->db->insert ('comment', [{
         ($self->app_id_columns),
         ($thread->to_columns ('thread')),
@@ -954,7 +960,9 @@ sub run_comment ($) {
     ##   |data_delta| : JSON object : The comment's new data.
     ##   Unchanged name/value pairs can be omitted.  Removed names
     ##   should be set to |null| values.  Optional if nothing to
-    ##   change.
+    ##   change.  If the comment's data is found to be altered, its
+    ##   |modified| is updated to the time Apploach accepts the
+    ##   modification.
     ##
     ##   |internal_data_delta| : JSON object : The comment's new
     ##   internal data.  Unchanged name/value pairs can be omitted.
@@ -1098,6 +1106,13 @@ sub run_blog ($) {
     ##   |blog_entry_id| is specified, it is further limited to one
     ##   with that |blog_entry_id|.
     ##
+    ##   |with_title| : Boolean : Whether |data|'s |title| should be
+    ##   returned or not.  This is implied as true if |with_data| is
+    ##   true.
+    ##
+    ##   |with_data| : Boolean : Whether |data| should be returned or
+    ##   not.
+    ##
     ##   |with_internal_data| : Boolean : Whether |internal_data|
     ##   should be returned or not.
     ##
@@ -1140,10 +1155,12 @@ sub run_blog ($) {
             if $thread->missing;
       }
 
+      my $wd = $self->{app}->bare_param ('with_data');
       return $self->db->select ('blog_entry', $where, fields => [
         'blog_entry_id',
         'blog_nobj_id',
-        'data',
+        (($self->{app}->bare_param ('with_title') and not $wd) ? ('title') : ()),
+        ($wd ? ('data') : ()),
         ($self->{app}->bare_param ('with_internal_data') ? ('internal_data') : ()),
         'author_status', 'owner_status', 'admin_status',
         'timestamp',
@@ -1157,7 +1174,11 @@ sub run_blog ($) {
       my $items = $_[0];
       for my $item (@$items) {
         $item->{blog_entry_id} .= '';
-        $item->{data} = Dongry::Type->parse ('json', $item->{data});
+        if (defined $item->{data}) {
+          $item->{data} = Dongry::Type->parse ('json', $item->{data});
+        } elsif (defined $item->{title}) {
+          $item->{data} = {title => Dongry::Type->parse ('text', delete $item->{title})};
+        }
         $item->{internal_data} = Dongry::Type->parse ('json', $item->{internal_data})
             if defined $item->{internal_data};
       }
@@ -1188,7 +1209,7 @@ sub run_blog ($) {
       my (undef, $ids) = @{$_[0]};
       my ($thread) = @{$_[0]->[0]};
       my $time = time;
-      my $data = {timestamp => $time};
+      my $data = {timestamp => $time, modified => $time, title => ''};
       return $self->db->insert ('blog_entry', [{
         ($self->app_id_columns),
         ($thread->to_columns ('blog')),
@@ -1196,6 +1217,7 @@ sub run_blog ($) {
         data => Dongry::Type->serialize ('json', $data),
         internal_data => Dongry::Type->serialize ('json', {}),
         ($self->status_columns),
+        title => $data->{title},
         timestamp => $data->{timestamp},
       }])->then (sub {
         return $self->json ({
@@ -1214,7 +1236,9 @@ sub run_blog ($) {
     ##   |data_delta| : JSON object : The blog entry's new data.
     ##   Unchanged name/value pairs can be omitted.  Removed names
     ##   should be set to |null| values.  Optional if nothing to
-    ##   change.
+    ##   change.  If the blog entry's data is found to be altered, its
+    ##   |modified| is updated to the time Apploach accepts the
+    ##   modification.
     ##
     ##   |internal_data_delta| : JSON object : The blog entry's new
     ##   internal data.  Unchanged name/value pairs can be omitted.
