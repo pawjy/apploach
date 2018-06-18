@@ -61,6 +61,7 @@ Test {
   })->then (sub {
     return $current->json (['blog', 'list.json'], {
       blog_entry_id => $current->o ('c1')->{blog_entry_id},
+      with_data => 1,
       with_internal_data => 1,
     });
   })->then (sub {
@@ -117,6 +118,7 @@ Test {
   })->then (sub {
     return $current->json (['blog', 'list.json'], {
       blog_entry_id => $current->o ('c1')->{blog_entry_id},
+      with_data => 1,
       with_internal_data => 1,
     });
   })->then (sub {
@@ -173,6 +175,7 @@ Test {
   })->then (sub {
     return $current->json (['blog', 'list.json'], {
       blog_entry_id => $current->o ('c1')->{blog_entry_id},
+      with_data => 1,
       with_internal_data => 1,
     });
   })->then (sub {
@@ -224,6 +227,7 @@ Test {
   })->then (sub {
     return $current->json (['blog', 'list.json'], {
       blog_entry_id => $current->o ('c1')->{blog_entry_id},
+      with_data => 1,
       with_internal_data => 1,
     });
   })->then (sub {
@@ -261,6 +265,7 @@ Test {
   })->then (sub {
     return $current->json (['blog', 'list.json'], {
       blog_entry_id => $current->o ('c1')->{blog_entry_id},
+      with_data => 1,
     });
   })->then (sub {
     my $result = $_[0];
@@ -278,6 +283,7 @@ Test {
   })->then (sub {
     return $current->json (['blog', 'list.json'], {
       blog_entry_id => $current->o ('c1')->{blog_entry_id},
+      with_data => 1,
     });
   })->then (sub {
     my $result = $_[0];
@@ -295,6 +301,7 @@ Test {
   })->then (sub {
     return $current->json (['blog', 'list.json'], {
       blog_entry_id => $current->o ('c1')->{blog_entry_id},
+      with_data => 1,
     });
   })->then (sub {
     my $result = $_[0];
@@ -319,6 +326,7 @@ Test {
   })->then (sub {
     return $current->json (['blog', 'list.json'], {
       blog_entry_id => $current->o ('c1')->{blog_entry_id},
+      with_data => 1,
     });
   })->then (sub {
     my $result = $_[0];
@@ -495,6 +503,7 @@ Test {
   })->then (sub {
     return $current->json (['blog', 'list.json'], {
       blog_entry_id => $current->o ('c1')->{blog_entry_id},
+      with_data => 1,
       with_internal_data => 1,
     });
   })->then (sub {
@@ -515,6 +524,7 @@ Test {
   })->then (sub {
     return $current->json (['blog', 'list.json'], {
       blog_entry_id => $current->o ('c1')->{blog_entry_id},
+      with_data => 1,
       with_internal_data => 1,
     });
   })->then (sub {
@@ -534,6 +544,7 @@ Test {
   })->then (sub {
     return $current->json (['blog', 'list.json'], {
       blog_entry_id => $current->o ('c1')->{blog_entry_id},
+      with_data => 1,
     });
   })->then (sub {
     my $result = $_[0];

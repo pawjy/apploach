@@ -1106,6 +1106,13 @@ sub run_blog ($) {
     ##   |blog_entry_id| is specified, it is further limited to one
     ##   with that |blog_entry_id|.
     ##
+    ##   |with_title| : Boolean : Whether |data|'s |title| should be
+    ##   returned or not.  This is implied as true if |with_data| is
+    ##   true.
+    ##
+    ##   |with_data| : Boolean : Whether |data| should be returned or
+    ##   not.
+    ##
     ##   |with_internal_data| : Boolean : Whether |internal_data|
     ##   should be returned or not.
     ##
@@ -1148,10 +1155,12 @@ sub run_blog ($) {
             if $thread->missing;
       }
 
+      my $wd = $self->{app}->bare_param ('with_data');
       return $self->db->select ('blog_entry', $where, fields => [
         'blog_entry_id',
         'blog_nobj_id',
-        'data',
+        (($self->{app}->bare_param ('with_title') and not $wd) ? ('title') : ()),
+        ($wd ? ('data') : ()),
         ($self->{app}->bare_param ('with_internal_data') ? ('internal_data') : ()),
         'author_status', 'owner_status', 'admin_status',
         'timestamp',
@@ -1165,7 +1174,11 @@ sub run_blog ($) {
       my $items = $_[0];
       for my $item (@$items) {
         $item->{blog_entry_id} .= '';
-        $item->{data} = Dongry::Type->parse ('json', $item->{data});
+        if (defined $item->{data}) {
+          $item->{data} = Dongry::Type->parse ('json', $item->{data});
+        } elsif (defined $item->{title}) {
+          $item->{data} = {title => Dongry::Type->parse ('text', delete $item->{title})};
+        }
         $item->{internal_data} = Dongry::Type->parse ('json', $item->{internal_data})
             if defined $item->{internal_data};
       }
