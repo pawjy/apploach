@@ -1167,22 +1167,14 @@ sub run_blog ($) {
         return $self->json ({items => $items, %$next_page});
       });
     });
-  } elsif (@{$self->{path}} == 1 and $self->{path}->[0] eq 'post.json') {
-    ## /{app_id}/blog/post.json - Add a new blog entry.
+  } elsif (@{$self->{path}} == 1 and $self->{path}->[0] eq 'createentry.json') {
+    ## /{app_id}/blog/createentry.json - Add a new blog entry.
     ##
     ## Parameters.
     ##
     ##   NObj (|blog|) : The blog entry's blog.
     ##
     ##   Statuses : The blog entry's statuses.
-    ##
-    ##   |data| : JSON object : The blog entry's data.  Its
-    ##   |timestamp| is replaced by the time Apploach accepts the blog
-    ##   entry unless it is a primitive value.
-    ##
-    ##   |internal_data| : JSON object : The blog entry's internal
-    ##   data, intended for storing private data such as author's IP
-    ##   address.
     ##
     ## Created object response.
     ##
@@ -1195,25 +1187,22 @@ sub run_blog ($) {
     ])->then (sub {
       my (undef, $ids) = @{$_[0]};
       my ($thread) = @{$_[0]->[0]};
-      my $data = $self->json_object_param ('data');
       my $time = time;
-      $data->{timestamp} = $time
-          unless defined $data->{timestamp} and not ref $data->{timestamp};
+      my $data = {timestamp => $time};
       return $self->db->insert ('blog_entry', [{
         ($self->app_id_columns),
         ($thread->to_columns ('blog')),
         blog_entry_id => $ids->[0],
         data => Dongry::Type->serialize ('json', $data),
-        internal_data => Dongry::Type->serialize ('json', $self->json_object_param ('internal_data')),
+        internal_data => Dongry::Type->serialize ('json', {}),
         ($self->status_columns),
-        timestamp => $time,
+        timestamp => $data->{timestamp},
       }])->then (sub {
         return $self->json ({
           blog_entry_id => ''.$ids->[0],
           timestamp => $time,
         });
       });
-      # XXX kick notifications
     });
   } elsif (@{$self->{path}} == 1 and $self->{path}->[0] eq 'edit.json') {
     ## /{app_id}/blog/edit.json - Edit a blog entry.

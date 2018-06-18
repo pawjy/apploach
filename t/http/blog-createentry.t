@@ -7,7 +7,7 @@ use Tests;
 Test {
   my $current = shift;
   return $current->are_errors (
-    [['blog', 'post.json'], {
+    [['blog', 'createentry.json'], {
       blog_nobj_key => $current->generate_key (key1 => {}),
       data => '{"a":5}',
       internal_data => '{"c":6}',
@@ -17,12 +17,10 @@ Test {
     }],
     [
       ['new_nobj', 'blog'],
-      ['json', 'data'],
-      ['json', 'internal_data'],
       'status',
     ],
   )->then (sub {
-    return $current->json (['blog', 'post.json'], {
+    return $current->json (['blog', 'createentry.json'], {
       blog_nobj_key => $current->o ('key1'),
       data => '{"a":5}',
       internal_data => '{"c":6}',
@@ -50,15 +48,15 @@ Test {
       is $c->{blog_entry_id}, $current->o ('c1')->{blog_entry_id};
       is $c->{data}->{timestamp}, $current->o ('c1')->{timestamp};
       is $c->{blog_nobj_key}, $current->o ('key1');
-      is $c->{data}->{a}, 5;
-      is $c->{internal_data}->{c}, 6;
+      is $c->{data}->{a}, undef;
+      is $c->{internal_data}->{c}, undef;
       is $c->{author_status}, 14;
       is $c->{owner_status}, 2;
       is $c->{admin_status}, 3;
       has_json_string $result, 'blog_entry_id';
     } $current->c;
   });
-} n => 14, name => 'post.json';
+} n => 14, name => 'createentry.json';
 
 RUN;
 
