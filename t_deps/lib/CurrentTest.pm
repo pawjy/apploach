@@ -417,10 +417,8 @@ sub create_comment ($$$) {
 
 sub create_blog_entry ($$$) {
   my ($self, $name, $opts) = @_;
-  return $self->json (['blog', 'post.json'], {
+  return $self->json (['blog', 'createentry.json'], {
     ($self->_nobj ('blog', $opts)),
-    data => perl2json_chars ($opts->{data} or {}),
-    internal_data => perl2json_chars ($opts->{internal_data} or {}),
     author_status => $opts->{author_status} // 2,
     owner_status => $opts->{owner_status} // 2,
     admin_status => $opts->{admin_status} // 2,
@@ -428,6 +426,14 @@ sub create_blog_entry ($$$) {
     my $result = $_[0];
     $result->{json}->{nobj_key} = 'apploach-bentry-'.$result->{json}->{blog_entry_id};
     $self->set_o ($name => $result->{json});
+
+    return unless defined $opts->{data} or defined $opts->{internal_data};
+    return $self->json (['blog', 'edit.json'], {
+      blog_entry_id => $result->{json}->{blog_entry_id},
+      ($self->_nobj ('operator', $opts)),
+      data_delta => perl2json_chars ($opts->{data} or {}),
+      internal_data_delta => perl2json_chars ($opts->{internal_data} or {}),
+    }, app => $opts->{app});
   });
 } # create_blog_entry
 
