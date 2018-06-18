@@ -471,6 +471,80 @@ Test {
   });
 } n => 28, name => 'status, logs - 2';
 
+Test {
+  my $current = shift;
+  return Promise->resolve->then (sub {
+    return $current->create (
+      [t1 => nobj => {}],
+      [a1 => account => {}],
+      [c1 => blog_entry => {
+        thread => 't1',
+        data => {
+          title => $current->generate_text (text1 => {}),
+        },
+      }],
+    );
+  })->then (sub {
+    return $current->json (['blog', 'edit.json'], {
+      blog_entry_id => $current->o ('c1')->{blog_entry_id},
+      data_delta => {
+        title => $current->generate_text (text3 => {}),
+      },
+      operator_nobj_key => $current->generate_key (rand, {}),
+    });
+  })->then (sub {
+    return $current->json (['blog', 'list.json'], {
+      blog_entry_id => $current->o ('c1')->{blog_entry_id},
+      with_internal_data => 1,
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $c = $result->{json}->{items}->[0];
+      is $c->{data}->{title}, $current->o ('text3');
+      is $c->{internal_data}->{title}, undef;
+    } $current->c;
+    return $current->json (['blog', 'edit.json'], {
+      blog_entry_id => $current->o ('c1')->{blog_entry_id},
+      data_delta => {
+        title => $current->generate_text (text4 => {}),
+      },
+      operator_nobj_key => $current->generate_key (rand, {}),
+    });
+  })->then (sub {
+    return $current->json (['blog', 'list.json'], {
+      blog_entry_id => $current->o ('c1')->{blog_entry_id},
+      with_internal_data => 1,
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $c = $result->{json}->{items}->[0];
+      is $c->{data}->{title}, $current->o ('text4');
+    } $current->c;
+    return $current->json (['blog', 'edit.json'], {
+      blog_entry_id => $current->o ('c1')->{blog_entry_id},
+      data_delta => {
+        title => undef,
+      },
+      operator_nobj_key => $current->generate_key (rand, {}),
+    });
+  })->then (sub {
+    return $current->json (['blog', 'list.json'], {
+      blog_entry_id => $current->o ('c1')->{blog_entry_id},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $c = $result->{json}->{items}->[0];
+      is $c->{data}->{title}, undef;
+    } $current->c;
+  });
+} n => 7, name => 'modify title';
+
 RUN;
 
 =head1 LICENSE

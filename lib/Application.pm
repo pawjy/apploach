@@ -712,6 +712,8 @@ sub edit_comment ($$$%) {
             $changed = 1;
             if ($_ eq 'timestamp') {
               $updates->{timestamp} = 0+$updates->{$name}->{$_};
+            } elsif ($_ eq 'title') {
+              $updates->{title} = ''.Dongry::Type->serialize ('text', $updates->{$name}->{$_});
             }
           }
         } else {
@@ -720,6 +722,8 @@ sub edit_comment ($$$%) {
             $changed = 1;
             if ($_ eq 'timestamp') {
               $updates->{timestamp} = 0;
+            } elsif ($_ eq 'title') {
+              $updates->{title} = ''.Dongry::Type->serialize ('text', $updates->{$name}->{$_});
             }
           }
         }
@@ -1192,7 +1196,7 @@ sub run_blog ($) {
       my (undef, $ids) = @{$_[0]};
       my ($thread) = @{$_[0]->[0]};
       my $time = time;
-      my $data = {timestamp => $time, modified => $time};
+      my $data = {timestamp => $time, modified => $time, title => ''};
       return $self->db->insert ('blog_entry', [{
         ($self->app_id_columns),
         ($thread->to_columns ('blog')),
@@ -1200,6 +1204,7 @@ sub run_blog ($) {
         data => Dongry::Type->serialize ('json', $data),
         internal_data => Dongry::Type->serialize ('json', {}),
         ($self->status_columns),
+        title => $data->{title},
         timestamp => $data->{timestamp},
       }])->then (sub {
         return $self->json ({
