@@ -41,6 +41,7 @@ Test {
       is $c->{data}, undef;
       is $c->{title}, undef;
       is $c->{blog_nobj_key}, $current->o ('t1')->{nobj_key};
+      is $c->{summary_data}, undef;
       is $c->{internal_data}, undef, 'no internal_data';
       is $c->{author_status}, 5;
       is $c->{owner_status}, 6;
@@ -60,6 +61,7 @@ Test {
       is $c->{blog_nobj_key}, $current->o ('t1')->{nobj_key};
       is $c->{data}->{title}, '';
       is $c->{data}->{body}, undef;
+      is $c->{summary_data}, undef;
       is $c->{internal_data}, undef, 'no internal_data';
       is $c->{author_status}, 5;
       is $c->{owner_status}, 6;
@@ -79,6 +81,7 @@ Test {
       is $c->{data}->{timestamp}, $current->o ('c1')->{timestamp};
       is $c->{blog_nobj_key}, $current->o ('t1')->{nobj_key};
       is $c->{data}->{body}, $current->o ('text1');
+      is $c->{summary_data}, undef;
       is $c->{internal_data}, undef, 'no internal_data';
       is $c->{author_status}, 5;
       is $c->{owner_status}, 6;
@@ -99,6 +102,7 @@ Test {
       is $c->{data}->{timestamp}, $current->o ('c1')->{timestamp};
       is $c->{blog_nobj_key}, $current->o ('t1')->{nobj_key};
       is $c->{data}->{body}, $current->o ('text1');
+      is $c->{summary_data}, undef;
       is $c->{internal_data}->{hoge}, $current->o ('text2');
       is $c->{author_status}, 5;
       is $c->{owner_status}, 6;
@@ -106,7 +110,7 @@ Test {
       has_json_string $result, 'blog_entry_id';
     } $current->c, name => 'get by blog_entry_id, with_internal_data';
   });
-} n => 41, name => 'list.json get a comment';
+} n => 45, name => 'list.json get a comment';
 
 Test {
   my $current = shift;
@@ -361,6 +365,48 @@ Test {
     } $current->c;
   });
 } n => 6, name => 'title';
+
+Test {
+  my $current = shift;
+  return Promise->resolve->then (sub {
+    return $current->create (
+      [t1 => nobj => {}],
+      [a1 => account => {}],
+      [c1 => blog_entry => {
+        blog => 't1',
+        summary_data => {
+          title => $current->generate_text (text1 => {}),
+        },
+      }],
+    );
+  })->then (sub {
+    return $current->json (['blog', 'list.json'], {
+      blog_entry_id => $current->o ('c1')->{blog_entry_id},
+      with_summary_data => 1,
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $c = $result->{json}->{items}->[0];
+      is $c->{data}, undef;
+      is $c->{summary_data}->{title}, $current->o ('text1');
+    } $current->c;
+    return $current->json (['blog', 'list.json'], {
+      blog_entry_id => $current->o ('c1')->{blog_entry_id},
+      with_data => 1,
+      with_summary_data => 1,
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $c = $result->{json}->{items}->[0];
+      is $c->{data}->{title}, '';
+      is $c->{summary_data}->{title}, $current->o ('text1');
+    } $current->c;
+  });
+} n => 6, name => 'with_summary_data';
 
 RUN;
 

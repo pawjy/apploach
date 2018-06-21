@@ -10,6 +10,7 @@ Test {
     [['blog', 'createentry.json'], {
       blog_nobj_key => $current->generate_key (key1 => {}),
       data => '{"a":5}',
+      summary_data => '{"b":65}',
       internal_data => '{"c":6}',
       author_status => 14,
       owner_status => 2,
@@ -23,6 +24,7 @@ Test {
     return $current->json (['blog', 'createentry.json'], {
       blog_nobj_key => $current->o ('key1'),
       data => '{"a":5}',
+      summary_data => '{"b":66}',
       internal_data => '{"c":6}',
       author_status => 14,
       owner_status => 2,
@@ -39,6 +41,7 @@ Test {
     return $current->json (['blog', 'list.json'], {
       blog_entry_id => $current->o ('c1')->{blog_entry_id},
       with_data => 1,
+      with_summary_data => 1,
       with_internal_data => 1,
     });
   })->then (sub {
@@ -52,6 +55,7 @@ Test {
       is $c->{data}->{title}, '';
       is $c->{blog_nobj_key}, $current->o ('key1');
       is $c->{data}->{a}, undef;
+      is $c->{summary_data}->{b}, undef;
       is $c->{internal_data}->{c}, undef;
       is $c->{author_status}, 14;
       is $c->{owner_status}, 2;
@@ -59,7 +63,7 @@ Test {
       has_json_string $result, 'blog_entry_id';
     } $current->c;
   });
-} n => 16, name => 'createentry.json';
+} n => 17, name => 'createentry.json';
 
 RUN;
 

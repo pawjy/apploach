@@ -114,3 +114,6 @@ create table if not exists `blog_entry` (
 
 alter table `blog_entry`
   add column `title` varbinary(1023) not null;
+
+alter table `blog_entry`
+  add column `summary_data` mediumblob not null;
