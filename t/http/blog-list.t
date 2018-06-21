@@ -60,6 +60,7 @@ Test {
       is $c->{blog_entry_id}, $current->o ('c1')->{blog_entry_id};
       is $c->{blog_nobj_key}, $current->o ('t1')->{nobj_key};
       is $c->{data}->{title}, '';
+      is $c->{data}->{timestamp}, $current->o ('c1')->{timestamp};
       is $c->{data}->{body}, undef;
       is $c->{summary_data}, undef;
       is $c->{internal_data}, undef, 'no internal_data';
@@ -110,7 +111,7 @@ Test {
       has_json_string $result, 'blog_entry_id';
     } $current->c, name => 'get by blog_entry_id, with_internal_data';
   });
-} n => 45, name => 'list.json get a comment';
+} n => 46, name => 'list.json get a comment';
 
 Test {
   my $current = shift;

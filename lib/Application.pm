@@ -1117,9 +1117,9 @@ sub run_blog ($) {
     ##   entry's timestamp, using operator |<|, |<=|, |>=|, or |>|,
     ##   respectively.  If omitted, no range limitations.
     ##
-    ##   |with_title| : Boolean : Whether |data|'s |title| should be
-    ##   returned or not.  This is implied as true if |with_data| is
-    ##   true.
+    ##   |with_title| : Boolean : Whether |data|'s |title| and
+    ##   |timestamp| should be returned or not.  This is implied as
+    ##   true if |with_data| is true.
     ##
     ##   |with_data| : Boolean : Whether |data| should be returned or
     ##   not.
@@ -1217,7 +1217,10 @@ sub run_blog ($) {
         if (defined $item->{data}) {
           $item->{data} = Dongry::Type->parse ('json', $item->{data});
         } elsif (defined $item->{title}) {
-          $item->{data} = {title => Dongry::Type->parse ('text', delete $item->{title})};
+          $item->{data} = {
+            title => Dongry::Type->parse ('text', delete $item->{title}),
+            timestamp => $item->{timestamp},
+          };
         }
         $item->{summary_data} = Dongry::Type->parse ('json', $item->{summary_data})
             if defined $item->{summary_data};
