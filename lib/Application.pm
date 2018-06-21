@@ -670,7 +670,9 @@ sub edit_comment ($$$%) {
       ($self->app_id_columns),
       comment_id => Dongry::Type->serialize ('text', $comment_id),
     }, fields => [
-      'comment_id', 'data', 'internal_data',
+      'comment_id',
+      ((defined $args{data_delta} or defined $args{files_delta}) ? ('data') : ()),
+      (defined $args{internal_data_delta} ? ('internal_data') : ()),
       'author_nobj_id',
       'author_status', 'owner_status', 'admin_status',
     ], lock => 'update') if $args{comment};
@@ -678,7 +680,10 @@ sub edit_comment ($$$%) {
       ($self->app_id_columns),
       blog_entry_id => Dongry::Type->serialize ('text', $comment_id),
     }, fields => [
-      'blog_entry_id', 'data', 'internal_data',
+      'blog_entry_id',
+      (defined $args{data_delta} ? ('data') : ()),
+      (defined $args{summary_data_delta} ? ('summary_data') : ()),
+      (defined $args{internal_data_delta} ? ('internal_data') : ()),
       'author_status', 'owner_status', 'admin_status',
     ], lock => 'update') if $args{blog};
   })->then (sub {
@@ -692,10 +697,11 @@ sub edit_comment ($$$%) {
       }
     }
     
-    my $updates = {};
-    for my $name (qw(data internal_data)) {
+    my $updates = {}; # |summary_data| is $args{blog} only
+    for my $name (qw(data summary_data internal_data)) {
       my $delta = $args{$name.'_delta'};
-      $updates->{$name} = Dongry::Type->parse ('json', $current->{$name});
+      $updates->{$name} = Dongry::Type->parse ('json', $current->{$name})
+          if defined $current->{$name};
       if ($name eq 'data' and @{$args{files_delta} or []}) { # $args{comment}
         $delta->{files} = $updates->{$name}->{files} || [];
         $delta->{files} = [] unless ref $delta->{files} eq 'ARRAY';
@@ -710,27 +716,37 @@ sub edit_comment ($$$%) {
               $updates->{$name}->{$_} ne $delta->{$_}) {
             $updates->{$name}->{$_} = $delta->{$_};
             $changed = 1;
-            if ($_ eq 'timestamp') {
-              $updates->{timestamp} = 0+$updates->{$name}->{$_};
-            } elsif ($_ eq 'title') {
-              $updates->{title} = ''.Dongry::Type->serialize ('text', $updates->{$name}->{$_});
+            if ($name eq 'data') {
+              if ($_ eq 'timestamp') {
+                $updates->{timestamp} = 0+$updates->{$name}->{$_};
+              } elsif ($_ eq 'modified') {
+                $updates->{modified} = 0+$updates->{$name}->{$_};
+              } elsif ($_ eq 'title') {
+                $updates->{title} = ''.Dongry::Type->serialize ('text', $updates->{$name}->{$_});
+              }
             }
           }
         } else {
           if (defined $updates->{$name}->{$_}) {
             delete $updates->{$name}->{$_};
             $changed = 1;
-            if ($_ eq 'timestamp') {
-              $updates->{timestamp} = 0;
-            } elsif ($_ eq 'title') {
-              $updates->{title} = ''.Dongry::Type->serialize ('text', $updates->{$name}->{$_});
+            if ($name eq 'data') {
+              if ($_ eq 'timestamp') {
+                $updates->{timestamp} = 0;
+              } elsif ($_ eq 'modified') {
+                $updates->{modified} = 0;
+              } elsif ($_ eq 'title') {
+                $updates->{title} = ''.Dongry::Type->serialize ('text', $updates->{$name}->{$_});
+              }
             }
           }
         }
       }
-      $updates->{$name}->{modified} = time if $changed and $name eq 'data';
+      $updates->{$name}->{modified} = $updates->{modified} = time
+          if $changed and $name eq 'data';
       delete $updates->{$name} unless $changed;
     } # $name
+    delete $updates->{modified} unless $args{blog};
     for (qw(author_status owner_status admin_status)) {
       my $v = $args{$_};
       next unless defined $v;
@@ -739,7 +755,7 @@ sub edit_comment ($$$%) {
       $updates->{$_} = 0+$v if $current->{$_} != $v;
     } # status
 
-    for (qw(data internal_data)) {
+    for (qw(data summary_data internal_data)) { # |summary_data| - $args{blog}
       $updates->{$_} = Dongry::Type->serialize ('json', $updates->{$_})
           if defined $updates->{$_};
     }
@@ -1089,9 +1105,10 @@ sub run_blog ($) {
   my $self = $_[0];
 
   ## Blogs.  A blog can have zero or more blog entries.  A blog entry
-  ## has ID : ID, blog : NObj, data : JSON object, internal data :
-  ## JSON object, statuses : Statuses.  A blog entry's NObj key is
-  ## |apploach-bentry-| followed by the blog entry's ID.
+  ## has ID : ID, blog : NObj, data : JSON object, summary data : JSON
+  ## object, internal data : JSON object, statuses : Statuses.  A blog
+  ## entry's NObj key is |apploach-bentry-| followed by the blog
+  ## entry's ID.
 
   if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'list.json') {
     ## /{app_id}/blog/list.json - Get blog entries.
@@ -1111,12 +1128,15 @@ sub run_blog ($) {
     ##   entry's timestamp, using operator |<|, |<=|, |>=|, or |>|,
     ##   respectively.  If omitted, no range limitations.
     ##
-    ##   |with_title| : Boolean : Whether |data|'s |title| should be
-    ##   returned or not.  This is implied as true if |with_data| is
-    ##   true.
+    ##   |with_title| : Boolean : Whether |data|'s |title| and
+    ##   |timestamp| should be returned or not.  This is implied as
+    ##   true if |with_data| is true.
     ##
     ##   |with_data| : Boolean : Whether |data| should be returned or
     ##   not.
+    ##
+    ##   |with_summary_data| : Boolean : Whether |summary_data| should
+    ##   be returned or not.
     ##
     ##   |with_internal_data| : Boolean : Whether |internal_data|
     ##   should be returned or not.
@@ -1131,7 +1151,11 @@ sub run_blog ($) {
     ##
     ##   |blog_entry_id| : ID : The blog entry's ID.
     ##
-    ##   |data| : JSON object : The blog entry's data.
+    ##   |data| : JSON object : The blog entry's data.  Only when
+    ##   |with_data| or |with_title| is true.
+    ##
+    ##   |summary_data| : JSON object: The blog entry's summary data.
+    ##   Only when |with_summary_data| is true.
     ##
     ##   |internal_data| : JSON object: The blog entry's internal
     ##   data.  Only when |with_internal_data| is true.
@@ -1187,6 +1211,7 @@ sub run_blog ($) {
         'blog_nobj_id',
         (($self->{app}->bare_param ('with_title') and not $wd) ? ('title') : ()),
         ($wd ? ('data') : ()),
+        ($self->{app}->bare_param ('with_summary_data') ? ('summary_data') : ()),
         ($self->{app}->bare_param ('with_internal_data') ? ('internal_data') : ()),
         'author_status', 'owner_status', 'admin_status',
         'timestamp',
@@ -1203,8 +1228,13 @@ sub run_blog ($) {
         if (defined $item->{data}) {
           $item->{data} = Dongry::Type->parse ('json', $item->{data});
         } elsif (defined $item->{title}) {
-          $item->{data} = {title => Dongry::Type->parse ('text', delete $item->{title})};
+          $item->{data} = {
+            title => Dongry::Type->parse ('text', delete $item->{title}),
+            timestamp => $item->{timestamp},
+          };
         }
+        $item->{summary_data} = Dongry::Type->parse ('json', $item->{summary_data})
+            if defined $item->{summary_data};
         $item->{internal_data} = Dongry::Type->parse ('json', $item->{internal_data})
             if defined $item->{internal_data};
       }
@@ -1241,10 +1271,12 @@ sub run_blog ($) {
         ($thread->to_columns ('blog')),
         blog_entry_id => $ids->[0],
         data => Dongry::Type->serialize ('json', $data),
+        summary_data => Dongry::Type->serialize ('json', {}),
         internal_data => Dongry::Type->serialize ('json', {}),
         ($self->status_columns),
         title => $data->{title},
         timestamp => $data->{timestamp},
+        modified => $data->{timestamp},
       }])->then (sub {
         return $self->json ({
           blog_entry_id => ''.$ids->[0],
@@ -1265,6 +1297,11 @@ sub run_blog ($) {
     ##   change.  If the blog entry's data is found to be altered, its
     ##   |modified| is updated to the time Apploach accepts the
     ##   modification.
+    ##
+    ##   |summary_data_delta| : JSON object : The blog entry's new
+    ##   summary data.  Unchanged name/value pairs can be omitted.
+    ##   Removed names should be set to |null| values.  Optional if
+    ##   nothing to change.
     ##
     ##   |internal_data_delta| : JSON object : The blog entry's new
     ##   internal data.  Unchanged name/value pairs can be omitted.
@@ -1304,6 +1341,7 @@ sub run_blog ($) {
       return $self->edit_comment ($tr, $comment_id,
         blog => 1,
         data_delta => $self->optional_json_object_param ('data_delta'),
+        summary_data_delta => $self->optional_json_object_param ('summary_data_delta'),
         internal_data_delta => $self->optional_json_object_param ('internal_data_delta'),
         operator_nobj => $operator,
         comment_nobj => $cnobj,

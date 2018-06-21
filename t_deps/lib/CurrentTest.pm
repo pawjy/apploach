@@ -427,11 +427,14 @@ sub create_blog_entry ($$$) {
     $result->{json}->{nobj_key} = 'apploach-bentry-'.$result->{json}->{blog_entry_id};
     $self->set_o ($name => $result->{json});
 
-    return unless defined $opts->{data} or defined $opts->{internal_data};
+    return unless defined $opts->{data} or
+                  defined $opts->{summary_data} or
+                  defined $opts->{internal_data};
     return $self->json (['blog', 'edit.json'], {
       blog_entry_id => $result->{json}->{blog_entry_id},
       ($self->_nobj ('operator', $opts)),
       data_delta => perl2json_chars ($opts->{data} or {}),
+      summary_data_delta => perl2json_chars ($opts->{summary_data} or {}),
       internal_data_delta => perl2json_chars ($opts->{internal_data} or {}),
     }, app => $opts->{app});
   });
