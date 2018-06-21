@@ -56,7 +56,8 @@ sub wait_for_http ($$) {
     return (promised_timeout {
       return $client->request (url => $url)->then (sub {
         return 0 if $_[0]->is_network_error;
-        return 0 if $_[0]->status == 502 or $_[0]->status == 503;
+        ## minio can return 503 before it becomes ready.
+        return 0 if $_[0]->status == 503;
         return 1;
       });
     } 1)->catch (sub {
@@ -659,7 +660,7 @@ sub _docker_app ($%) {
     return [$data, $r_s];
   })->catch (sub {
     my $e = $_[0];
-    warn $out;
+    warn $out . "\n" . $e;
     $args{signal}->manakai_onabort (sub { });
     return $stop->()->then (sub { die $e });
   });
