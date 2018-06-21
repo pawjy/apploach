@@ -1106,6 +1106,11 @@ sub run_blog ($) {
     ##   |blog_entry_id| is specified, it is further limited to one
     ##   with that |blog_entry_id|.
     ##
+    ##   |timestamp_lt|, |timestamp_le|, |timestamp_gt|,
+    ##   |timestamp_ge| : Timestamp : Limit the range of the blog
+    ##   entry's timestamp, using operator |<|, |<=|, |>=|, or |>|,
+    ##   respectively.  If omitted, no range limitations.
+    ##
     ##   |with_title| : Boolean : Whether |data|'s |title| should be
     ##   returned or not.  This is implied as true if |with_data| is
     ##   true.
@@ -1145,6 +1150,27 @@ sub run_blog ($) {
         ($self->status_filter_columns),
       };
       $where->{timestamp} = $page->{value} if defined $page->{value};
+      for (
+        ['timestamp_le', '<='],
+        ['timestamp_lt', '<'],
+        ['timestamp_ge', '>='],
+        ['timestamp_gt', '>'],
+      ) {
+        my $value = $self->{app}->bare_param ($_->[0]);
+        if (defined $value) {
+          if (defined $where->{timestamp}->{$_->[1]}) {
+            if ($_->[1] eq '<=' or $_->[1] eq '<') {
+              $where->{timestamp}->{$_->[1]} = $value
+                  if $where->{timestamp}->{$_->[1]} > $value;
+            } else {
+              $where->{timestamp}->{$_->[1]} = $value
+                  if $where->{timestamp}->{$_->[1]} < $value;
+            }
+          } else {
+            $where->{timestamp}->{$_->[1]} = $value;
+          }
+        }
+      }
       
       my $comment_id = $self->{app}->bare_param ('blog_entry_id');
       if (defined $comment_id) {
