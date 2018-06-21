@@ -1117,11 +1117,12 @@ sub run_blog ($) {
     ##
     ##   NObj (|blog|) : The blog entry's blog.
     ##
-    ##   |blog_entry_id| : ID : The blog entry's ID.  Either the blog
-    ##   or the ID, or both, is required.  If the blog is specified,
-    ##   returned blog entries are limited to those in the blog.  If
-    ##   |blog_entry_id| is specified, it is further limited to one
-    ##   with that |blog_entry_id|.
+    ##   |blog_entry_id| : ID : The blog entry's ID.  Zero or more
+    ##   parameters can be specified.  Either the blog or the ID, or
+    ##   both, is required.  If the blog is specified, returned blog
+    ##   entries are limited to those in the blog.  If |blog_entry_id|
+    ##   is specified, it is further limited to one with that
+    ##   |blog_entry_id|.
     ##
     ##   |timestamp_lt|, |timestamp_le|, |timestamp_gt|,
     ##   |timestamp_ge| : Timestamp : Limit the range of the blog
@@ -1195,10 +1196,10 @@ sub run_blog ($) {
           }
         }
       }
-      
-      my $comment_id = $self->{app}->bare_param ('blog_entry_id');
-      if (defined $comment_id) {
-        $where->{blog_entry_id} = $comment_id;
+
+      my $id_list = $self->{app}->bare_param_list ('blog_entry_id');
+      if (@$id_list) {
+        $where->{blog_entry_id} = {-in => $id_list};
       } else {
         return $self->throw
             ({reason => 'Either blog or |blog_entry_id| is required'})

@@ -111,7 +111,61 @@ Test {
       has_json_string $result, 'blog_entry_id';
     } $current->c, name => 'get by blog_entry_id, with_internal_data';
   });
-} n => 46, name => 'list.json get a comment';
+} n => 46, name => 'list.json get a blog';
+
+Test {
+  my $current = shift;
+  return $current->create (
+    [t1 => nobj => {}],
+    [t2 => nobj => {}],
+    [e1 => blog_entry => {blog => 't1'}],
+    [e2 => blog_entry => {blog => 't1'}],
+    [e3 => blog_entry => {blog => 't1'}],
+    [e4 => blog_entry => {blog => 't2'}],
+  )->then (sub {
+    return $current->json (['blog', 'list.json'], {
+      blog_nobj_key => $current->o ('t1')->{nobj_key},
+      blog_entry_id => [
+        42522444,
+        $current->o ('e1')->{blog_entry_id},
+        '',
+        $current->o ('e2')->{blog_entry_id},
+        $current->o ('e2')->{blog_entry_id},
+        $current->o ('e4')->{blog_entry_id},
+      ],
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 2;
+      is $result->{json}->{items}->[0]->{blog_entry_id},
+         $current->o ('e2')->{blog_entry_id};
+      is $result->{json}->{items}->[1]->{blog_entry_id},
+         $current->o ('e1')->{blog_entry_id};
+    } $current->c, name => 'blog filtered';
+    return $current->json (['blog', 'list.json'], {
+      blog_entry_id => [
+        6346246243,
+        $current->o ('e1')->{blog_entry_id},
+        '',
+        $current->o ('e2')->{blog_entry_id},
+        $current->o ('e2')->{blog_entry_id},
+        $current->o ('e4')->{blog_entry_id},
+      ],
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 3;
+      is $result->{json}->{items}->[0]->{blog_entry_id},
+         $current->o ('e4')->{blog_entry_id};
+      is $result->{json}->{items}->[1]->{blog_entry_id},
+         $current->o ('e2')->{blog_entry_id};
+      is $result->{json}->{items}->[2]->{blog_entry_id},
+         $current->o ('e1')->{blog_entry_id};
+    } $current->c, name => 'not blog filtered';
+  });
+} n => 7, name => 'multiple blog_entry_id';
 
 Test {
   my $current = shift;
