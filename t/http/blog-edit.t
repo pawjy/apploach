@@ -86,7 +86,7 @@ Test {
       is $c->{admin_status}, 7;
     } $current->c;
   });
-} n => 12, name => 'edit.json modify data';
+} n => 13, name => 'edit.json modify data';
 
 Test {
   my $current = shift;

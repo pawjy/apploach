@@ -681,7 +681,7 @@ sub edit_comment ($$$%) {
       blog_entry_id => Dongry::Type->serialize ('text', $comment_id),
     }, fields => [
       'blog_entry_id',
-      ((defined $args{data_delta} or defined $args{files_delta}) ? ('data') : ()),
+      (defined $args{data_delta} ? ('data') : ()),
       (defined $args{summary_data_delta} ? ('summary_data') : ()),
       (defined $args{internal_data_delta} ? ('internal_data') : ()),
       'author_status', 'owner_status', 'admin_status',
@@ -697,10 +697,11 @@ sub edit_comment ($$$%) {
       }
     }
     
-    my $updates = {};
+    my $updates = {}; # |summary_data| is $args{blog} only
     for my $name (qw(data summary_data internal_data)) {
       my $delta = $args{$name.'_delta'};
-      $updates->{$name} = Dongry::Type->parse ('json', $current->{$name});
+      $updates->{$name} = Dongry::Type->parse ('json', $current->{$name})
+          if defined $current->{$name};
       if ($name eq 'data' and @{$args{files_delta} or []}) { # $args{comment}
         $delta->{files} = $updates->{$name}->{files} || [];
         $delta->{files} = [] unless ref $delta->{files} eq 'ARRAY';
@@ -715,27 +716,37 @@ sub edit_comment ($$$%) {
               $updates->{$name}->{$_} ne $delta->{$_}) {
             $updates->{$name}->{$_} = $delta->{$_};
             $changed = 1;
-            if ($_ eq 'timestamp') {
-              $updates->{timestamp} = 0+$updates->{$name}->{$_};
-            } elsif ($_ eq 'title') {
-              $updates->{title} = ''.Dongry::Type->serialize ('text', $updates->{$name}->{$_});
+            if ($name eq 'data') {
+              if ($_ eq 'timestamp') {
+                $updates->{timestamp} = 0+$updates->{$name}->{$_};
+              } elsif ($_ eq 'modified') {
+                $updates->{modified} = 0+$updates->{$name}->{$_};
+              } elsif ($_ eq 'title') {
+                $updates->{title} = ''.Dongry::Type->serialize ('text', $updates->{$name}->{$_});
+              }
             }
           }
         } else {
           if (defined $updates->{$name}->{$_}) {
             delete $updates->{$name}->{$_};
             $changed = 1;
-            if ($_ eq 'timestamp') {
-              $updates->{timestamp} = 0;
-            } elsif ($_ eq 'title') {
-              $updates->{title} = ''.Dongry::Type->serialize ('text', $updates->{$name}->{$_});
+            if ($name eq 'data') {
+              if ($_ eq 'timestamp') {
+                $updates->{timestamp} = 0;
+              } elsif ($_ eq 'modified') {
+                $updates->{modified} = 0;
+              } elsif ($_ eq 'title') {
+                $updates->{title} = ''.Dongry::Type->serialize ('text', $updates->{$name}->{$_});
+              }
             }
           }
         }
       }
-      $updates->{$name}->{modified} = time if $changed and $name eq 'data';
+      $updates->{$name}->{modified} = $updates->{modified} = time
+          if $changed and $name eq 'data';
       delete $updates->{$name} unless $changed;
     } # $name
+    delete $updates->{modified} unless $args{blog};
     for (qw(author_status owner_status admin_status)) {
       my $v = $args{$_};
       next unless defined $v;
@@ -744,7 +755,7 @@ sub edit_comment ($$$%) {
       $updates->{$_} = 0+$v if $current->{$_} != $v;
     } # status
 
-    for (qw(data summary_data internal_data)) { # |summary_data| is blog only
+    for (qw(data summary_data internal_data)) { # |summary_data| - $args{blog}
       $updates->{$_} = Dongry::Type->serialize ('json', $updates->{$_})
           if defined $updates->{$_};
     }
@@ -1265,6 +1276,7 @@ sub run_blog ($) {
         ($self->status_columns),
         title => $data->{title},
         timestamp => $data->{timestamp},
+        modified => $data->{timestamp},
       }])->then (sub {
         return $self->json ({
           blog_entry_id => ''.$ids->[0],

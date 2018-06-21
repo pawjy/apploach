@@ -117,3 +117,8 @@ alter table `blog_entry`
 
 alter table `blog_entry`
   add column `summary_data` mediumblob not null;
+
+alter table `blog_entry`
+  add column `modified` double not null,
+  add key (`app_id`, `modified`);
+
