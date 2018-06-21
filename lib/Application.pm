@@ -831,7 +831,7 @@ sub run_comment ($) {
     ##   Only when |with_internal_data| is true.
     ##
     ##   Statuses.
-    my $page = Pager::this_page ($self, limit => 10, max_limit => 100);
+    my $page = Pager::this_page ($self, limit => 10, max_limit => 10000);
     return Promise->all ([
       $self->nobj ('thread'),
     ])->then (sub {
@@ -1137,7 +1137,7 @@ sub run_blog ($) {
     ##   data.  Only when |with_internal_data| is true.
     ##
     ##   Statuses.
-    my $page = Pager::this_page ($self, limit => 10, max_limit => 100);
+    my $page = Pager::this_page ($self, limit => 10, max_limit => 10000);
     return Promise->all ([
       $self->nobj ('blog'),
     ])->then (sub {
@@ -1453,7 +1453,7 @@ sub run_star ($) {
       ##   NObj (|item|) : The star's item.
       ##
       ##   |count| : Integer : The star's count.
-      my $page = Pager::this_page ($self, limit => 10, max_limit => 100);
+      my $page = Pager::this_page ($self, limit => 10, max_limit => 10000);
       return Promise->all ([
         $self->one_nobj (['author', 'starred_author']),
         $self->nobj ('starred_index'),
@@ -1563,7 +1563,7 @@ sub run_follow ($) {
       my $s = $self->{app}->bare_param ('subject_nobj_key');
       my $o = $self->{app}->bare_param ('object_nobj_key');
       my $v = $self->{app}->bare_param ('verb_nobj_key');
-      my $page = Pager::this_page ($self, limit => 100, max_limit => 1000);
+      my $page = Pager::this_page ($self, limit => 100, max_limit => 10000);
       return Promise->all ([
         $self->_no ([$s, $o, $v]),
       ])->then (sub {
@@ -1693,7 +1693,7 @@ sub run_nobj ($) {
       my $s = $self->{app}->bare_param ('operator_nobj_key');
       my $o = $self->{app}->bare_param ('target_nobj_key');
       my $v = $self->{app}->bare_param ('verb_nobj_key');
-      my $page = Pager::this_page ($self, limit => 10, max_limit => 1000);
+      my $page = Pager::this_page ($self, limit => 10, max_limit => 10000);
       return Promise->all ([
         $self->_no ([$s, $o, $v]),
       ])->then (sub {
