@@ -172,6 +172,32 @@ Test {
 
 Test {
   my $current = shift;
+  my $t = time;
+  return $current->create (
+    [t1 => nobj => {}],
+    [c1 => blog_entry => {blog => 't1', data => {timestamp => $t + 1}}],
+    [c2 => blog_entry => {blog => 't1', data => {timestamp => $t + 2}}],
+    [c3 => blog_entry => {blog => 't1', data => {timestamp => $t + 3}}],
+    [c4 => blog_entry => {blog => 't1', data => {timestamp => $t + 4}}],
+    [c5 => blog_entry => {blog => 't1', data => {timestamp => $t + 5}}],
+    [c6 => blog_entry => {blog => 't1', data => {timestamp => $t + 6}}],
+  )->then (sub {
+    return $current->pages_ok ([['blog', 'list.json'], {
+      blog_nobj_key => $current->o ('t1')->{nobj_key},
+      timestamp_ge => $t + 2,
+      timestamp_le => $t + 4,
+    }] => ['c2', 'c3', 'c4'], 'blog_entry_id');
+  })->then (sub {
+    return $current->pages_ok ([['blog', 'list.json'], {
+      blog_nobj_key => $current->o ('t1')->{nobj_key},
+      timestamp_gt => $t + 2,
+      timestamp_lt => $t + 6,
+    }] => ['c3', 'c4', 'c5'], 'blog_entry_id');
+  });
+} n => 2, name => 'pager timestamp ranged';
+
+Test {
+  my $current = shift;
   return $current->create (
     [t1 => nobj => {}],
     [c1 => blog_entry => {
