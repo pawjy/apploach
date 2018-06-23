@@ -35,6 +35,33 @@ use Pager;
 ##   |ikachan_message_prefix| : String? : A short string used as the
 ##   prefix of the error message.  Required if |ikachan_url_prefix| is
 ##   specified.
+##
+##   |s3_aws4| : Array of four Strings : The access key ID, the secret
+##   access key, the AWS region such as C<us-east-1>, and the AWS
+##   service such as C<s3>, used to access to the storage server.
+##   Required when the storage server is used.
+##
+##   |s3_sts_role_arn| : String? : The AWS STS role ARN.  If
+##   specified, it is used to generate upload forms.
+##
+##   |s3_bucket| : String : The bucket name on the storage server.
+##   Required when the storage server is used.
+##
+##   |s3_form_url| : String : The URL of the bucket on the storage
+##   server that is accessible from the client (who uploads files).
+##   Required when the storage server is used.
+##
+##   |s3_file_url_prefix| : String : The URL path in the bucket on the
+##   storage server, under which the files are stored.  Required when
+##   the storage server is used.
+##
+## There must be a storage server that has AWS S3 compatible Web API,
+## such as Minio, when storage-server-bound features are used.  The
+## bucket must be configured such that files in the directory of
+## |s3_file_url_prefix| are private (i.e. not readable by the world)
+## and the |public/| directory in the directory of
+## |s3_file_url_prefix| are public (i.e. readable by the world).  We
+## don't use |x-aws-acl:| header as it is not supported by Minio.
 
 ## HTTP requests.
 ##
@@ -536,6 +563,9 @@ sub prepare_upload ($$%) {
   ##     |file_url| : String : The result URL of the file.  Note that
   ##     this URL is not world-accessible.
   ##
+  ##     |public_file_url| : String : The result URL of the file that
+  ##     is world-accessible, if the file is made public.
+  ##
   ##     |signed_url| : String : The signed URL of the file, which can
   ##     be used to access to the file content.
   ##
@@ -561,6 +591,7 @@ sub prepare_upload ($$%) {
     #my $file_url = "https://$service-$region.amazonaws.com/$bucket/$key";
     #my $file_url = "https://$bucket/$key";
     my $file_url = $self->{config}->{s3_file_url_prefix} . $key;
+    my $public_file_url = $self->{config}->{s3_file_url_prefix} . 'public/' . $key;
     my $bucket = $self->{config}->{s3_bucket};
     my $accesskey = $self->{config}->{s3_aws4}->[0];
     my $secret = $self->{config}->{s3_aws4}->[1];
@@ -568,6 +599,7 @@ sub prepare_upload ($$%) {
     my $token;
     my $expires;
     my $max_age = 60*60;
+    my $now = time;
     
     return Promise->resolve->then (sub {
       my $sts_role_arn = $self->{config}->{s3_sts_role_arn};
@@ -576,7 +608,7 @@ sub prepare_upload ($$%) {
           (qq<https://sts.$region.amazonaws.com/>);
       my $sts_client = Web::Transport::ConnectionClient->new_from_url
           ($sts_url);
-      $expires = time + $max_age;
+      $expires = $now + $max_age;
       return $sts_client->request (
         url => $sts_url,
         params => {
@@ -644,6 +676,7 @@ sub prepare_upload ($$%) {
            url => Web::URL->parse_string ($file_url));
       
       return {
+        time => $now,
         form_data => {
           key => $key,
           acl => $acl,
@@ -654,11 +687,26 @@ sub prepare_upload ($$%) {
         form_url => $self->{config}->{s3_form_url},
         file => {
           file_url => $file_url,
+          public_file_url => $public_file_url,
           signed_url => $signed->stringify,
           mime_type => $args{mime_type},
           byte_length => 0+$args{byte_length},
         },
       };
+    });
+  })->then (sub {
+    my $result = $_[0];
+    return $tr->insert ('attachment', [{
+      ($self->app_id_columns),
+      ($args{target}->to_columns ('target')),
+      url => Dongry::Type->serialize ('text', $result->{file}->{file_url}),
+      data => Dongry::Type->serialize ('json', $result->{file}),
+      open => 0,
+      deleted => 0,
+      created => $result->{time},
+      modified => $result->{time},
+    }], source_name => 'master')->then (sub {
+      return $result;
     });
   });
 } # prepare_upload
@@ -1064,6 +1112,9 @@ sub run_comment ($) {
     ## with the comment.  The comment's data's |files| is set to an
     ## array which contains the |file| value of the created file
     ## upload information.
+    ##
+    ## This is similar to |/nobj/attachform.json| but integrated with
+    ## comments.
     my $operator;
     my $cnobj;
     my $comment_id = $self->id_param ('comment');
@@ -1076,6 +1127,7 @@ sub run_comment ($) {
     })->then (sub {
       my $tr = $_[0];
       return $self->prepare_upload ($tr,
+        target => $cnobj,
         mime_type => $self->{app}->bare_param ('mime_type'),
         byte_length => $self->{app}->bare_param ('byte_length'),
         prefix => 'apploach/comment/' . $comment_id,
@@ -1931,6 +1983,189 @@ sub run_nobj ($) {
       });
     }
 
+  ## Attachments.  An NObj can have zero or more attachments.  An
+  ## attachment has target NObj, URL, public URL, MIME type, byte
+  ## length : Integer, payload : Bytes?, open : Boolean, deleted :
+  ## Boolean.  Attachments are stored on the storage server.  When the
+  ## attachment's open is true, it is accessible via its public URL or
+  ## its signed URL.  Otherwise, it is accessible via its signed URL.
+  
+  if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'attachform.json') {
+    ## /{app_id}/nobj/attachform.json - Create a form to add an
+    ## attachment to the NObj.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|target|) : ID : The attachment's NObj.  Required.
+    ##
+    ##   |path_prefix| : String : The path of the attachment's URL,
+    ##   within the directory specified by the configuration, without
+    ##   random string part assigned by the Apploach server.  It must
+    ##   be a string matching to |(/[A-Za-z0-9]+)+|.  Required.
+    ##
+    ##   File upload parameters: |mime_type| and |byte_length|.
+    ##   Required.
+    ##
+    ## Response.
+    ##
+    ##   File upload information.
+    ##
+    ## This end point creates a file upload form.  By uploading a file
+    ## using the file, the file's content is set to the attachment's
+    ## payload.
+    my $target;
+    my $path = $self->{app}->bare_param ('path_prefix') // '';
+    return $self->throw ({reason => 'Bad |path_prefix|'})
+        unless $path =~ m{\A(?:/[0-9A-Za-z]+)+\z} and
+               512 > length $path;
+    $path =~ s{^/}{};
+    return Promise->all ([
+      $self->new_nobj_list (['target']),
+    ])->then (sub {
+      ($target) = @{$_[0]->[0]};
+      return $self->db->transaction;
+    })->then (sub {
+      my $tr = $_[0];
+      return $self->prepare_upload ($tr,
+        target => $target,
+        mime_type => $self->{app}->bare_param ('mime_type'),
+        byte_length => $self->{app}->bare_param ('byte_length'),
+        prefix => $path,
+      )->then (sub {
+        my $result = $_[0];
+        return $tr->commit->then (sub {
+          undef $tr;
+          return $self->json ($result);
+        });
+      })->finally (sub {
+        return $tr->rollback if defined $tr;
+      }); # transaction
+    });
+  } elsif (@{$self->{path}} == 1 and
+           ($self->{path}->[0] eq 'setattachmentopenness.json' or
+            $self->{path}->[0] eq 'hideunusedattachments.json')) {
+    ## /{app_id}/nobj/setattachmentopenness.json - Set the
+    ## attachments' open of an NObj.
+    ##
+    ## /{app_id}/nobj/hideunusedattachments.json - Set the
+    ## attachments' deleted of an NObj.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|target|) : ID : The NObj.  Required.
+    ##
+    ##   |open| : Boolean : The attachment's open.  If true, the
+    ##   attachemnts of the NObj, whose open is false, deleted is
+    ##   false, and payload is not null, are set to true.  If false,
+    ##   the attachments of the NObj, whose open is true, are set to
+    ##   false.  Defaulted to false.  |setattachmentopenness.json|
+    ##   only.
+    ##
+    ##   |used_url| : String : The attachment's URL that is still in
+    ##   use.  Zero or more parameters can be
+    ##   specified. |hideunusedattachments.json| only.
+    ##
+    ## Response.
+    ##
+    ##   |items| : Array:
+    ##
+    ##     /{Attachment's URL}/ : Object:
+    ##
+    ##       |changed| : Boolean : Whether the attachment's open is
+    ##       changed or not.
+
+    my $where = {};
+
+    my $pubcopy = 0;
+    my $update;
+    if ($self->{path}->[0] eq 'setattachmentopenness.json') {
+      my $open = $self->{app}->bare_param ('open');
+      if ($open) {
+        $pubcopy = 1;
+        $where->{open} = 0;
+        $where->{deleted} = 0;
+      } else {
+        $where->{open} = 1;
+      }
+      $update = {
+        open => $open ? 1 : 0,
+        modified => time,
+      };
+    } elsif ($self->{path}->[0] eq 'hideunusedattachments.json') {
+      my $used_urls = $self->{app}->bare_param_list ('used_url');
+      if (@$used_urls) {
+        $where->{url} = {-not_in => $used_urls};
+      }
+      $where->{deleted} = 0;
+      $where->{open} = 1;
+      $update = {
+        deleted => 1,
+        modified => time,
+      };
+    } else {
+      die;
+    }
+
+    my $target;
+    return Promise->all ([
+      $self->new_nobj_list (['target']),
+    ])->then (sub {
+      ($target) = @{$_[0]->[0]};
+      return $self->db->transaction;
+    })->then (sub {
+      my $tr = $_[0];
+      my $result = {};
+      return $tr->select ('attachment', {
+        ($self->app_id_columns),
+        ($target->to_columns ('target')),
+        %$where,
+      }, source_name => 'master', fields => ['data'])->then (sub {
+        my $files = $_[0]->all->to_a;
+        my $clients = {};
+        return promised_cleanup {
+          return Promise->all ([map { $_->close } values %$clients]);
+        } promised_for {
+          my $file = Dongry::Type->parse ('json', $_[0]->{data});
+          my $url = Web::URL->parse_string ($file->{file_url});
+          my $public_url = Web::URL->parse_string ($file->{public_file_url});
+          my $client = $clients->{$public_url->get_origin->to_ascii}
+              ||= Web::Transport::BasicClient->new_from_url ($public_url);
+          my $src = $url->path;
+          $src =~ s{^/}{};
+          return $client->request (
+            url => $public_url,
+            method => ($pubcopy ? 'PUT' : 'DELETE'),
+            aws4 => $self->{config}->{s3_aws4},
+            headers => ($pubcopy ? {
+              'x-amz-copy-source' => $src,
+            } : {}),
+          )->then (sub {
+            my $res = $_[0];
+            die $res unless $res->is_success;
+            $result->{items}->{$url->stringify}->{changed} = 1;
+          })->catch (sub {
+            warn $_[0];
+            $result->{items}->{$url->stringify}->{changed} = 0;
+          });
+        } $files;
+      })->then (sub {
+        my $urls = [grep { $result->{items}->{$_}->{changed} } keys %{$result->{items}}];
+        return unless @$urls;
+        return $tr->update ('attachment', $update, where => {
+          ($self->app_id_columns),
+          ($target->to_columns ('target')),
+          url => {-in => [map { Dongry::Type->serialize ('text', $_) } @$urls]},
+        }, source_name => 'master');
+      })->then (sub {
+        return $tr->commit->then (sub { undef $tr });
+      })->then (sub {
+        return $self->json ($result);
+      })->finally (sub {
+        return $tr->rollback if defined $tr;
+      });
+    });
+  }
+  
   return $self->throw_error (404);
 } # run_nobj
 

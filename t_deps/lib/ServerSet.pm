@@ -427,22 +427,22 @@ sub _docker ($%) {
           aws4 => $data->{aws4},
         )->then (sub {
           die $_[0] unless $_[0]->status == 200;
-          #my $body = qq{{
-          #  "Version": "2012-10-17",
-          #  "Statement": [{
-          #    "Action": ["s3:GetObject"],
-          #    "Effect": "Allow",
-          #    "Principal": {"AWS": ["*"]},
-          #    "Resource": ["arn:aws:s3:::$bucket_domain/*"],
-          #    "Sid": ""
-          #  }]
-          #}};
-          #return $client->request (
-          #  url => Web::URL->parse_string ('./?policy', $s3_url),
-          #  method => 'PUT', aws4 => $data->{aws4}, body => $body,
-          #);
+          my $body = qq{{
+            "Version": "2012-10-17",
+            "Statement": [{
+              "Action": ["s3:GetObject"],
+              "Effect": "Allow",
+              "Principal": {"AWS": ["*"]},
+              "Resource": ["arn:aws:s3:::$bucket_domain/public/*"],
+              "Sid": ""
+            }]
+          }};
+          return $client->request (
+            url => Web::URL->parse_string ('./?policy', $s3_url),
+            method => 'PUT', aws4 => $data->{aws4}, body => $body,
+          );
         })->then (sub {
-          #die $_[0] unless $_[0]->is_success;
+          die $_[0] unless $_[0]->is_success;
 
           return promised_sleep 3;
         })->then (sub {
