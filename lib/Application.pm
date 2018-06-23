@@ -35,6 +35,33 @@ use Pager;
 ##   |ikachan_message_prefix| : String? : A short string used as the
 ##   prefix of the error message.  Required if |ikachan_url_prefix| is
 ##   specified.
+##
+##   |s3_aws4| : Array of four Strings : The access key ID, the secret
+##   access key, the AWS region such as C<us-east-1>, and the AWS
+##   service such as C<s3>, used to access to the storage server.
+##   Required when the storage server is used.
+##
+##   |s3_sts_role_arn| : String? : The AWS STS role ARN.  If
+##   specified, it is used to generate upload forms.
+##
+##   |s3_bucket| : String : The bucket name on the storage server.
+##   Required when the storage server is used.
+##
+##   |s3_form_url| : String : The URL of the bucket on the storage
+##   server that is accessible from the client (who uploads files).
+##   Required when the storage server is used.
+##
+##   |s3_file_url_prefix| : String : The URL path in the bucket on the
+##   storage server, under which the files are stored.  Required when
+##   the storage server is used.
+##
+## There must be a storage server that has AWS S3 compatible Web API,
+## such as Minio, when storage-server-bound features are used.  The
+## bucket must be configured such that files in the directory of
+## |s3_file_url_prefix| are private (i.e. not readable by the world)
+## and the |public/| directory in the directory of
+## |s3_file_url_prefix| are public (i.e. readable by the world).  We
+## don't use |x-aws-acl:| header as it is not supported by Minio.
 
 ## HTTP requests.
 ##
@@ -561,6 +588,7 @@ sub prepare_upload ($$%) {
     #my $file_url = "https://$service-$region.amazonaws.com/$bucket/$key";
     #my $file_url = "https://$bucket/$key";
     my $file_url = $self->{config}->{s3_file_url_prefix} . $key;
+    my $public_file_url = $self->{config}->{s3_file_url_prefix} . 'public/' . $key;
     my $bucket = $self->{config}->{s3_bucket};
     my $accesskey = $self->{config}->{s3_aws4}->[0];
     my $secret = $self->{config}->{s3_aws4}->[1];
@@ -656,6 +684,8 @@ sub prepare_upload ($$%) {
         form_url => $self->{config}->{s3_form_url},
         file => {
           file_url => $file_url,
+          file_key => $key,
+          public_file_url => $public_file_url,
           signed_url => $signed->stringify,
           mime_type => $args{mime_type},
           byte_length => 0+$args{byte_length},
@@ -1099,7 +1129,6 @@ sub run_comment ($) {
       }); # transaction
     });
   }
-  # XXX /nobj/deleteattachment.json
 
   return $self->throw_error (404);
 } # run_comment
@@ -1934,21 +1963,25 @@ sub run_nobj ($) {
       });
     }
 
-  ## Attachments.  An NObj can have zero or more attachments.
+  ## Attachments.  An NObj can have zero or more attachments.  An
+  ## attachment has target NObj, URL, public URL, MIME type, byte
+  ## length : Integer, payload : Bytes?, open : Boolean, deleted :
+  ## Boolean.  Attachments are stored on the storage server.  When the
+  ## attachment's open is true, it is accessible via its public URL or
+  ## its signed URL.  Otherwise, it is accessible via its signed URL.
   
   if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'attachform.json') {
-    ## /{app_id}/nobj/attachform.json - Create a form to attach a file
-    ## to the NObj.
+    ## /{app_id}/nobj/attachform.json - Create a form to add an
+    ## attachment to the NObj.
     ##
     ## Parameters.
     ##
-    ##   NObj (|target|) : ID : The NObj to which a file is attached.
-    ##   Required.
+    ##   NObj (|target|) : ID : The attachment's NObj.  Required.
     ##
-    ##   |path_prefix| : String : The URL path of the file on the
-    ##   storage server, without random string part assigned by the
-    ##   Apploach server.  Required.  It must be a string matching to
-    ##   |(/[A-Za-z0-9]+)+|.
+    ##   |path_prefix| : String : The path of the attachment's URL,
+    ##   within the directory specified by the configuration, without
+    ##   random string part assigned by the Apploach server.  It must
+    ##   be a string matching to |(/[A-Za-z0-9]+)+|.  Required.
     ##
     ##   File upload parameters: |mime_type| and |byte_length|.
     ##   Required.
@@ -1957,8 +1990,9 @@ sub run_nobj ($) {
     ##
     ##   File upload information.
     ##
-    ## This end point creates a file upload form and associate it with
-    ## the NObj.
+    ## This end point creates a file upload form.  By uploading a file
+    ## using the file, the file's content is set to the attachment's
+    ## payload.
     my $target;
     my $path = $self->{app}->bare_param ('path_prefix') // '';
     return $self->throw ({reason => 'Bad |path_prefix|'})
@@ -1998,6 +2032,27 @@ sub run_nobj ($) {
     });
   } elsif (@{$self->{path}} == 1 and
            $self->{path}->[0] eq 'setattachmentopenness.json') {
+    ## /{app_id}/nobj/setattachmentopenness.json - Set the
+    ## attachments' open of an NObj.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|target|) : ID : The NObj.  Required.
+    ##
+    ##   |open| : Boolean : The attachment's open.  If true, the
+    ##   attachemnts of the NObj, whose open is false, deleted is
+    ##   false, and payload is not null, are set to true.  If false,
+    ##   the attachments of the NObj, whose open is true, are set to
+    ##   false.  Defaulted to false.
+    ##
+    ## Response.
+    ##
+    ##   |items| : Array:
+    ##
+    ##     /{Attachment's URL}/ : Object:
+    ##
+    ##       |changed| : Boolean : Whether the attachment's open is
+    ##       changed or not.
     my $target;
     my $open = $self->{app}->bare_param ('open');
     return Promise->all ([
@@ -2017,35 +2072,39 @@ sub run_nobj ($) {
         ) : (
           open => 1,
         )),
-      }, source_name => 'master', fields => ['url'])->then (sub {
-        my $urls = [map { $_->{url} } @{$_[0]->all}];
+      }, source_name => 'master', fields => ['data'])->then (sub {
+        my $files = $_[0]->all->to_a;
         my $clients = {};
         return promised_cleanup {
           return Promise->all ([map { $_->close } values %$clients]);
         } promised_for {
-          my $url = Web::URL->parse_string ($_[0]);
-          my $client = $clients->{$url->get_origin->to_ascii}
-              ||= Web::Transport::BasicClient->new_from_url ($url);
+          my $file = Dongry::Type->parse ('json', $_[0]->{data});
+          my $url = Web::URL->parse_string ($file->{file_url});
+          my $public_url = Web::URL->parse_string ($file->{public_file_url});
+          my $client = $clients->{$public_url->get_origin->to_ascii}
+              ||= Web::Transport::BasicClient->new_from_url ($public_url);
+          my $src = $url->path;
+          $src =~ s{^/}{};
           return $client->request (
-            url => Web::URL->parse_string ($url->path . '?policy', $url),
-            method => 'PUT',
+            url => $public_url,
+            method => ($open ? 'PUT' : 'DELETE'),
             aws4 => $self->{config}->{s3_aws4},
-            headers => {
-              'x-amz-acl' => ($open ? 'public-read' : 'private'),
-            },
+            headers => ($open ? {
+              'x-amz-copy-source' => $src,
+            } : {}),
           )->then (sub {
             my $res = $_[0];
-            $result->{items}->{$url->stringify}->{changed}
-                = $res->is_success ? 1 : 0;
-          }, sub {
+            die $res unless $res->is_success;
+            $result->{items}->{$url->stringify}->{changed} = 1;
+          })->catch (sub {
             warn $_[0];
             $result->{items}->{$url->stringify}->{changed} = 0;
           });
-        } $urls;
+        } $files;
       })->then (sub {
         my $urls = [grep { $result->{items}->{$_}->{changed} } keys %{$result->{items}}];
         return unless @$urls;
-        return $tr->update ({
+        return $tr->update ('attachment', {
           open => $open ? 1 : 0,
         }, where => {
           ($self->app_id_columns),
@@ -2061,6 +2120,7 @@ sub run_nobj ($) {
       });
     });
   }
+  # XXX /nobj/deleteattachment.json
   
   return $self->throw_error (404);
 } # run_nobj

@@ -44,6 +44,7 @@ Test {
       ok $result->{json}->{form_url};
       ok 0+keys %{$result->{json}->{form_data}};
       like $result->{json}->{file}->{file_url}, qr{/abc/DEF24t224};
+      like $result->{json}->{file}->{public_file_url}, qr{/public/abc/DEF24t224};
       is $result->{json}->{file}->{mime_type}, 'application/octet-stream';
       is $result->{json}->{file}->{byte_length}, length $current->o ('k1');
     } $current->c;
@@ -59,11 +60,18 @@ Test {
       my $res = $_[0];
       die $res unless $res->is_success;
       $url = Web::URL->parse_string ($result->{json}->{file}->{file_url});
-      $current->client_for ($url)->request (url => $url);
+      return $current->client_for ($url)->request (url => $url);
     })->then (sub {
       my $res = $_[0];
       test {
         is $res->status, 403, 'unsigned URL';
+      } $current->c;
+      $url = Web::URL->parse_string ($result->{json}->{file}->{public_file_url});
+      return $current->client_for ($url)->request (url => $url);
+    })->then (sub {
+      my $res = $_[0];
+      test {
+        is $res->status, 403, 'public URL';
       } $current->c;
       $url = Web::URL->parse_string ($result->{json}->{file}->{signed_url});
       return $current->client_for ($url)->request (
@@ -78,7 +86,7 @@ Test {
       is $res->body_bytes, $current->o ('k1');
     } $current->c, name => 'signed URL';
   });
-} n => 10, name => 'attach a file';
+} n => 12, name => 'attach a file';
 
 RUN;
 
