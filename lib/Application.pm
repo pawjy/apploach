@@ -2031,9 +2031,13 @@ sub run_nobj ($) {
       }); # transaction
     });
   } elsif (@{$self->{path}} == 1 and
-           $self->{path}->[0] eq 'setattachmentopenness.json') {
+           ($self->{path}->[0] eq 'setattachmentopenness.json' or
+            $self->{path}->[0] eq 'hideunusedattachments.json')) {
     ## /{app_id}/nobj/setattachmentopenness.json - Set the
     ## attachments' open of an NObj.
+    ##
+    ## /{app_id}/nobj/hideunusedattachments.json - Set the
+    ## attachments' deleted of an NObj.
     ##
     ## Parameters.
     ##
@@ -2043,7 +2047,12 @@ sub run_nobj ($) {
     ##   attachemnts of the NObj, whose open is false, deleted is
     ##   false, and payload is not null, are set to true.  If false,
     ##   the attachments of the NObj, whose open is true, are set to
-    ##   false.  Defaulted to false.
+    ##   false.  Defaulted to false.  |setattachmentopenness.json|
+    ##   only.
+    ##
+    ##   |used_url| : String : The attachment's URL that is still in
+    ##   use.  Zero or more parameters can be
+    ##   specified. |hideunusedattachments.json| only.
     ##
     ## Response.
     ##
@@ -2053,8 +2062,38 @@ sub run_nobj ($) {
     ##
     ##       |changed| : Boolean : Whether the attachment's open is
     ##       changed or not.
+
+    my $where = {};
+
+    my $pubcopy = 0;
+    my $update;
+    if ($self->{path}->[0] eq 'setattachmentopenness.json') {
+      my $open = $self->{app}->bare_param ('open');
+      if ($open) {
+        $pubcopy = 1;
+        $where->{open} = 0;
+        $where->{deleted} = 0;
+      } else {
+        $where->{open} = 1;
+      }
+      $update = {
+        open => $open ? 1 : 0,
+      };
+    } elsif ($self->{path}->[0] eq 'hideunusedattachments.json') {
+      my $used_urls = $self->{app}->bare_param_list ('used_url');
+      if (@$used_urls) {
+        $where->{url} = {-not_in => $used_urls};
+      }
+      $where->{deleted} = 0;
+      $where->{open} = 1;
+      $update = {
+        deleted => 1,
+      };
+    } else {
+      die;
+    }
+
     my $target;
-    my $open = $self->{app}->bare_param ('open');
     return Promise->all ([
       $self->new_nobj_list (['target']),
     ])->then (sub {
@@ -2066,12 +2105,7 @@ sub run_nobj ($) {
       return $tr->select ('attachment', {
         ($self->app_id_columns),
         ($target->to_columns ('target')),
-        ($open ? (
-          open => 0,
-          deleted => 0,
-        ) : (
-          open => 1,
-        )),
+        %$where,
       }, source_name => 'master', fields => ['data'])->then (sub {
         my $files = $_[0]->all->to_a;
         my $clients = {};
@@ -2087,9 +2121,9 @@ sub run_nobj ($) {
           $src =~ s{^/}{};
           return $client->request (
             url => $public_url,
-            method => ($open ? 'PUT' : 'DELETE'),
+            method => ($pubcopy ? 'PUT' : 'DELETE'),
             aws4 => $self->{config}->{s3_aws4},
-            headers => ($open ? {
+            headers => ($pubcopy ? {
               'x-amz-copy-source' => $src,
             } : {}),
           )->then (sub {
@@ -2104,9 +2138,7 @@ sub run_nobj ($) {
       })->then (sub {
         my $urls = [grep { $result->{items}->{$_}->{changed} } keys %{$result->{items}}];
         return unless @$urls;
-        return $tr->update ('attachment', {
-          open => $open ? 1 : 0,
-        }, where => {
+        return $tr->update ('attachment', $update, where => {
           ($self->app_id_columns),
           ($target->to_columns ('target')),
           url => {-in => [map { Dongry::Type->serialize ('text', $_) } @$urls]},
@@ -2120,7 +2152,6 @@ sub run_nobj ($) {
       });
     });
   }
-  # XXX /nobj/deleteattachment.json
   
   return $self->throw_error (404);
 } # run_nobj
