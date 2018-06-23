@@ -563,6 +563,9 @@ sub prepare_upload ($$%) {
   ##     |file_url| : String : The result URL of the file.  Note that
   ##     this URL is not world-accessible.
   ##
+  ##     |public_file_url| : String : The result URL of the file that
+  ##     is world-accessible, if the file is made public.
+  ##
   ##     |signed_url| : String : The signed URL of the file, which can
   ##     be used to access to the file content.
   ##
@@ -684,13 +687,26 @@ sub prepare_upload ($$%) {
         form_url => $self->{config}->{s3_form_url},
         file => {
           file_url => $file_url,
-          file_key => $key,
           public_file_url => $public_file_url,
           signed_url => $signed->stringify,
           mime_type => $args{mime_type},
           byte_length => 0+$args{byte_length},
         },
       };
+    });
+  })->then (sub {
+    my $result = $_[0];
+    return $tr->insert ('attachment', [{
+      ($self->app_id_columns),
+      ($args{target}->to_columns ('target')),
+      url => Dongry::Type->serialize ('text', $result->{file}->{file_url}),
+      data => Dongry::Type->serialize ('json', $result->{file}),
+      open => 0,
+      deleted => 0,
+      created => $result->{time},
+      modified => $result->{time},
+    }], source_name => 'master')->then (sub {
+      return $result;
     });
   });
 } # prepare_upload
@@ -1096,6 +1112,9 @@ sub run_comment ($) {
     ## with the comment.  The comment's data's |files| is set to an
     ## array which contains the |file| value of the created file
     ## upload information.
+    ##
+    ## This is similar to |/nobj/attachform.json| but integrated with
+    ## comments.
     my $operator;
     my $cnobj;
     my $comment_id = $self->id_param ('comment');
@@ -1108,6 +1127,7 @@ sub run_comment ($) {
     })->then (sub {
       my $tr = $_[0];
       return $self->prepare_upload ($tr,
+        target => $cnobj,
         mime_type => $self->{app}->bare_param ('mime_type'),
         byte_length => $self->{app}->bare_param ('byte_length'),
         prefix => 'apploach/comment/' . $comment_id,
@@ -2007,23 +2027,14 @@ sub run_nobj ($) {
     })->then (sub {
       my $tr = $_[0];
       return $self->prepare_upload ($tr,
+        target => $target,
         mime_type => $self->{app}->bare_param ('mime_type'),
         byte_length => $self->{app}->bare_param ('byte_length'),
         prefix => $path,
       )->then (sub {
         my $result = $_[0];
-        return $tr->insert ('attachment', [{
-          ($self->app_id_columns),
-          ($target->to_columns ('target')),
-          url => Dongry::Type->serialize ('text', $result->{file}->{file_url}),
-          data => Dongry::Type->serialize ('json', $result->{file}),
-          open => 0,
-          deleted => 0,
-          created => $result->{time},
-          modified => $result->{time},
-        }], source_name => 'master')->then (sub {
-          return $tr->commit->then (sub { undef $tr });
-        })->then (sub {
+        return $tr->commit->then (sub {
+          undef $tr;
           return $self->json ($result);
         });
       })->finally (sub {
@@ -2078,6 +2089,7 @@ sub run_nobj ($) {
       }
       $update = {
         open => $open ? 1 : 0,
+        modified => time,
       };
     } elsif ($self->{path}->[0] eq 'hideunusedattachments.json') {
       my $used_urls = $self->{app}->bare_param_list ('used_url');
@@ -2088,6 +2100,7 @@ sub run_nobj ($) {
       $where->{open} = 1;
       $update = {
         deleted => 1,
+        modified => time,
       };
     } else {
       die;

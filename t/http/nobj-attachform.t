@@ -71,7 +71,7 @@ Test {
     })->then (sub {
       my $res = $_[0];
       test {
-        is $res->status, 403, 'public URL';
+        is $res->status, 404, 'public URL';
       } $current->c;
       $url = Web::URL->parse_string ($result->{json}->{file}->{signed_url});
       return $current->client_for ($url)->request (
