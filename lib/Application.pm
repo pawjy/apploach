@@ -51,9 +51,9 @@ use Pager;
 ##   server that is accessible from the client (who uploads files).
 ##   Required when the storage server is used.
 ##
-##   |s3_file_url_prefix| : String : The URL path in the bucket on the
-##   storage server, under which the files are stored.  Required when
-##   the storage server is used.
+##   |s3_file_url_prefix| : String : The URL scheme, host, optional
+##   port, and path in the bucket on the storage server, under which
+##   the files are stored.  Required when the storage server is used.
 ##
 ## There must be a storage server that has AWS S3 compatible Web API,
 ## such as Minio, when storage-server-bound features are used.  The
@@ -566,7 +566,7 @@ sub prepare_upload ($$%) {
   ##     |public_file_url| : String : The result URL of the file that
   ##     is world-accessible, if the file is made public.
   ##
-  ##     |signed_url| : String : The signed URL of the file, which can
+  ##     |signed_url| : String : A signed URL of the file, which can
   ##     be used to access to the file content.
   ##
   ##     |mime_type| : String : The MIME type of the file.
@@ -710,6 +710,28 @@ sub prepare_upload ($$%) {
     });
   });
 } # prepare_upload
+
+sub signed_storage_url ($$$) {
+  my ($self, $url, $max_age) = @_;
+  
+  my $prefix = $self->{config}->{s3_file_url_prefix};
+  return undef unless defined $url and $url =~ m{\A\Q$prefix\E};
+
+  my $url = Web::URL->parse_string ($url);
+  return undef unless defined $url and $url->is_http_s;
+  
+  my $signed = Web::Transport::AWS->aws4_signed_url
+      (clock => Web::DateTime::Clock->realtime_clock,
+       max_age => $max_age,
+       access_key_id => $self->{config}->{s3_aws4}->[0],
+       secret_access_key => $self->{config}->{s3_aws4}->[1],
+       #security_token => 
+       region => $self->{config}->{s3_aws4}->[2],
+       service => 's3',
+       method => 'GET',
+       url => $url);
+  return $signed->stringify;
+} # signed_storage_url
 
 sub edit_comment ($$$%) {
   my ($self, $tr, $comment_id, %args) = @_;
@@ -942,19 +964,8 @@ sub run_comment ($) {
             if defined $item->{internal_data};
         if (ref $item->{data}->{files} eq 'ARRAY') {
           for (@{$item->{data}->{files}}) {
-            my $url = Web::URL->parse_string ($_->{file_url});
-            next unless defined $url and $url->is_http_s;
-            my $signed = Web::Transport::AWS->aws4_signed_url
-                (clock => Web::DateTime::Clock->realtime_clock,
-                 max_age => $signed_max_age,
-                 access_key_id => $self->{config}->{s3_aws4}->[0],
-                 secret_access_key => $self->{config}->{s3_aws4}->[1],
-                 #security_token => 
-                 region => $self->{config}->{s3_aws4}->[2],
-                 service => 's3',
-                 method => 'GET',
-                 url => $url);
-            $_->{signed_url} = $signed->stringify;
+            $_->{signed_url} = $self->signed_storage_url
+                ($_->{file_url}, $signed_max_age); # not undef in theory
           }
         }
       }
@@ -2164,6 +2175,33 @@ sub run_nobj ($) {
         return $tr->rollback if defined $tr;
       });
     });
+  }
+
+  if (@{$self->{path}} == 1 and
+      $self->{path}->[0] eq 'signedstorageurl.json') {
+    ## /{app_id}/nobj/signedstorageurl.json - Get signed URLs for
+    ## files on the storage server.
+    ##
+    ## Parameters.
+    ##
+    ##   |url| : String : The attachment's URL.  Zero or more
+    ##   parameters can be specified.
+    ##
+    ##   |max_age| : Integer : The lifetime of the signed URL, in
+    ##   seconds.  Defaulted to 300.
+    ##
+    ## Response.  A JSON object whose names are attachment's URLs and
+    ## values are their signed URLs.
+    my $urls = $self->{app}->bare_param_list ('url');
+    my $max_age = 0+($self->{app}->bare_param ('max_age') // 60*5);
+
+    my $result = {};
+    for (@$urls) {
+      my $signed = $self->signed_storage_url ($_, $max_age);
+      $result->{$_} = $signed if defined $signed;
+    }
+
+    return $self->json ($result);
   }
   
   return $self->throw_error (404);
