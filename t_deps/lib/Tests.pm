@@ -8,6 +8,7 @@ use Carp;
 use JSON::PS;
 use AbortController;
 use Promise;
+use Promised::Flow;
 use ServerSet;
 use CurrentTest;
 use Test::X1;
@@ -17,6 +18,7 @@ our @EXPORT = grep { not /^\$/ } (
   @Test::More::EXPORT,
   @Test::X1::EXPORT,
   @JSON::PS::EXPORT,
+  @Promised::Flow::EXPORT,
 );
 
 sub import ($;@) {
