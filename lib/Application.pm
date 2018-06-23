@@ -568,6 +568,7 @@ sub prepare_upload ($$%) {
     my $token;
     my $expires;
     my $max_age = 60*60;
+    my $now = time;
     
     return Promise->resolve->then (sub {
       my $sts_role_arn = $self->{config}->{s3_sts_role_arn};
@@ -576,7 +577,7 @@ sub prepare_upload ($$%) {
           (qq<https://sts.$region.amazonaws.com/>);
       my $sts_client = Web::Transport::ConnectionClient->new_from_url
           ($sts_url);
-      $expires = time + $max_age;
+      $expires = $now + $max_age;
       return $sts_client->request (
         url => $sts_url,
         params => {
@@ -644,6 +645,7 @@ sub prepare_upload ($$%) {
            url => Web::URL->parse_string ($file_url));
       
       return {
+        time => $now,
         form_data => {
           key => $key,
           acl => $acl,
@@ -1097,6 +1099,7 @@ sub run_comment ($) {
       }); # transaction
     });
   }
+  # XXX /nobj/deleteattachment.json
 
   return $self->throw_error (404);
 } # run_comment
@@ -1931,6 +1934,134 @@ sub run_nobj ($) {
       });
     }
 
+  ## Attachments.  An NObj can have zero or more attachments.
+  
+  if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'attachform.json') {
+    ## /{app_id}/nobj/attachform.json - Create a form to attach a file
+    ## to the NObj.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|target|) : ID : The NObj to which a file is attached.
+    ##   Required.
+    ##
+    ##   |path_prefix| : String : The URL path of the file on the
+    ##   storage server, without random string part assigned by the
+    ##   Apploach server.  Required.  It must be a string matching to
+    ##   |(/[A-Za-z0-9]+)+|.
+    ##
+    ##   File upload parameters: |mime_type| and |byte_length|.
+    ##   Required.
+    ##
+    ## Response.
+    ##
+    ##   File upload information.
+    ##
+    ## This end point creates a file upload form and associate it with
+    ## the NObj.
+    my $target;
+    my $path = $self->{app}->bare_param ('path_prefix') // '';
+    return $self->throw ({reason => 'Bad |path_prefix|'})
+        unless $path =~ m{\A(?:/[0-9A-Za-z]+)+\z} and
+               512 > length $path;
+    $path =~ s{^/}{};
+    return Promise->all ([
+      $self->new_nobj_list (['target']),
+    ])->then (sub {
+      ($target) = @{$_[0]->[0]};
+      return $self->db->transaction;
+    })->then (sub {
+      my $tr = $_[0];
+      return $self->prepare_upload ($tr,
+        mime_type => $self->{app}->bare_param ('mime_type'),
+        byte_length => $self->{app}->bare_param ('byte_length'),
+        prefix => $path,
+      )->then (sub {
+        my $result = $_[0];
+        return $tr->insert ('attachment', [{
+          ($self->app_id_columns),
+          ($target->to_columns ('target')),
+          url => Dongry::Type->serialize ('text', $result->{file}->{file_url}),
+          data => Dongry::Type->serialize ('json', $result->{file}),
+          open => 0,
+          deleted => 0,
+          created => $result->{time},
+          modified => $result->{time},
+        }], source_name => 'master')->then (sub {
+          return $tr->commit->then (sub { undef $tr });
+        })->then (sub {
+          return $self->json ($result);
+        });
+      })->finally (sub {
+        return $tr->rollback if defined $tr;
+      }); # transaction
+    });
+  } elsif (@{$self->{path}} == 1 and
+           $self->{path}->[0] eq 'setattachmentopenness.json') {
+    my $target;
+    my $open = $self->{app}->bare_param ('open');
+    return Promise->all ([
+      $self->new_nobj_list (['target']),
+    ])->then (sub {
+      ($target) = @{$_[0]->[0]};
+      return $self->db->transaction;
+    })->then (sub {
+      my $tr = $_[0];
+      my $result = {};
+      return $tr->select ('attachment', {
+        ($self->app_id_columns),
+        ($target->to_columns ('target')),
+        ($open ? (
+          open => 0,
+          deleted => 0,
+        ) : (
+          open => 1,
+        )),
+      }, source_name => 'master', fields => ['url'])->then (sub {
+        my $urls = [map { $_->{url} } @{$_[0]->all}];
+        my $clients = {};
+        return promised_cleanup {
+          return Promise->all ([map { $_->close } values %$clients]);
+        } promised_for {
+          my $url = Web::URL->parse_string ($_[0]);
+          my $client = $clients->{$url->get_origin->to_ascii}
+              ||= Web::Transport::BasicClient->new_from_url ($url);
+          return $client->request (
+            url => Web::URL->parse_string ($url->path . '?policy', $url),
+            method => 'PUT',
+            aws4 => $self->{config}->{s3_aws4},
+            headers => {
+              'x-amz-acl' => ($open ? 'public-read' : 'private'),
+            },
+          )->then (sub {
+            my $res = $_[0];
+            $result->{items}->{$url->stringify}->{changed}
+                = $res->is_success ? 1 : 0;
+          }, sub {
+            warn $_[0];
+            $result->{items}->{$url->stringify}->{changed} = 0;
+          });
+        } $urls;
+      })->then (sub {
+        my $urls = [grep { $result->{items}->{$_}->{changed} } keys %{$result->{items}}];
+        return unless @$urls;
+        return $tr->update ({
+          open => $open ? 1 : 0,
+        }, where => {
+          ($self->app_id_columns),
+          ($target->to_columns ('target')),
+          url => {-in => [map { Dongry::Type->serialize ('text', $_) } @$urls]},
+        }, source_name => 'master');
+      })->then (sub {
+        return $tr->commit->then (sub { undef $tr });
+      })->then (sub {
+        return $self->json ($result);
+      })->finally (sub {
+        return $tr->rollback if defined $tr;
+      });
+    });
+  }
+  
   return $self->throw_error (404);
 } # run_nobj
 

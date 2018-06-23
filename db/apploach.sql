@@ -12,6 +12,53 @@ create table if not exists `nobj` (
   key (`timestamp`)
 ) default charset=binary engine=innodb;
 
+create table if not exists `log` (
+  `app_id` bigint unsigned not null,
+  `log_id` bigint unsigned not null,
+  `target_nobj_id` bigint unsigned not null,
+  `verb_nobj_id` bigint unsigned not null,
+  `operator_nobj_id` bigint unsigned not null,
+  `data` mediumblob not null,
+  `timestamp` double not null,
+  primary key (`log_id`),
+  key (`app_id`, `target_nobj_id`, `timestamp`),
+  key (`app_id`, `verb_nobj_id`, `timestamp`),
+  key (`app_id`, `operator_nobj_id`, `timestamp`),
+  key (`app_id`, `timestamp`),
+  key (`timestamp`)
+) default charset=binary engine=innodb;
+
+create table if not exists `status_info` (
+  `app_id` bigint unsigned not null,
+  `target_nobj_id` bigint unsigned not null,
+  `data` mediumblob not null,
+  `timestamp` double not null,
+  primary key (`app_id`, `target_nobj_id`),
+  key (`app_id`, `timestamp`),
+  key (`timestamp`)
+) default charset=binary engine=innodb;
+
+alter table `status_info`
+  add column `author_data` mediumblob not null,
+  add column `owner_data` mediumblob not null,
+  add column `admin_data` mediumblob not null;
+
+create table if not exists `attachment` (
+  `app_id` bigint unsigned not null,
+  `target_nobj_id` bigint unsigned not null,
+  `url` varbinary(1023) not null,
+  `data` mediumblob not null,
+  `open` boolean not null,
+  `deleted` boolean not null,
+  `created` double not null,
+  `modified` double not null,
+  primary key (`app_id`, `url`),
+  key (`app_id`, `created`),
+  key (`app_id`, `target_nobj_id`, `created`),
+  key (`created`),
+  key (`modified`)
+) default charset=binary engine=innodb;
+
 create table if not exists `comment` (
   `app_id` bigint unsigned not null,
   `thread_nobj_id` bigint unsigned not null,
@@ -64,37 +111,6 @@ create table if not exists `follow` (
   key (`app_id`, `timestamp`),
   key (`timestamp`)
 ) default charset=binary engine=innodb;
-
-create table if not exists `log` (
-  `app_id` bigint unsigned not null,
-  `log_id` bigint unsigned not null,
-  `target_nobj_id` bigint unsigned not null,
-  `verb_nobj_id` bigint unsigned not null,
-  `operator_nobj_id` bigint unsigned not null,
-  `data` mediumblob not null,
-  `timestamp` double not null,
-  primary key (`log_id`),
-  key (`app_id`, `target_nobj_id`, `timestamp`),
-  key (`app_id`, `verb_nobj_id`, `timestamp`),
-  key (`app_id`, `operator_nobj_id`, `timestamp`),
-  key (`app_id`, `timestamp`),
-  key (`timestamp`)
-) default charset=binary engine=innodb;
-
-create table if not exists `status_info` (
-  `app_id` bigint unsigned not null,
-  `target_nobj_id` bigint unsigned not null,
-  `data` mediumblob not null,
-  `timestamp` double not null,
-  primary key (`app_id`, `target_nobj_id`),
-  key (`app_id`, `timestamp`),
-  key (`timestamp`)
-) default charset=binary engine=innodb;
-
-alter table `status_info`
-  add column `author_data` mediumblob not null,
-  add column `owner_data` mediumblob not null,
-  add column `admin_data` mediumblob not null;
 
 create table if not exists `blog_entry` (
   `app_id` bigint unsigned not null,
