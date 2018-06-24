@@ -13,6 +13,7 @@ use Web::DOM::Document;
 use Web::XML::Parser;
 use Web::Transport::AWS;
 use Web::DateTime::Clock;
+use Web::Transport::BasicClient;
 
 use NObj;
 use Pager;
@@ -606,7 +607,7 @@ sub prepare_upload ($$%) {
       return unless defined $sts_role_arn;
       my $sts_url = Web::URL->parse_string
           (qq<https://sts.$region.amazonaws.com/>);
-      my $sts_client = Web::Transport::ConnectionClient->new_from_url
+      my $sts_client = Web::Transport::BasicClient->new_from_url
           ($sts_url);
       $expires = $now + $max_age;
       return $sts_client->request (
