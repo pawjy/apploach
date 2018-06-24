@@ -46,7 +46,7 @@ alter table `status_info`
 create table if not exists `attachment` (
   `app_id` bigint unsigned not null,
   `target_nobj_id` bigint unsigned not null,
-  `url` varbinary(1023) not null,
+  `url` varbinary(511) not null,
   `data` mediumblob not null,
   `open` boolean not null,
   `deleted` boolean not null,
