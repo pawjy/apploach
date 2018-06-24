@@ -9,6 +9,7 @@ use Dongry::Type::JSONPS;
 use Promise;
 use Promised::Flow;
 use Dongry::Database;
+use Web::URL;
 use Web::DOM::Document;
 use Web::XML::Parser;
 use Web::Transport::AWS;
