@@ -669,10 +669,10 @@ sub prepare_upload ($$%) {
       my $signed = Web::Transport::AWS->aws4_signed_url
           (clock => Web::DateTime::Clock->realtime_clock,
            max_age => $args{signed_url_max_age} // 60*10,
-           access_key_id => $accesskey,
-           secret_access_key => $secret,
-           security_token => $token,
-           region => $region,
+           access_key_id => $self->{config}->{s3_aws4}->[0],
+           secret_access_key => $self->{config}->{s3_aws4}->[1],
+           #security_token => $token,
+           region => $self->{config}->{s3_aws4}->[2],
            service => 's3',
            method => 'GET',
            url => Web::URL->parse_string ($file_url));
