@@ -26,6 +26,21 @@
     "APP_IKACHAN_MESSAGE_PREFIX": {
       "description": "Error message prefix",
       "value": ""
+    },
+    "APP_S3_AWS4": {
+      "description": "AWS4 authenticate parameters"
+    },
+    "APP_S3_STS_ROLE_ASN": {
+      "description": "STS role ARN"
+    },
+    "APP_S3_BUCKET": {
+      "description": "S3 bucket domain name"
+    },
+    "APP_S3_FORM_URL": {
+      "description": "S3 upload form POST URL"
+    },
+    "APP_S3_FILE_URL_PREFIX": {
+      "description": "S3 storage server URL"
     }
   }
 }
