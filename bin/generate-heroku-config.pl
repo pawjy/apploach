@@ -19,7 +19,7 @@ $Config->{ikachan_url_prefix} = $ENV{APP_IKACHAN_URL_PREFIX}; # or undef
 $Config->{ikachan_channel} = $ENV{APP_IKACHAN_CHANNEL};
 $Config->{ikachan_message_prefix} = $ENV{APP_IKACHAN_MESSAGE_PREFIX};
 
-$Config->{s3_aws4} = split /\s+/, $ENV{APP_S3_AWS4};
+$Config->{s3_aws4} = [split /\s+/, $ENV{APP_S3_AWS4}];
 $Config->{s3_sts_role_arn} = $ENV{APP_S3_STS_ROLE_ASN};
 $Config->{s3_bucket} = $ENV{APP_S3_BUCKET};
 $Config->{s3_form_url} = $ENV{APP_S3_FORM_URL};
