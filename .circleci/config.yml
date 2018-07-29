@@ -1,11 +1,19 @@
 {
    "jobs" : {
       "build" : {
+         "environment" : {
+            "CIRCLE_ARTIFACTS" : "/tmp/circle-artifacts"
+         },
          "machine" : {
             "enabled" : true
          },
          "steps" : [
             "checkout",
+            {
+               "run" : {
+                  "command" : "mkdir -p $CIRCLE_ARTIFACTS"
+               }
+            },
             {
                "run" : {
                   "command" : "docker info"
@@ -61,6 +69,11 @@
             {
                "run" : {
                   "command" : "SS_ENV_FILE=$CIRCLE_ARTIFACTS/env.pl make test"
+               }
+            },
+            {
+               "store_artifacts" : {
+                  "path" : "/tmp/circle-artifacts"
                }
             },
             {
