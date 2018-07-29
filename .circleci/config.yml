@@ -78,7 +78,7 @@
             },
             {
                "deploy" : {
-                  "command" : "if [ \u0022${CIRCLE_BRANCH}\u0022 == \u0022master\u0022 ]; then\u000Adocker login -e $DOCKER_EMAIL -u $DOCKER_USER -p $DOCKER_PASS quay.io\u000Afi"
+                  "command" : "if [ \u0022${CIRCLE_BRANCH}\u0022 == \u0022master\u0022 ]; then\u000Adocker login -e $DOCKER_EMAIL -u $DOCKER_USER -p $DOCKER_PASS quay.io || docker login -u $DOCKER_USER -p $DOCKER_PASS quay.io\u000Afi"
                }
             },
             {
