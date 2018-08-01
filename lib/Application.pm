@@ -2151,6 +2151,7 @@ sub run_nobj ($) {
             aws4 => $self->{config}->{s3_aws4},
             headers => ($pubcopy ? {
               'x-amz-copy-source' => $src,
+              ($pubcopy ? ('x-amz-acl' => 'public-read') : ()),
             } : {}),
           )->then (sub {
             my $res = $_[0];
