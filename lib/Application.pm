@@ -2141,9 +2141,11 @@ sub run_nobj ($) {
           my $file = Dongry::Type->parse ('json', $_[0]->{data});
           my $url = Web::URL->parse_string ($file->{file_url});
           my $pu = $file->{public_file_url};
+          warn "Original: <$pu>";
           if (defined $self->{config}->{s3_file_form_url_prefix}) {
             $pu =~ s{^\Q$self->{config}->{s3_file_url_prefix}\E}{$self->{config}->{s3_file_form_url_prefix}};
           }
+          warn "Replaced: <$pu> ($self->{config}->{s3_file_url_prefix} $self->{config}->{s3_file_form_url_prefix})";
           my $public_url = Web::URL->parse_string ($pu);
           my $client = $clients->{$public_url->get_origin->to_ascii}
               ||= Web::Transport::BasicClient->new_from_url ($public_url);
