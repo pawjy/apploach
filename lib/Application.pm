@@ -2158,7 +2158,10 @@ sub run_nobj ($) {
             die $res unless $res->is_success;
             $result->{items}->{$url->stringify}->{changed} = 1;
           })->catch (sub {
-            warn $_[0];
+            warn $_[0]; # XXX error_log
+            if (UNIVERSAL::isa ($_[0], 'Web::Transport::Response')) {
+              warn substr $_[0]->body_bytes, 0, 1024;
+            }
             $result->{items}->{$url->stringify}->{changed} = 0;
           });
         } $files;
