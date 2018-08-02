@@ -589,6 +589,11 @@ sub prepare_upload ($$%) {
                ## its own limit, if necessary.
     die "Bad prefix"
         unless defined $args{prefix} and length $args{prefix};
+
+    $key .= {
+      'image/png' => '.png',
+      'image/jpeg' => '.jpeg',
+    }->{$args{mime_type}} // '';
     
     #my $file_url = "https://$service-$region.amazonaws.com/$bucket/$key";
     #my $file_url = "https://$bucket/$key";

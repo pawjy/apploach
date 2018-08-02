@@ -88,6 +88,71 @@ Test {
   });
 } n => 12, name => 'attach a file';
 
+Test {
+  my $current = shift;
+  $current->generate_key (k1 => {});
+  return $current->create (
+    [a1 => account => {}],
+    [a2 => account => {}],
+    [c1 => nobj => {account => 'a1'}],
+  )->then (sub {
+    return $current->json (['nobj', 'attachform.json'], {
+      target_nobj_key => $current->o ('c1')->{nobj_key},
+      path_prefix => '/abc/DEF24t224',
+      mime_type => 'image/jpeg',
+      byte_length => length ($current->o ('k1')),
+    });
+  })->then (sub {
+    my $result = $_[0];
+    $current->set_o (file1 => $result->{json}->{file});
+    test {
+      ok $result->{json}->{form_url};
+      ok 0+keys %{$result->{json}->{form_data}};
+      like $result->{json}->{file}->{file_url}, qr{/abc/DEF24t224.+\.jpeg};
+      like $result->{json}->{file}->{public_file_url}, qr{/public/abc/DEF24t224.+\.jpeg};
+      is $result->{json}->{file}->{mime_type}, 'image/jpeg';
+      is $result->{json}->{file}->{byte_length}, length $current->o ('k1');
+    } $current->c;
+    my $url = Web::URL->parse_string ($result->{json}->{form_url});
+    return $current->client_for ($url)->request (
+      url => $url,
+      method => 'POST',
+      params => $result->{json}->{form_data},
+      files => {
+        file => {body_ref => \($current->o ('k1')), mime_filename => rand},
+      },
+    )->then (sub {
+      my $res = $_[0];
+      die $res unless $res->is_success;
+      $url = Web::URL->parse_string ($result->{json}->{file}->{file_url});
+      return $current->client_for ($url)->request (url => $url);
+    })->then (sub {
+      my $res = $_[0];
+      test {
+        is $res->status, 403, 'unsigned URL';
+      } $current->c;
+      $url = Web::URL->parse_string ($result->{json}->{file}->{public_file_url});
+      return $current->client_for ($url)->request (url => $url);
+    })->then (sub {
+      my $res = $_[0];
+      test {
+        is $res->status, 404, 'public URL';
+      } $current->c;
+      $url = Web::URL->parse_string ($result->{json}->{file}->{signed_url});
+      return $current->client_for ($url)->request (
+        url => $url,
+      );
+    });
+  })->then (sub {
+    my $res = $_[0];
+    test {
+      is $res->status, 200;
+      is $res->header ('content-type'), 'image/jpeg';
+      is $res->body_bytes, $current->o ('k1');
+    } $current->c, name => 'signed URL';
+  });
+} n => 11, name => 'attach a file .jpeg';
+
 RUN;
 
 =head1 LICENSE
