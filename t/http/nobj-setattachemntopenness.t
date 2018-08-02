@@ -102,7 +102,7 @@ Test {
       is $res->status, 200;
       is $res->header ('content-type'), 'application/octet-stream';
       is $res->body_bytes, $current->o ('k1');
-    } $current->c, name => 'unsigned URL';
+    } $current->c, name => ['public URL', $current->o ('file1')->{public_file_url}];
     my $url = Web::URL->parse_string ($current->o ('file1')->{signed_url});
     return $current->client_for ($url)->request (
       url => $url,

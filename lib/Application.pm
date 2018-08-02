@@ -688,6 +688,7 @@ sub prepare_upload ($$%) {
         },
         form_url => $self->{config}->{s3_form_url},
         file => {
+          key => $key,
           file_url => $file_url,
           public_file_url => $public_file_url,
           signed_url => $signed->stringify,
@@ -2140,23 +2141,17 @@ sub run_nobj ($) {
         } promised_for {
           my $file = Dongry::Type->parse ('json', $_[0]->{data});
           my $url = Web::URL->parse_string ($file->{file_url});
-          my $pu = $file->{public_file_url};
-          warn "Original: <$pu>";
-          if (defined $self->{config}->{s3_file_form_url_prefix}) {
-            $pu =~ s{^\Q$self->{config}->{s3_file_url_prefix}\E}{$self->{config}->{s3_file_form_url_prefix}};
-          }
-          warn "Replaced: <$pu> ($self->{config}->{s3_file_url_prefix} $self->{config}->{s3_file_form_url_prefix})";
-          my $public_url = Web::URL->parse_string ($pu);
+          my $public_url = Web::URL->parse_string
+              ("$self->{config}->{s3_form_url}public/$file->{key}");
           my $client = $clients->{$public_url->get_origin->to_ascii}
-              ||= Web::Transport::BasicClient->new_from_url ($public_url);
-          my $src = $url->path;
-          $src =~ s{^/}{};
+              ||= Web::Transport::BasicClient->new_from_url ($public_url, {debug => 2});
           return $client->request (
             url => $public_url,
             method => ($pubcopy ? 'PUT' : 'DELETE'),
             aws4 => $self->{config}->{s3_aws4},
             headers => ($pubcopy ? {
-              'x-amz-copy-source' => $src,
+              'x-amz-copy-source' => "$self->{config}->{s3_bucket}/$file->{key}",
+              'x-amz-acl' => 'public-read',
             } : {}),
           )->then (sub {
             my $res = $_[0];
