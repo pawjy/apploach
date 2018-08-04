@@ -1,6 +1,6 @@
 AnyEvent~7.14
 AnyEvent::Fork~1.31
-AnyEvent::IO
+AnyEvent::Util
 Canary::Stability~2012
 Carp~1.38
 Cwd~3.74
@@ -10,7 +10,7 @@ Encode~2.98
 Exporter::Lite~0.08
 File::Path~2.15
 File::Temp~0.2308
-Filter::Util::Call~1.58
+Filter::Util::Call~1.59
 IO::FDPass~1.2
 IO::Handle~1.39
 MIME::Base64~3.15
