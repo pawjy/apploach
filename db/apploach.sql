@@ -111,6 +111,11 @@ create table if not exists `follow` (
   key (`app_id`, `timestamp`),
   key (`timestamp`)
 ) default charset=binary engine=innodb;
+alter table `follow`
+  add column `created` double not null,
+  add key (`app_id`, `verb_nobj_id`, `created`),
+  add key (`app_id`, `created`),
+  add key (`created`);
 
 create table if not exists `blog_entry` (
   `app_id` bigint unsigned not null,

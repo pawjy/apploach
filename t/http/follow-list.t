@@ -40,7 +40,8 @@ Test {
       is $v->{object_nobj_key}, $current->o ('a2')->{nobj_key};
       is $v->{verb_nobj_key}, $current->o ('t1')->{nobj_key};
       is $v->{value}, 4;
-      is $v->{timestamp}, undef;
+      ok $v->{created};
+      is $v->{timestamp}, $v->{created};
     } $current->c, name => 's & o & v';
   })->then (sub {
     return $current->json (['follow', 'list.json'], {
@@ -56,7 +57,8 @@ Test {
       is $v->{object_nobj_key}, $current->o ('a2')->{nobj_key};
       is $v->{verb_nobj_key}, $current->o ('t1')->{nobj_key};
       is $v->{value}, 4;
-      is $v->{timestamp}, undef;
+      ok $v->{created};
+      is $v->{timestamp}, $v->{created};
     } $current->c, name => 's & o';
   })->then (sub {
     return $current->json (['follow', 'list.json'], {
@@ -71,7 +73,8 @@ Test {
       is $v->{object_nobj_key}, $current->o ('a2')->{nobj_key};
       is $v->{verb_nobj_key}, $current->o ('t1')->{nobj_key};
       is $v->{value}, 4;
-      is $v->{timestamp}, undef;
+      ok $v->{created};
+      is $v->{timestamp}, $v->{created};
     } $current->c, name => 's';
     return $current->json (['follow', 'list.json'], {
       object_nobj_key => $current->o ('a2')->{nobj_key},
@@ -85,7 +88,8 @@ Test {
       is $v->{object_nobj_key}, $current->o ('a2')->{nobj_key};
       is $v->{verb_nobj_key}, $current->o ('t1')->{nobj_key};
       is $v->{value}, 4;
-      is $v->{timestamp}, undef;
+      ok $v->{created};
+      is $v->{timestamp}, $v->{created};
     } $current->c, name => 'o';
     return $current->json (['follow', 'list.json'], {
       subject_nobj_key => $current->o ('a1')->{nobj_key},
@@ -100,10 +104,11 @@ Test {
       is $v->{object_nobj_key}, $current->o ('a2')->{nobj_key};
       is $v->{verb_nobj_key}, $current->o ('t1')->{nobj_key};
       is $v->{value}, 4;
-      is $v->{timestamp}, undef;
+      ok $v->{created};
+      is $v->{timestamp}, $v->{created};
     } $current->c, name => 's & v';
   });
-} n => 31, name => 'follow list';
+} n => 36, name => 'follow list';
 
 Test {
   my $current = shift;
@@ -133,7 +138,8 @@ Test {
       is $v->{object_nobj_key}, $current->o ('a2')->{nobj_key};
       is $v->{verb_nobj_key}, $current->o ('t1')->{nobj_key};
       is $v->{value}, 4;
-      is $v->{timestamp}, undef;
+      ok $v->{created};
+      is $v->{timestamp}, $v->{created};
     } $current->c, name => 's & o & v';
     return $current->json (['follow', 'list.json'], {
       subject_nobj_key => $current->o ('a1')->{nobj_key},
@@ -174,7 +180,7 @@ Test {
       is $v2->{value}, 7;
     } $current->c, name => 's & o';
   });
-} n => 24, name => 'follow list';
+} n => 25, name => 'follow list';
 
 Test {
   my $current = shift;
@@ -198,6 +204,51 @@ Test {
     }] => ['f1', 'f2', 'f3', 'f4', 'f5'], 'verb_nobj_key');
   });
 } n => 1, name => 'pager paging';
+
+Test {
+  my $current = shift;
+  return $current->create (
+    [t1 => nobj => {}],
+    [t2 => nobj => {}],
+    [t3 => nobj => {}],
+    [t4 => nobj => {}],
+    [t5 => nobj => {}],
+    [a1 => account => {}],
+    [a2 => account => {}],
+    [f1 => follow => {subject => 'a1', object => 't1', verb => 'a2'}],
+    [f2 => follow => {subject => 'a1', object => 't2', verb => 'a2'}],
+    [f3 => follow => {subject => 'a1', object => 't3', verb => 'a2'}],
+    [f4 => follow => {subject => 'a1', object => 't4', verb => 'a2'}],
+    [f5 => follow => {subject => 'a1', object => 't5', verb => 'a2'}],
+  )->then (sub {
+    return $current->json (['nobj', 'touch.json'], {
+      target_nobj_key => $current->o ('t5')->{nobj_key},
+    });
+  })->then (sub {
+    return $current->json (['nobj', 'touch.json'], {
+      target_nobj_key => $current->o ('t3')->{nobj_key},
+    });
+  })->then (sub {
+    return $current->json (['nobj', 'touch.json'], {
+      target_nobj_key => $current->o ('t1')->{nobj_key},
+    });
+  })->then (sub {
+    return $current->json (['nobj', 'touch.json'], {
+      target_nobj_key => $current->o ('t2')->{nobj_key},
+    });
+  })->then (sub {
+    return $current->pages_ok ([['follow', 'list.json'], {
+      subject_nobj_key => $current->o ('a1')->{nobj_key},
+      verb_nobj_key => $current->o ('a2')->{nobj_key},
+    }] => ['f1', 'f2', 'f3', 'f4', 'f5'], 'verb_nobj_key');
+  })->then (sub {
+    return $current->pages_ok ([['follow', 'list.json'], {
+      subject_nobj_key => $current->o ('a1')->{nobj_key},
+      verb_nobj_key => $current->o ('a2')->{nobj_key},
+      antenna => 1,
+    }] => ['f4', 'f5', 'f3', 'f1', 'f2'], 'verb_nobj_key');
+  });
+} n => 2, name => 'pager paging antenna';
 
 RUN;
 

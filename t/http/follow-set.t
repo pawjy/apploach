@@ -44,7 +44,8 @@ Test {
       is $v->{object_nobj_key}, $current->o ('a2')->{nobj_key};
       is $v->{verb_nobj_key}, $current->o ('t1')->{nobj_key};
       is $v->{value}, 4;
-      is $v->{timestamp}, undef;
+      ok $v->{created};
+      is $v->{timestamp}, $v->{timestamp};
     } $current->c, name => 'new follow';
     return $current->json (['follow', 'set.json'], { 
       subject_nobj_key => $current->o ('a1')->{nobj_key},
@@ -65,7 +66,8 @@ Test {
       is $v->{object_nobj_key}, $current->o ('a2')->{nobj_key};
       is $v->{verb_nobj_key}, $current->o ('t1')->{nobj_key};
       is $v->{value}, 1;
-      is $v->{timestamp}, undef;
+      ok $v->{created};
+      is $v->{timestamp}, $v->{timestamp};
     } $current->c, name => 'update follow';
     return $current->json (['follow', 'set.json'], { 
       subject_nobj_key => $current->o ('a1')->{nobj_key},
@@ -84,7 +86,7 @@ Test {
       is 0+@{$result->{json}->{items}}, 0;
     } $current->c, name => 'remove follow';
   });
-} n => 12, name => 'set follow relationship';
+} n => 14, name => 'set follow relationship';
 
 RUN;
 

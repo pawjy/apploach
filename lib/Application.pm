@@ -1169,7 +1169,7 @@ sub run_comment ($) {
     });
   }
 
-  return $self->throw_error (404);
+  return $self->{app}->throw_error (404);
 } # run_comment
 
 sub run_blog ($) {
@@ -1434,7 +1434,7 @@ sub run_blog ($) {
     });
   }
 
-  return $self->throw_error (404);
+  return $self->{app}->throw_error (404);
 } # run_blog
 
 sub run_star ($) {
@@ -1604,41 +1604,47 @@ sub run_star ($) {
       });
     }
 
-  return $self->throw_error (404);
+  return $self->{app}->throw_error (404);
 } # run_star
 
 sub run_follow ($) {
   my $self = $_[0];
 
   ## A follow is a relation from subject NObj to object NObj of verb
-  ## (type) NObj.  It can have a value of 8-bit unsigned integer,
-  ## where value |0| is equivalent to not having any relation.
+  ## (type) NObj.  It can have value which is an 8-bit unsigned
+  ## integer, where value |0| is equivalent to not having any
+  ## relation.  It has created and timestamp which are Timestamps.
 
   if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'set.json') {
-      ## /{app_id}/follow/set.json - Set a follow.
-      ##
-      ## Parameters.
-      ##
-      ##   NObj (|subject|) : The follow's subject NObj.
-      ##
-      ##   NObj (|object|) : The follow's object NObj.
-      ##
-      ##   NObj (|verb|) : The follow's object NObj.
-      ##
-      ##   |value| : Integer : The follow's value.
-      ##
-      ## Response.  No additional data.
-      return Promise->all ([
+    ## /{app_id}/follow/set.json - Set a follow.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|subject|) : The follow's subject NObj.
+    ##
+    ##   NObj (|object|) : The follow's object NObj.
+    ##
+    ##   NObj (|verb|) : The follow's object NObj.
+    ##
+    ##   |value| : Integer : The follow's value.
+    ##
+    ## Response.  No additional data.
+    ##
+    ## The follow's created and timestamp are set to the current
+    ## timestamp.
+    return Promise->all ([
         $self->new_nobj_list (['subject', 'object', 'verb']),
       ])->then (sub {
         my ($subj, $obj, $verb) = @{$_[0]->[0]};
+        my $time = time;
         return $self->db->insert ('follow', [{
           ($self->app_id_columns),
           ($subj->to_columns ('subject')),
           ($obj->to_columns ('object')),
           ($verb->to_columns ('verb')),
           value => $self->{app}->bare_param ('value') || 0,
-          timestamp => time,
+          created => $time,
+          timestamp => $time,
         }], duplicate => {
           value => $self->db->bare_sql_fragment ('VALUES(`value`)'),
           timestamp => $self->db->bare_sql_fragment ('VALUES(`timestamp`)'),
@@ -1659,6 +1665,9 @@ sub run_follow ($) {
       ##
       ##   NObj (|verb|) : The follow's object NObj.  Optional.
       ##
+      ##   |antenna| : Boolean : If true, sorted by the follow's
+      ##   |timestamp|.  Otherwise, sorted by the follow's |created|.
+      ##
       ##   Pages.
       ##
       ## List response of follows.
@@ -1670,10 +1679,15 @@ sub run_follow ($) {
       ##   NObj (|verb|) : The follow's verb NObj.
       ##
       ##   |value| : Integer : The follow's value.
+      ##
+      ##   |created| : Timestamp : The follow's created.
+      ##
+      ##   |timestamp| : Timestamp : The follow's timestamp.
       my $s = $self->{app}->bare_param ('subject_nobj_key');
       my $o = $self->{app}->bare_param ('object_nobj_key');
       my $v = $self->{app}->bare_param ('verb_nobj_key');
       my $page = Pager::this_page ($self, limit => 100, max_limit => 10000);
+      my $sort_key = $self->{app}->bare_param ('antenna') ? 'timestamp' : 'created';
       return Promise->all ([
         $self->_no ([$s, $o, $v]),
       ])->then (sub {
@@ -1712,26 +1726,25 @@ sub run_follow ($) {
         if (not $verb->is_error) {
           $where = {%$where, ($verb->to_columns ('verb'))};
         }
-        $where->{timestamp} = $page->{value} if defined $page->{value};
+        $where->{$sort_key} = $page->{value} if defined $page->{value};
 
         return $self->db->select ('follow', $where, fields => [
           'subject_nobj_id', 'object_nobj_id', 'verb_nobj_id',
-          'value', 'timestamp',
+          'value', 'timestamp', 'created',
         ], source_name => 'master',
           offset => $page->{offset}, limit => $page->{limit},
-          order => ['timestamp', $page->{order_direction}],
+          order => [$sort_key, $page->{order_direction}],
         )->then (sub {
           return $self->replace_nobj_ids ($_[0]->all->to_a, ['subject', 'object', 'verb']);
         });
       })->then (sub {
         my $items = $_[0];
-        my $next_page = Pager::next_page $page, $items, 'timestamp';
-        delete $_->{timestamp} for @$items;
+        my $next_page = Pager::next_page $page, $items, $sort_key;
         return $self->json ({items => $items, %$next_page});
       });
     }
 
-  return $self->throw_error (404);
+  return $self->{app}->throw_error (404);
 } # run_follow
 
 sub run_nobj ($) {
@@ -1976,6 +1989,31 @@ sub run_nobj ($) {
       });
     }
 
+  if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'touch.json') {
+    ## /{app_id}/nobj/touch.json - Update timestamp of an NObj.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|target|) - The NObj.
+    ##
+    ## Response.  No additional data.
+    return Promise->all ([
+      $self->nobj_list ('target'),
+    ])->then (sub {
+      my ($targets) = ($_[0]->[0]);
+      $targets = [grep { not $_->is_error } @$targets];
+      return unless @$targets;
+      return $self->db->update ('follow', {
+        timestamp => time,
+      }, where => {
+        ($self->app_id_columns),
+        object_nobj_id => {-in => [map { $_->nobj_id } @$targets]},
+      });
+    })->then (sub {
+      return $self->json ({});
+    });
+  }
+
     if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'changeauthor.json') {
       ## /{app_id}/nobj/changeauthor.json - Change the author of an
       ## NObj.
@@ -2215,7 +2253,7 @@ sub run_nobj ($) {
     return $self->json ($result);
   }
   
-  return $self->throw_error (404);
+  return $self->{app}->throw_error (404);
 } # run_nobj
 
 sub run ($) {
