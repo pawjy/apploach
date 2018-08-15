@@ -486,6 +486,21 @@ sub create_log ($$$) {
   });
 } # create_log
 
+sub create_tag ($$$) {
+  my ($self, $name, $opts) = @_;
+  return $self->json (['tag', 'edit.json'], {
+    ($self->_nobj ('operator', $opts)),
+    ($self->_nobj ('context', $opts)),
+    name => $opts->{name} // $self->generate_text (rand, {}),
+    author_status => $opts->{author_status},
+    owner_status => $opts->{owner_status},
+    admin_status => $opts->{admin_status},
+  }, app => $opts->{app})->then (sub {
+    my $result = $_[0];
+    $self->set_o ($name => $result->{json});
+  });
+} # create_tag
+
 1;
 
 =head1 LICENSE

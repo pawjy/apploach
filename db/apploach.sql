@@ -143,3 +143,70 @@ alter table `blog_entry`
   add column `modified` double not null,
   add key (`app_id`, `modified`);
 
+create table if not exists `tag` (
+  `app_id` bigint unsigned not null,
+  `context_nobj_id` bigint unsigned not null,
+  `name` varbinary(1023) not null,
+  `name_sha` binary(40) not null,
+  `count` int not null,
+  `author_status` tinyint unsigned not null,
+  `owner_status` tinyint unsigned not null,
+  `admin_status` tinyint unsigned not null,
+  `timestamp` double not null,
+  primary key (`app_id`, `context_nobj_id`, `name_sha`),
+  key (`app_id`, `context_nobj_id`, `timestamp`),
+  key (`app_id`, `context_nobj_id`, `count`),
+  key (`app_id`, `timestamp`),
+  key (`timestamp`)
+) default charset=binary engine=innodb;
+
+create table if not exists `tag_redirect` (
+  `app_id` bigint unsigned not null,
+  `context_nobj_id` bigint unsigned not null,
+  `from_name_sha` binary(40) not null,
+  `to_name_sha` binary(40) not null,
+  `timestamp` double not null,
+  primary key (`app_id`, `context_nobj_id`, `from_name_sha`),
+  key (`app_id`, `context_nobj_id`, `to_name_sha`),
+  key (`app_id`, `timestamp`),
+  key (`timestamp`)
+) default charset=binary engine=innodb;
+
+create table if not exists `tag_name` (
+  `app_id` bigint unsigned not null,
+  `context_nobj_id` bigint unsigned not null,
+  `primary_name_sha` binary(40) not null,
+  `localized_name_sha` binary(40) not null,
+  `lang` varbinary(31) not null,
+  `timestamp` double not null,
+  primary key (`app_id`, `context_nobj_id`, `primary_name_sha`, `lang`),
+  key (`app_id`, `context_nobj_id`, `localized_name_sha`),
+  key (`app_id`, `timestamp`),
+  key (`timestamp`)
+) default charset=binary engine=innodb;
+
+create table if not exists `tag_string_data` (
+  `app_id` bigint unsigned not null,
+  `context_nobj_id` bigint unsigned not null,
+  `name_sha` binary(40) not null,
+  `name` varbinary(255) not null,
+  `value` mediumblob not null,
+  `timestamp` double not null,
+  primary key (`app_id`, `context_nobj_id`, `name_sha`, `name`),
+  key (`app_id`, `timestamp`),
+  key (`timestamp`)
+) default charset=binary engine=innodb;
+
+create table if not exists `tag_item` (
+  `app_id` bigint unsigned not null,
+  `context_nobj_id` bigint unsigned not null,
+  `name_sha` binary(40) not null,
+  `item_nobj_id` bigint unsigned not null,
+  `score` double not null,
+  `timestamp` double not null,
+  primary key (`app_id`, `context_nobj_id`, `name_sha`, `item_nobj_id`),
+  key (`app_id`, `context_nobj_id`, `name_sha`, `timestamp`),
+  key (`app_id`, `context_nobj_id`, `name_sha`, `score`),
+  key (`app_id`, `timestamp`),
+  key (`timestamp`)
+) default charset=binary engine=innodb;

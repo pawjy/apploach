@@ -9,6 +9,7 @@ use Dongry::Type::JSONPS;
 use Promise;
 use Promised::Flow;
 use Dongry::Database;
+use Web::DomainName::Punycode;
 use Web::URL;
 use Web::DOM::Document;
 use Web::XML::Parser;
@@ -725,7 +726,7 @@ sub signed_storage_url ($$$) {
   my $prefix = $self->{config}->{s3_file_url_prefix};
   return undef unless defined $url and $url =~ m{\A\Q$prefix\E};
 
-  my $url = Web::URL->parse_string ($url);
+  $url = Web::URL->parse_string ($url);
   return undef unless defined $url and $url->is_http_s;
   
   my $signed = Web::Transport::AWS->aws4_signed_url
@@ -1747,6 +1748,216 @@ sub run_follow ($) {
   return $self->{app}->throw_error (404);
 } # run_follow
 
+sub run_tag ($) {
+  my $self = $_[0];
+
+  ## Tags.  A tag has context : NObj, name : String, Statuses, count :
+  ## Integer, timestamp : Timestamp.  Tag names are unique within
+  ## their context.  A tag's NObj key is
+  ## |apploach-tag-[/context/]-/tag/| where /context/ is the tag's
+  ## context NObj key and /tag/ is the punycode-encoded tag's name.
+  ## The initial values of the statuses, count, and timestamp fields
+  ## are zero (0).
+
+  if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'list.json') {
+    ## /{app_id}/tag/list.json - Get tag data.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|context|) : The tag's context NObj.
+    ##
+    ##   |name| : String : The tag's name.  Zero or more parameters
+    ##   can be specified.
+    ##
+    ## Response.
+    ##
+    ##   |tags| : JSON object.
+    ##
+    ##     /tag's name/ : JSON object.
+    ##
+    ##       |name| : String : The tag's name.
+    ##
+    ##       |nobj_key| : String : The tag's NObj key.
+    ##
+    ##       Statuses : The tag's statuses (or |0| value, if not
+    ##       specified).
+    ##
+    ##       |count| : Integer : The tag's count.
+    ##
+    ##       |timestamp| : Timestamp : The tag's timestamp.
+    my $names = $self->{app}->text_param_list ('name');
+    my $name_shas = [map { sha1_hex +Dongry::Type->serialize ('text', $_) } @$names];
+    # XXX redirects
+    my $context;
+    return Promise->all ([
+      $self->nobj ('context'),
+    ])->then (sub {
+      ($context) = @{$_[0]};
+      return {} if $context->is_error;
+      return {} unless @$name_shas;
+
+      return $self->db->select ('tag', {
+        ($self->app_id_columns),
+        ($context->to_columns ('context')),
+        name_sha => {-in => $name_shas},
+      }, source_name => 'master', fields => [
+        'name_sha', 'count', 'timestamp',
+        'author_status', 'owner_status', 'admin_status',
+      ])->then (sub {
+        return {map { $_->{name_sha} => $_ } @{$_[0]->all}};
+      });
+    })->then (sub {
+      my $v = $_[0];
+
+      my $result = {tags => {}};
+      for (0..$#$names) {
+        my $w = $v->{$name_shas->[$_]} || {};
+        $result->{tags}->{$names->[$_]} = {
+          name => $names->[$_],
+          nobj_key => "apploach-tag-[@{[$context->nobj_key]}]-@{[encode_punycode $names->[$_]]}",
+          count => $w->{count} || 0,
+          timestamp => $w->{timestamp} || 0,
+          author_status => $w->{author_status} || 0,
+          owner_status => $w->{owner_status} || 0,
+          admin_status => $w->{admin_status} || 0,
+        };
+      }
+
+      # XXX data
+
+      return $self->json ($result);
+    });
+  } # /tag/list.json
+
+  # XXX /tag/items.json
+
+  # XXX /tag/related.json
+
+  # XXX /tag/publish.json
+  
+  if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'edit.json') {
+    ## /{app_id}/tag/edit.json - Edit a tag.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|context|) : The tag's context NObj.
+    ##
+    ##   NObj (|operator|) : The operator of this editing.
+    ##   Required.
+    ##
+    ##   |name| : String : The tag's name.
+    ##
+    ##   Statuses : The tag's statuses.  Optional if nothing to
+    ##   change.  When statuses are changed, the tag NObj's status
+    ##   info is updated (and a log is added).
+    ##
+    ##   |status_info_author_data| : JSON Object : The tag NObj's
+    ##   status info's author data.  Optional if no change.
+    ##
+    ##   |status_info_owner_data| : JSON Object : The tag NObj's
+    ##   status info's owner data.  Optional if no change.
+    ##
+    ##   |status_info_admin_data| : JSON Object : The tag NObj's
+    ##   status info's admin data.  Optional if no change.
+    ##
+    ## Response.  No additional data.
+    my $name = $self->{app}->text_param ('name') // '';
+    my $name_sha = sha1_hex +Dongry::Type->serialize ('text', $name);
+    my $time = time;
+    return Promise->all ([
+      $self->new_nobj_list ([
+        'context', 'operator',
+        \"apploach-tag-[@{[$self->{app}->bare_param ('context_nobj_key') // '']}]-@{[encode_punycode $name]}",
+        \'apploach-set-status',
+      ]),
+    ])->then (sub {
+      my ($context, $operator, $tag_nobj, $ssnobj) = @{$_[0]->[0]};
+      
+      my $updates = {};
+      for (qw(author_status owner_status admin_status)) {
+        my $v = $self->{app}->bare_param ($_);
+        next unless defined $v;
+        return $self->throw ({reason => "Bad |$_|"})
+            unless $v =~ /\A[1-9][0-9]*\z/ and 1 < $v and $v < 255;
+        $updates->{$_} = 0+$v;
+      } # status
+
+      my $d1 = $self->optional_json_object_param ('status_info_author_data');
+      my $d2 = $self->optional_json_object_param ('status_info_owner_data');
+      my $d3 = $self->optional_json_object_param ('status_info_admin_data');
+      return unless $updates->{author_status} or
+          $updates->{owner_status} or
+          $updates->{admin_status} or
+          defined $d1 or defined $d2 or defined $d3;
+
+      return $self->db->transaction->then (sub {
+        my $tr = $_[0];
+        return $tr->select ('tag', {
+          ($self->app_id_columns),
+          ($context->to_columns ('context')),
+          name_sha => $name_sha,
+        }, source_name => 'master', fields => [
+          'author_status', 'owner_status', 'admin_status',
+        ], lock => 'share')->then (sub {
+          my $current = $_[0]->first // {
+            author_status => 0,
+            owner_status => 0,
+            admin_status => 0,
+          };
+          for (qw(author_status owner_status admin_status)) {
+            delete $updates->{$_} if defined $updates->{$_} and
+                $updates->{$_} == $current->{$_};
+          }
+          my $data = {
+            old => {
+              author_status => $current->{author_status},
+              owner_status => $current->{owner_status},
+              admin_status => $current->{admin_status},
+            },
+            new => {
+              author_status => $updates->{author_status} // $current->{author_status},
+              owner_status => $updates->{owner_status} // $current->{owner_status},
+              admin_status => $updates->{admin_status} // $current->{admin_status},
+            },
+          };
+          return $self->set_status_info
+              ($tr, $operator, $tag_nobj, $ssnobj, $data, $d1, $d2, $d3);
+        })->then (sub {
+          return unless keys %$updates;
+          return $tr->insert ('tag', [{
+            ($self->app_id_columns),
+            ($context->to_columns ('context')),
+            name => Dongry::Type->serialize ('text', $name),
+            name_sha => $name_sha,
+            author_status => $updates->{author_status} // 0,
+            owner_status => $updates->{owner_status} // 0,
+            admin_status => $updates->{admin_status} // 0,
+            count => 0,
+            timestamp => $time,
+          }], source_name => 'master', duplicate => {
+            (defined $updates->{author_status} ? (author_status => $self->db->bare_sql_fragment ('VALUES(`author_status`)')) : ()),
+            (defined $updates->{owner_status} ? (owner_status => $self->db->bare_sql_fragment ('VALUES(`owner_status`)')) : ()),
+            (defined $updates->{admin_status} ? (admin_status => $self->db->bare_sql_fragment ('VALUES(`admin_status`)')) : ()),
+            timestamp => $self->db->bare_sql_fragment ('VALUES(`timestamp`)'),
+          });
+        })->then (sub {
+          return $tr->commit;
+        });
+      });
+    })->then (sub {
+      return $self->json ({});
+    });
+
+    # XXX name redirects
+    # XXX name langs
+
+    # XXX data
+
+  }
+
+  return $self->{app}->throw_error (404);
+} # run_tag
+
 sub run_nobj ($) {
   my $self = $_[0];
 
@@ -2263,6 +2474,7 @@ sub run ($) {
       $self->{type} eq 'star' or
       $self->{type} eq 'blog' or
       $self->{type} eq 'follow' or
+      $self->{type} eq 'tag' or
       $self->{type} eq 'nobj') {
     my $method = 'run_'.$self->{type};
     return $self->$method;
