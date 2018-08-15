@@ -111,6 +111,13 @@ sub _expand_reqs ($$$) {
             {p => {$n => '["a"]'}, reason => "Bad JSON parameter |$n|"},
           ];
         },
+        json_opt => sub {
+          my $n = $_[1];
+          return [
+            {p => {$n => '"a"'}, reason => "Bad JSON parameter |$n|"},
+            {p => {$n => '["a"]'}, reason => "Bad JSON parameter |$n|"},
+          ];
+        },
         new_nobj => sub {
           my $n = $_[1];
           return [
@@ -491,10 +498,11 @@ sub create_tag ($$$) {
   return $self->json (['tag', 'edit.json'], {
     ($self->_nobj ('operator', $opts)),
     ($self->_nobj ('context', $opts)),
-    name => $opts->{name} // $self->generate_text (rand, {}),
+    tag_name => $opts->{tag_name} // $self->generate_text (rand, {}),
     author_status => $opts->{author_status},
     owner_status => $opts->{owner_status},
     admin_status => $opts->{admin_status},
+    string_data => $opts->{string_data},
   }, app => $opts->{app})->then (sub {
     my $result = $_[0];
     $self->set_o ($name => $result->{json});

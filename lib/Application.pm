@@ -1751,11 +1751,13 @@ sub run_follow ($) {
 sub run_tag ($) {
   my $self = $_[0];
 
-  ## Tags.  A tag has context : NObj, name : String, Statuses, count :
-  ## Integer, timestamp : Timestamp.  Tag names are unique within
-  ## their context.  A tag's NObj key is
+  ## Tags.  A tag has context : NObj, tag name : String, Statuses,
+  ## count : Integer, timestamp : Timestamp.  Tag names are unique
+  ## within their context.  A tag's NObj key is
   ## |apploach-tag-[/context/]-/tag/| where /context/ is the tag's
-  ## context NObj key and /tag/ is the punycode-encoded tag's name.
+  ## context NObj key and /tag/ is the punycode-encoded tag's tag
+  ## name.  A tag has zero or more string data, which are name :
+  ## String and value : String pairs where names are unique for a tag.
   ## The initial values of the statuses, count, and timestamp fields
   ## are zero (0).
 
@@ -1766,16 +1768,16 @@ sub run_tag ($) {
     ##
     ##   NObj (|context|) : The tag's context NObj.
     ##
-    ##   |name| : String : The tag's name.  Zero or more parameters
-    ##   can be specified.
+    ##   |tag_name| : String : The tag's tag name.  Zero or more
+    ##   parameters can be specified.
     ##
     ## Response.
     ##
     ##   |tags| : JSON object.
     ##
-    ##     /tag's name/ : JSON object.
+    ##     /tag's tag name/ : JSON object.
     ##
-    ##       |name| : String : The tag's name.
+    ##       |tag_name| : String : The tag's tag name.
     ##
     ##       |nobj_key| : String : The tag's NObj key.
     ##
@@ -1785,10 +1787,12 @@ sub run_tag ($) {
     ##       |count| : Integer : The tag's count.
     ##
     ##       |timestamp| : Timestamp : The tag's timestamp.
-    my $names = $self->{app}->text_param_list ('name');
+    my $names = $self->{app}->text_param_list ('tag_name');
     my $name_shas = [map { sha1_hex +Dongry::Type->serialize ('text', $_) } @$names];
     # XXX redirects
     my $context;
+    my $sha2r = {};
+    my $result = {tags => {}};
     return Promise->all ([
       $self->nobj ('context'),
     ])->then (sub {
@@ -1799,21 +1803,20 @@ sub run_tag ($) {
       return $self->db->select ('tag', {
         ($self->app_id_columns),
         ($context->to_columns ('context')),
-        name_sha => {-in => $name_shas},
+        tag_name_sha => {-in => $name_shas},
       }, source_name => 'master', fields => [
-        'name_sha', 'count', 'timestamp',
+        'tag_name_sha', 'count', 'timestamp',
         'author_status', 'owner_status', 'admin_status',
       ])->then (sub {
-        return {map { $_->{name_sha} => $_ } @{$_[0]->all}};
+        return {map { $_->{tag_name_sha} => $_ } @{$_[0]->all}};
       });
     })->then (sub {
       my $v = $_[0];
 
-      my $result = {tags => {}};
       for (0..$#$names) {
         my $w = $v->{$name_shas->[$_]} || {};
-        $result->{tags}->{$names->[$_]} = {
-          name => $names->[$_],
+        push @{$sha2r->{$name_shas->[$_]} ||= []}, $result->{tags}->{$names->[$_]} = {
+          tag_name => $names->[$_],
           nobj_key => "apploach-tag-[@{[$context->nobj_key]}]-@{[encode_punycode $names->[$_]]}",
           count => $w->{count} || 0,
           timestamp => $w->{timestamp} || 0,
@@ -1823,8 +1826,24 @@ sub run_tag ($) {
         };
       }
 
-      # XXX data
-
+      my $string_data_names = $self->{app}->text_param_list ('sd');
+      return unless @$name_shas and @$string_data_names;
+      return $self->db->select ('tag_string_data', {
+        ($self->app_id_columns),
+        ($context->to_columns ('context')),
+        tag_name_sha => {-in => $name_shas},
+        name => {-in => [map { Dongry::Type->serialize ('text', $_) } @$string_data_names]},
+      }, source_name => 'master', fields => [
+        'tag_name_sha', 'name', 'value',
+      ])->then (sub {
+        for my $v (@{$_[0]->all}) {
+          for (@{$sha2r->{$v->{tag_name_sha}} || []}) {
+            $_->{string_data}->{Dongry::Type->parse ('text', $v->{name})}
+                = Dongry::Type->parse ('text', $v->{value});
+          }
+        }
+      });
+    })->then (sub {
       return $self->json ($result);
     });
   } # /tag/list.json
@@ -1845,23 +1864,31 @@ sub run_tag ($) {
     ##   NObj (|operator|) : The operator of this editing.
     ##   Required.
     ##
-    ##   |name| : String : The tag's name.
+    ##   |tag_name| : String : The tag's tag name.  Required.
     ##
     ##   Statuses : The tag's statuses.  Optional if nothing to
     ##   change.  When statuses are changed, the tag NObj's status
     ##   info is updated (and a log is added).
     ##
-    ##   |status_info_author_data| : JSON Object : The tag NObj's
+    ##   |status_info_author_data| : JSON object : The tag NObj's
     ##   status info's author data.  Optional if no change.
     ##
-    ##   |status_info_owner_data| : JSON Object : The tag NObj's
+    ##   |status_info_owner_data| : JSON object : The tag NObj's
     ##   status info's owner data.  Optional if no change.
     ##
-    ##   |status_info_admin_data| : JSON Object : The tag NObj's
+    ##   |status_info_admin_data| : JSON object : The tag NObj's
     ##   status info's admin data.  Optional if no change.
     ##
+    ##   |string_data| : JSON object : The tag's string data.  Names
+    ##   in the JSON object are names of the tag's string data and
+    ##   their values are values of the tag's string data or |null|.
+    ##   If |null|, the name/value pair is deleted.  Otherwise, the
+    ##   name/value pair is updated.  Any existing string data
+    ##   name/value pair with no matching name specified is left
+    ##   unchanged.  Optional if no change.
+    ##
     ## Response.  No additional data.
-    my $name = $self->{app}->text_param ('name') // '';
+    my $name = $self->{app}->text_param ('tag_name') // '';
     my $name_sha = sha1_hex +Dongry::Type->serialize ('text', $name);
     my $time = time;
     return Promise->all ([
@@ -1885,64 +1912,98 @@ sub run_tag ($) {
       my $d1 = $self->optional_json_object_param ('status_info_author_data');
       my $d2 = $self->optional_json_object_param ('status_info_owner_data');
       my $d3 = $self->optional_json_object_param ('status_info_admin_data');
-      return unless $updates->{author_status} or
-          $updates->{owner_status} or
-          $updates->{admin_status} or
-          defined $d1 or defined $d2 or defined $d3;
 
-      return $self->db->transaction->then (sub {
-        my $tr = $_[0];
-        return $tr->select ('tag', {
-          ($self->app_id_columns),
-          ($context->to_columns ('context')),
-          name_sha => $name_sha,
-        }, source_name => 'master', fields => [
-          'author_status', 'owner_status', 'admin_status',
-        ], lock => 'share')->then (sub {
-          my $current = $_[0]->first // {
-            author_status => 0,
-            owner_status => 0,
-            admin_status => 0,
-          };
-          for (qw(author_status owner_status admin_status)) {
-            delete $updates->{$_} if defined $updates->{$_} and
-                $updates->{$_} == $current->{$_};
-          }
-          my $data = {
-            old => {
-              author_status => $current->{author_status},
-              owner_status => $current->{owner_status},
-              admin_status => $current->{admin_status},
-            },
-            new => {
-              author_status => $updates->{author_status} // $current->{author_status},
-              owner_status => $updates->{owner_status} // $current->{owner_status},
-              admin_status => $updates->{admin_status} // $current->{admin_status},
-            },
-          };
-          return $self->set_status_info
-              ($tr, $operator, $tag_nobj, $ssnobj, $data, $d1, $d2, $d3);
-        })->then (sub {
-          return unless keys %$updates;
-          return $tr->insert ('tag', [{
+      my $string_data = $self->optional_json_object_param ('string_data') || {};
+      my $deleted_string_data = [];
+      for (keys %$string_data) {
+        unless (defined $string_data->{$_}) {
+          push @$deleted_string_data, $_;
+          delete $string_data->{$_};
+        }
+      }
+
+      return Promise->resolve->then (sub {
+        return unless $updates->{author_status} or
+            $updates->{owner_status} or
+            $updates->{admin_status} or
+            defined $d1 or defined $d2 or defined $d3;
+
+        return $self->db->transaction->then (sub {
+          my $tr = $_[0];
+          return $tr->select ('tag', {
             ($self->app_id_columns),
             ($context->to_columns ('context')),
-            name => Dongry::Type->serialize ('text', $name),
-            name_sha => $name_sha,
-            author_status => $updates->{author_status} // 0,
-            owner_status => $updates->{owner_status} // 0,
-            admin_status => $updates->{admin_status} // 0,
-            count => 0,
-            timestamp => $time,
-          }], source_name => 'master', duplicate => {
-            (defined $updates->{author_status} ? (author_status => $self->db->bare_sql_fragment ('VALUES(`author_status`)')) : ()),
-            (defined $updates->{owner_status} ? (owner_status => $self->db->bare_sql_fragment ('VALUES(`owner_status`)')) : ()),
-            (defined $updates->{admin_status} ? (admin_status => $self->db->bare_sql_fragment ('VALUES(`admin_status`)')) : ()),
+            tag_name_sha => $name_sha,
+          }, source_name => 'master', fields => [
+            'author_status', 'owner_status', 'admin_status',
+          ], lock => 'share')->then (sub {
+            my $current = $_[0]->first // {
+              author_status => 0,
+              owner_status => 0,
+              admin_status => 0,
+            };
+            for (qw(author_status owner_status admin_status)) {
+              delete $updates->{$_} if defined $updates->{$_} and
+                  $updates->{$_} == $current->{$_};
+            }
+            my $data = {
+              old => {
+                author_status => $current->{author_status},
+                owner_status => $current->{owner_status},
+                admin_status => $current->{admin_status},
+              },
+              new => {
+                author_status => $updates->{author_status} // $current->{author_status},
+                owner_status => $updates->{owner_status} // $current->{owner_status},
+                admin_status => $updates->{admin_status} // $current->{admin_status},
+              },
+            };
+            return $self->set_status_info
+                ($tr, $operator, $tag_nobj, $ssnobj, $data, $d1, $d2, $d3);
+          })->then (sub {
+            return unless keys %$updates;
+            return $tr->insert ('tag', [{
+              ($self->app_id_columns),
+              ($context->to_columns ('context')),
+              tag_name => Dongry::Type->serialize ('text', $name),
+              tag_name_sha => $name_sha,
+              author_status => $updates->{author_status} // 0,
+              owner_status => $updates->{owner_status} // 0,
+              admin_status => $updates->{admin_status} // 0,
+              count => 0,
+              timestamp => $time,
+            }], source_name => 'master', duplicate => {
+              (defined $updates->{author_status} ? (author_status => $self->db->bare_sql_fragment ('VALUES(`author_status`)')) : ()),
+              (defined $updates->{owner_status} ? (owner_status => $self->db->bare_sql_fragment ('VALUES(`owner_status`)')) : ()),
+              (defined $updates->{admin_status} ? (admin_status => $self->db->bare_sql_fragment ('VALUES(`admin_status`)')) : ()),
             timestamp => $self->db->bare_sql_fragment ('VALUES(`timestamp`)'),
+            });
+          })->then (sub {
+            return $tr->commit->then (sub { undef $tr });
+          })->finally (sub {
+            return $tr->rollback if defined $tr;
           });
-        })->then (sub {
-          return $tr->commit;
         });
+      })->then (sub {
+        return unless keys %$string_data;
+        return $self->db->insert ('tag_string_data', [map {
+          +{
+            ($self->app_id_columns),
+            ($context->to_columns ('context')),
+            tag_name_sha => $name_sha,
+            name => Dongry::Type->serialize ('text', $_),
+            value => Dongry::Type->serialize ('text', $string_data->{$_}),
+            timestamp => $time,
+          };
+        } keys %$string_data], source_name => 'master', duplicate => 'replace');
+      })->then (sub {
+        return unless @$deleted_string_data;
+        return $self->db->delete ('tag_string_data', {
+          ($self->app_id_columns),
+          ($context->to_columns ('context')),
+          tag_name_sha => $name_sha,
+          name => {-in => [map { Dongry::Type->serialize ('text', $_) } @$deleted_string_data]},
+        }, source_name => 'master');
       });
     })->then (sub {
       return $self->json ({});

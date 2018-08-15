@@ -13,25 +13,26 @@ Test {
     return $current->are_errors (
       [['tag', 'edit.json'], {
         context_nobj_key => $current->o ('t1')->{nobj_key},
-        name => $current->generate_text (x2 => {}),
+        tag_name => $current->generate_text (x2 => {}),
         operator_nobj_key => $current->o ('u1')->{nobj_key},
       }],
       [
         ['new_nobj', 'context'],
         ['new_nobj', 'operator'],
+        ['json_opt', 'string_data'],
       ],
     );
   })->then (sub {
     return $current->json (['tag', 'edit.json'], {
       context_nobj_key => $current->o ('t1')->{nobj_key},
-      name => $current->generate_text (x1 => {}),
+      tag_name => $current->generate_text (x1 => {}),
       operator_nobj_key => $current->o ('u1')->{nobj_key},
     });
   })->then (sub {
     my $result = $_[0];
     return $current->json (['tag', 'list.json'], {
       context_nobj_key => $current->o ('t1')->{nobj_key},
-      name => $current->generate_text (x1 => {}),
+      tag_name => $current->generate_text (x1 => {}),
     });
   })->then (sub {
     my $result = $_[0];
@@ -54,7 +55,7 @@ Test {
   )->then (sub {
     return $current->json (['tag', 'edit.json'], {
       context_nobj_key => $current->o ('t1')->{nobj_key},
-      name => $current->generate_text (x1 => {}),
+      tag_name => $current->generate_text (x1 => {}),
       operator_nobj_key => $current->o ('u1')->{nobj_key},
       author_status => 4,
     });
@@ -62,7 +63,7 @@ Test {
     my $result = $_[0];
     return $current->json (['tag', 'list.json'], {
       context_nobj_key => $current->o ('t1')->{nobj_key},
-      name => $current->o ('x1'),
+      tag_name => $current->o ('x1'),
     });
   })->then (sub {
     my $result = $_[0];
@@ -96,7 +97,7 @@ Test {
     } $current->c;
     return $current->json (['tag', 'edit.json'], {
       context_nobj_key => $current->o ('t1')->{nobj_key},
-      name => $current->o ('x1'),
+      tag_name => $current->o ('x1'),
       operator_nobj_key => $current->o ('u1')->{nobj_key},
       owner_status => 2,
       admin_status => 10,
@@ -105,7 +106,7 @@ Test {
     my $result = $_[0];
     return $current->json (['tag', 'list.json'], {
       context_nobj_key => $current->o ('t1')->{nobj_key},
-      name => $current->o ('x1'),
+      tag_name => $current->o ('x1'),
     });
   })->then (sub {
     my $result = $_[0];
@@ -138,7 +139,7 @@ Test {
     } $current->c;
     return $current->json (['tag', 'edit.json'], {
       context_nobj_key => $current->o ('t1')->{nobj_key},
-      name => $current->o ('x1'),
+      tag_name => $current->o ('x1'),
       operator_nobj_key => $current->o ('u1')->{nobj_key},
       status_info_author_data => '{"ab":53}',
     });
@@ -146,7 +147,7 @@ Test {
     my $result = $_[0];
     return $current->json (['tag', 'list.json'], {
       context_nobj_key => $current->o ('t1')->{nobj_key},
-      name => $current->o ('x1'),
+      tag_name => $current->o ('x1'),
     });
   })->then (sub {
     my $result = $_[0];
@@ -179,7 +180,7 @@ Test {
     } $current->c;
     return $current->json (['tag', 'edit.json'], {
       context_nobj_key => $current->o ('t1')->{nobj_key},
-      name => $current->o ('x1'),
+      tag_name => $current->o ('x1'),
       operator_nobj_key => $current->o ('u1')->{nobj_key},
       status_info_author_data => '{}',
       status_info_owner_data => '{"ab":13}',
@@ -190,7 +191,7 @@ Test {
     my $result = $_[0];
     return $current->json (['tag', 'list.json'], {
       context_nobj_key => $current->o ('t1')->{nobj_key},
-      name => $current->o ('x1'),
+      tag_name => $current->o ('x1'),
     });
   })->then (sub {
     my $result = $_[0];
@@ -223,6 +224,89 @@ Test {
     } $current->c;
   });
 } n => 64, name => 'status changed';
+
+Test {
+  my $current = shift;
+  return $current->create (
+    [t1 => nobj => {}],
+    [u1 => nobj => {}],
+  )->then (sub {
+    return $current->json (['tag', 'edit.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      operator_nobj_key => $current->o ('u1')->{nobj_key},
+      tag_name => $current->generate_text (x1 => {}),
+      string_data => {
+        abc => 3534,
+        xya => undef,
+        "\x{901}" => '',
+      },
+    });
+  })->then (sub {
+    my $result = $_[0];
+    return $current->json (['tag', 'list.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      tag_name => $current->o ('x1'),
+      sd => ['abc', 'xya', "\x{901}", 'bar'],
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      my $tag = $result->{json}->{tags}->{$current->o ('x1')};
+      is $tag->{string_data}->{abc}, 3534;
+      is $tag->{string_data}->{xya}, undef;
+      is $tag->{string_data}->{"\x{901}"}, '';
+      is $tag->{string_data}->{bar}, undef;
+    } $current->c;
+    return $current->json (['tag', 'edit.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      operator_nobj_key => $current->o ('u1')->{nobj_key},
+      tag_name => $current->o ('x1'),
+      string_data => {
+        "\x{901}" => "\x{5000}",
+      },
+    });
+  })->then (sub {
+    my $result = $_[0];
+    return $current->json (['tag', 'list.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      tag_name => $current->o ('x1'),
+      sd => ['abc', 'xya', "\x{901}", 'bar'],
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      my $tag = $result->{json}->{tags}->{$current->o ('x1')};
+      is $tag->{string_data}->{abc}, 3534;
+      is $tag->{string_data}->{xya}, undef;
+      is $tag->{string_data}->{"\x{901}"}, "\x{5000}";
+      is $tag->{string_data}->{bar}, undef;
+    } $current->c;
+    return $current->json (['tag', 'edit.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      operator_nobj_key => $current->o ('u1')->{nobj_key},
+      tag_name => $current->o ('x1'),
+      string_data => {
+        "\x{901}" => undef,
+      },
+    });
+  })->then (sub {
+    my $result = $_[0];
+    return $current->json (['tag', 'list.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      tag_name => $current->o ('x1'),
+      sd => ['abc', 'xya', "\x{901}", 'bar'],
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      my $tag = $result->{json}->{tags}->{$current->o ('x1')};
+      is $tag->{string_data}->{abc}, 3534;
+      is $tag->{string_data}->{xya}, undef;
+      is $tag->{string_data}->{"\x{901}"}, undef;
+      is $tag->{string_data}->{bar}, undef;
+    } $current->c;
+  });
+} n => 12, name => 'string_data';
 
 RUN;
 
