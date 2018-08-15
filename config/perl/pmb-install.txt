@@ -1,6 +1,6 @@
 AnyEvent~7.14
 AnyEvent::Fork~1.31
-AnyEvent::Handle
+AnyEvent::Socket
 Canary::Stability~2012
 Carp~1.38
 Cwd~3.74
