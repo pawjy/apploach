@@ -20,6 +20,7 @@ Test {
         ['new_nobj', 'context'],
         ['new_nobj', 'operator'],
         ['json_opt', 'string_data'],
+        ['json_opt', 'redirect'],
       ],
     );
   })->then (sub {
@@ -307,6 +308,168 @@ Test {
     } $current->c;
   });
 } n => 12, name => 'string_data';
+
+Test {
+  my $current = shift;
+  return $current->create (
+    [t1 => nobj => {}],
+    [u1 => nobj => {}],
+  )->then (sub {
+    return $current->json (['tag', 'edit.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      operator_nobj_key => $current->o ('u1')->{nobj_key},
+      tag_name => $current->generate_text (x1 => {}),
+      redirect => {
+        to => $current->generate_text (x2 => {}),
+      },
+    });
+  })->then (sub {
+    my $result = $_[0];
+    return $current->json (['tag', 'list.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      tag_name => $current->o ('x1'),
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      my $tag1 = $result->{json}->{tags}->{$current->o ('x1')};
+      my $tag2 = $result->{json}->{tags}->{$current->o ('x2')};
+      is $tag1->{tag_name}, $current->o ('x1');
+      is $tag1->{canon_tag_name}, $current->o ('x2');
+      is $tag2->{tag_name}, $current->o ('x2');
+      is $tag2->{canon_tag_name}, $current->o ('x2');
+    } $current->c, name => 'x1->x2';
+    return $current->json (['tag', 'edit.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      operator_nobj_key => $current->o ('u1')->{nobj_key},
+      tag_name => $current->o ('x2'),
+      redirect => {
+        to => $current->generate_text (x3 => {}),
+      },
+    });
+  })->then (sub {
+    my $result = $_[0];
+    return $current->json (['tag', 'list.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      tag_name => [$current->o ('x1'), $current->o ('x2')],
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      my $tag1 = $result->{json}->{tags}->{$current->o ('x1')};
+      my $tag2 = $result->{json}->{tags}->{$current->o ('x2')};
+      my $tag3 = $result->{json}->{tags}->{$current->o ('x3')};
+      is $tag1->{tag_name}, $current->o ('x1');
+      is $tag1->{canon_tag_name}, $current->o ('x3');
+      is $tag2->{tag_name}, $current->o ('x2');
+      is $tag2->{canon_tag_name}, $current->o ('x3');
+      is $tag3->{tag_name}, $current->o ('x3');
+      is $tag3->{canon_tag_name}, $current->o ('x3');
+    } $current->c, name => 'x1->x2 + x2->x3';
+    return $current->json (['tag', 'edit.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      operator_nobj_key => $current->o ('u1')->{nobj_key},
+      tag_name => $current->generate_text ('x0' => {}),
+      redirect => {
+        to => $current->o ('x2'),
+      },
+    });
+  })->then (sub {
+    my $result = $_[0];
+    return $current->json (['tag', 'list.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      tag_name => [$current->o ('x1'), $current->o ('x2'), $current->o ('x0')],
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      my $tag0 = $result->{json}->{tags}->{$current->o ('x0')};
+      my $tag1 = $result->{json}->{tags}->{$current->o ('x1')};
+      my $tag2 = $result->{json}->{tags}->{$current->o ('x2')};
+      my $tag3 = $result->{json}->{tags}->{$current->o ('x3')};
+      is $tag0->{tag_name}, $current->o ('x0');
+      is $tag0->{canon_tag_name}, $current->o ('x3');
+      is $tag1->{tag_name}, $current->o ('x1');
+      is $tag1->{canon_tag_name}, $current->o ('x3');
+      is $tag2->{tag_name}, $current->o ('x2');
+      is $tag2->{canon_tag_name}, $current->o ('x3');
+      is $tag3->{tag_name}, $current->o ('x3');
+      is $tag3->{canon_tag_name}, $current->o ('x3');
+    } $current->c, name => 'x2->x3 + x0->x2';
+    return $current->json (['tag', 'edit.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      operator_nobj_key => $current->o ('u1')->{nobj_key},
+      tag_name => $current->o ('x2'),
+      redirect => {
+        to => undef,
+      },
+    });
+  })->then (sub {
+    my $result = $_[0];
+    return $current->json (['tag', 'list.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      tag_name => [$current->o ('x1'), $current->o ('x2'), $current->o ('x0')],
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      my $tag0 = $result->{json}->{tags}->{$current->o ('x0')};
+      my $tag1 = $result->{json}->{tags}->{$current->o ('x1')};
+      my $tag2 = $result->{json}->{tags}->{$current->o ('x2')};
+      my $tag3 = $result->{json}->{tags}->{$current->o ('x3')};
+      is $tag0->{tag_name}, $current->o ('x0');
+      is $tag0->{canon_tag_name}, $current->o ('x3');
+      is $tag1->{tag_name}, $current->o ('x1');
+      is $tag1->{canon_tag_name}, $current->o ('x3');
+      is $tag2->{tag_name}, $current->o ('x2');
+      is $tag2->{canon_tag_name}, $current->o ('x2');
+      is $tag3->{tag_name}, $current->o ('x3');
+      is $tag3->{canon_tag_name}, $current->o ('x3');
+    } $current->c, name => 'x2->undef';
+  });
+} n => 26, name => 'redirect to';
+
+Test {
+  my $current = shift;
+  return $current->create (
+    [t1 => nobj => {}],
+    [u1 => nobj => {}],
+  )->then (sub {
+    return $current->json (['tag', 'edit.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      operator_nobj_key => $current->o ('u1')->{nobj_key},
+      tag_name => $current->generate_text (x1 => {}),
+      redirect => {
+        to => $current->generate_text (x2 => {}),
+      },
+    });
+  })->then (sub {
+    return $current->json (['tag', 'edit.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      operator_nobj_key => $current->o ('u1')->{nobj_key},
+      tag_name => $current->o ('x2'),
+      redirect => {
+        to => $current->o ('x1'),
+      },
+    });
+  })->then (sub {
+    my $result = $_[0];
+    return $current->json (['tag', 'list.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      tag_name => [$current->o ('x1'), $current->o ('x2')],
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      my $tag1 = $result->{json}->{tags}->{$current->o ('x1')};
+      my $tag2 = $result->{json}->{tags}->{$current->o ('x2')};
+      is $tag1->{tag_name}, $current->o ('x1');
+      is $tag1->{canon_tag_name}, $current->o ('x2');
+      is $tag2->{tag_name}, $current->o ('x2');
+      is $tag2->{canon_tag_name}, $current->o ('x2');
+    } $current->c;
+  });
+} n => 4, name => 'redirect loop';
 
 RUN;
 

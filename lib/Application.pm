@@ -1759,7 +1759,9 @@ sub run_tag ($) {
   ## name.  A tag has zero or more string data, which are name :
   ## String and value : String pairs where names are unique for a tag.
   ## The initial values of the statuses, count, and timestamp fields
-  ## are zero (0).
+  ## are zero (0).  A tag can be redirected to another tag.  A tag's
+  ## canonical tag name is the tag name of the tag to which the tag is
+  ## redirected, if any, or the tag's tag name.
 
   if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'list.json') {
     ## /{app_id}/tag/list.json - Get tag data.
@@ -1779,6 +1781,8 @@ sub run_tag ($) {
     ##
     ##       |tag_name| : String : The tag's tag name.
     ##
+    ##       |canon_tag_name| : String : The tag's canonical tag name.
+    ##
     ##       |nobj_key| : String : The tag's NObj key.
     ##
     ##       Statuses : The tag's statuses (or |0| value, if not
@@ -1788,9 +1792,10 @@ sub run_tag ($) {
     ##
     ##       |timestamp| : Timestamp : The tag's timestamp.
     my $names = $self->{app}->text_param_list ('tag_name');
-    my $name_shas = [map { sha1_hex +Dongry::Type->serialize ('text', $_) } @$names];
-    # XXX redirects
+    my $name_shas = {map { $_ => sha1_hex +Dongry::Type->serialize ('text', $_) } @$names};
+    my $all_name_shas = {map { $_ => 1 } values %$name_shas};
     my $context;
+    my $sha_redirects = {};
     my $sha2r = {};
     my $result = {tags => {}};
     return Promise->all ([
@@ -1798,40 +1803,69 @@ sub run_tag ($) {
     ])->then (sub {
       ($context) = @{$_[0]};
       return {} if $context->is_error;
-      return {} unless @$name_shas;
+      return {} unless keys %$name_shas;
 
-      return $self->db->select ('tag', {
+      return $self->db->select ('tag_redirect', {
         ($self->app_id_columns),
         ($context->to_columns ('context')),
-        tag_name_sha => {-in => $name_shas},
-      }, source_name => 'master', fields => [
-        'tag_name_sha', 'count', 'timestamp',
-        'author_status', 'owner_status', 'admin_status',
-      ])->then (sub {
-        return {map { $_->{tag_name_sha} => $_ } @{$_[0]->all}};
+        from_tag_name_sha => {-in => [values %$name_shas]},
+      }, source_name => 'master', fields => ['from_tag_name_sha', 'to_tag_name_sha'])->then (sub {
+        for (@{$_[0]->all}) {
+          $sha_redirects->{$_->{from_tag_name_sha}} = $_->{to_tag_name_sha};
+          $all_name_shas->{$_->{to_tag_name_sha}} = 1;
+        }
+        return $self->db->select ('tag', {
+          ($self->app_id_columns),
+          ($context->to_columns ('context')),
+          tag_name_sha => {-in => [keys %$all_name_shas]},
+        }, source_name => 'master', fields => [
+          'tag_name', 'tag_name_sha', 'count', 'timestamp',
+          'author_status', 'owner_status', 'admin_status',
+        ]);
+      })->then (sub {
+        return {map {
+          $_->{tag_name} = Dongry::Type->parse ('text', $_->{tag_name});
+          ($_->{tag_name} => $_);
+        } @{$_[0]->all}};
       });
     })->then (sub {
       my $v = $_[0];
 
-      for (0..$#$names) {
-        my $w = $v->{$name_shas->[$_]} || {};
-        push @{$sha2r->{$name_shas->[$_]} ||= []}, $result->{tags}->{$names->[$_]} = {
-          tag_name => $names->[$_],
-          nobj_key => "apploach-tag-[@{[$context->nobj_key]}]-@{[encode_punycode $names->[$_]]}",
-          count => $w->{count} || 0,
-          timestamp => $w->{timestamp} || 0,
-          author_status => $w->{author_status} || 0,
-          owner_status => $w->{owner_status} || 0,
-          admin_status => $w->{admin_status} || 0,
+      for my $w (values %$v) {
+        push @{$sha2r->{$w->{tag_name_sha}} ||= []}, $result->{tags}->{$w->{tag_name}} = {
+          tag_name => $w->{tag_name},
+          nobj_key => "apploach-tag-[@{[$context->nobj_key]}]-@{[encode_punycode $w->{tag_name}]}",
+          count => $w->{count},
+          timestamp => $w->{timestamp},
+          author_status => $w->{author_status},
+          owner_status => $w->{owner_status},
+          admin_status => $w->{admin_status},
+        };
+        $name_shas->{$w->{tag_name}} = $w->{tag_name_sha};
+      }
+      for my $name (@$names) {
+        push @{$sha2r->{$name_shas->{$name}} ||= []}, $result->{tags}->{$name} ||= {
+          tag_name => $name,
+          nobj_key => "apploach-tag-[@{[$context->nobj_key]}]-@{[encode_punycode $name]}",
+          count => 0,
+          timestamp => 0,
+          author_status => 0,
+          owner_status => 0,
+          admin_status => 0,
         };
       }
-
+      for my $name (keys %{$result->{tags}}) {
+        $result->{tags}->{$name}->{canon_tag_name} = $sha2r->{
+          $sha_redirects->{$name_shas->{$name}} // $name_shas->{$name}
+        }->[0]->{tag_name};
+      }
+      
       my $string_data_names = $self->{app}->text_param_list ('sd');
-      return unless @$name_shas and @$string_data_names;
+      return unless keys %$all_name_shas and @$string_data_names;
       return $self->db->select ('tag_string_data', {
         ($self->app_id_columns),
         ($context->to_columns ('context')),
-        tag_name_sha => {-in => $name_shas},
+        tag_name_sha => {-in => [keys %$all_name_shas]},
         name => {-in => [map { Dongry::Type->serialize ('text', $_) } @$string_data_names]},
       }, source_name => 'master', fields => [
         'tag_name_sha', 'name', 'value',
@@ -1887,9 +1921,16 @@ sub run_tag ($) {
     ##   name/value pair with no matching name specified is left
     ##   unchanged.  Optional if no change.
     ##
+    ##   |redirect| : JSON object : Optional if no change.
+    ##
+    ##     |to| : String? : Tag name to which this tag is redirected.
+    ##     If |null|, any existing redirect is removed.  Otherwise,
+    ##     redirect is set.
+    ##
     ## Response.  No additional data.
     my $name = $self->{app}->text_param ('tag_name') // '';
     my $name_sha = sha1_hex +Dongry::Type->serialize ('text', $name);
+    my $name_map = {$name => $name_sha};
     my $time = time;
     return Promise->all ([
       $self->new_nobj_list ([
@@ -1921,6 +1962,8 @@ sub run_tag ($) {
           delete $string_data->{$_};
         }
       }
+
+      my $redirects = $self->optional_json_object_param ('redirect') || {};
 
       return Promise->resolve->then (sub {
         return unless $updates->{author_status} or
@@ -1976,9 +2019,10 @@ sub run_tag ($) {
               (defined $updates->{author_status} ? (author_status => $self->db->bare_sql_fragment ('VALUES(`author_status`)')) : ()),
               (defined $updates->{owner_status} ? (owner_status => $self->db->bare_sql_fragment ('VALUES(`owner_status`)')) : ()),
               (defined $updates->{admin_status} ? (admin_status => $self->db->bare_sql_fragment ('VALUES(`admin_status`)')) : ()),
-            timestamp => $self->db->bare_sql_fragment ('VALUES(`timestamp`)'),
+              timestamp => $self->db->bare_sql_fragment ('VALUES(`timestamp`)'),
             });
           })->then (sub {
+            delete $name_map->{$name};
             return $tr->commit->then (sub { undef $tr });
           })->finally (sub {
             return $tr->rollback if defined $tr;
@@ -2004,16 +2048,63 @@ sub run_tag ($) {
           tag_name_sha => $name_sha,
           name => {-in => [map { Dongry::Type->serialize ('text', $_) } @$deleted_string_data]},
         }, source_name => 'master');
+      })->then (sub {
+        return unless exists $redirects->{to};
+        if (defined $redirects->{to}) {
+          # XXX normalize
+          # XXX langs
+          # XXX transaction
+          
+          my $final_name_sha = sha1_hex +Dongry::Type->serialize ('text', $redirects->{to});
+          $name_map->{$redirects->{to}} = $final_name_sha;
+          return $self->db->select ('tag_redirect', {
+            ($self->app_id_columns),
+            ($context->to_columns ('context')),
+            from_tag_name_sha => $final_name_sha,
+          }, source_name => 'master', fields => ['to_tag_name_sha'])->then (sub {
+            my $v = $_[0]->first;
+            $final_name_sha = $v->{to_tag_name_sha} if defined $v;
+            return $self->db->insert ('tag_redirect', [{
+              ($self->app_id_columns),
+              ($context->to_columns ('context')),
+              from_tag_name_sha => $name_sha,
+              to_tag_name_sha => $final_name_sha,
+              timestamp => $time,
+            }], source_name => 'master', duplicate => 'replace');
+          })->then (sub {
+            return $self->db->update ('tag_redirect', { 
+              to_tag_name_sha => $final_name_sha,
+              timestamp => $time,
+            }, where => {
+              ($self->app_id_columns),
+              ($context->to_columns ('context')),
+              to_tag_name_sha => $name_sha,
+            }, source_name => 'master');
+          });
+        } else {
+          return $self->db->delete ('tag_redirect', {
+            ($self->app_id_columns),
+            ($context->to_columns ('context')),
+            from_tag_name_sha => $name_sha,
+          }, source_name => 'master');
+        }
+      })->then (sub {
+        return unless keys %$name_map;
+        return $self->db->insert ('tag', [map { {
+          ($self->app_id_columns),
+          ($context->to_columns ('context')),
+          tag_name => Dongry::Type->serialize ('text', $_),
+          tag_name_sha => $name_map->{$_},
+          author_status => 0,
+          owner_status => 0,
+          admin_status => 0,
+          count => 0,
+          timestamp => $time,
+        } } keys %$name_map], source_name => 'master', duplicate => 'ignore');
       });
     })->then (sub {
       return $self->json ({});
     });
-
-    # XXX name redirects
-    # XXX name langs
-
-    # XXX data
-
   }
 
   return $self->{app}->throw_error (404);

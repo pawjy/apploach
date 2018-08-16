@@ -38,6 +38,7 @@ Test {
     test {
       is 0+keys %{$result->{json}->{tags}}, 2;
       is $result->{json}->{tags}->{''}->{tag_name}, '';
+      is $result->{json}->{tags}->{''}->{canon_tag_name}, '';
       is $result->{json}->{tags}->{''}->{nobj_key}, 'apploach-tag-['.$current->o ('t1')->{nobj_key}.']-';
       is $result->{json}->{tags}->{''}->{count}, 0;
       is $result->{json}->{tags}->{''}->{timestamp}, 0;
@@ -45,6 +46,7 @@ Test {
       is $result->{json}->{tags}->{''}->{owner_status}, 0;
       is $result->{json}->{tags}->{''}->{admin_status}, 0;
       is $result->{json}->{tags}->{$current->o ('tag1')}->{tag_name}, $current->o ('tag1');
+      is $result->{json}->{tags}->{$current->o ('tag1')}->{canon_tag_name}, $current->o ('tag1');
       like $result->{json}->{tags}->{$current->o ('tag1')}->{nobj_key},
           qr{^apploach-tag-\[\Q@{[$current->o ('t1')->{nobj_key}]}\E\]-.+};
       is $result->{json}->{tags}->{$current->o ('tag1')}->{count}, 0;
@@ -54,7 +56,7 @@ Test {
       is $result->{json}->{tags}->{$current->o ('tag1')}->{admin_status}, 0;
     } $current->c;
   });
-} n => 15, name => 'empty';
+} n => 17, name => 'empty';
 
 Test {
   my $current = shift;
@@ -76,6 +78,7 @@ Test {
     test {
       is 0+keys %{$result->{json}->{tags}}, 1;
       is $result->{json}->{tags}->{$current->o ('name1')}->{tag_name}, $current->o ('name1');
+      is $result->{json}->{tags}->{$current->o ('name1')}->{canon_tag_name}, $current->o ('name1');
       like $result->{json}->{tags}->{$current->o ('name1')}->{nobj_key},
           qr{^apploach-tag-\[\Q@{[$current->o ('t1')->{nobj_key}]}\E\]-.+};
       is $result->{json}->{tags}->{$current->o ('name1')}->{count}, 0;
@@ -94,6 +97,7 @@ Test {
     test {
       is 0+keys %{$result->{json}->{tags}}, 1;
       is $result->{json}->{tags}->{$current->o ('name1')}->{tag_name}, $current->o ('name1');
+      is $result->{json}->{tags}->{$current->o ('name1')}->{canon_tag_name}, $current->o ('name1');
       like $result->{json}->{tags}->{$current->o ('name1')}->{nobj_key},
           qr{^apploach-tag-\[\Q@{[$current->o ('t2')->{nobj_key}]}\E\]-.+};
       is $result->{json}->{tags}->{$current->o ('name1')}->{count}, 0;
@@ -111,6 +115,7 @@ Test {
     test {
       is 0+keys %{$result->{json}->{tags}}, 1;
       is $result->{json}->{tags}->{$current->o ('name1')}->{tag_name}, $current->o ('name1');
+      is $result->{json}->{tags}->{$current->o ('name1')}->{canon_tag_name}, $current->o ('name1');
       like $result->{json}->{tags}->{$current->o ('name1')}->{nobj_key},
           qr{^apploach-tag-\[\Q@{[$current->o ('t1')->{nobj_key}]}\E\]-.+};
       is $result->{json}->{tags}->{$current->o ('name1')}->{count}, 0;
@@ -120,7 +125,7 @@ Test {
       is $result->{json}->{tags}->{$current->o ('name1')}->{admin_status}, 0;
     } $current->c;
   });
-} n => 24, name => 'has props';
+} n => 27, name => 'has props';
 
 Test {
   my $current = shift;
@@ -133,7 +138,6 @@ Test {
                        xya => undef,
                        "\x{901}" => '',
                      }}],
-    [u1 => nobj => {}],
   )->then (sub {
     my $result = $_[0];
     return $current->json (['tag', 'list.json'], {
@@ -154,6 +158,116 @@ Test {
     } $current->c;
   });
 } n => 6, name => 'string_data';
+
+Test {
+  my $current = shift;
+  return $current->create (
+    [t1 => nobj => {}],
+    [tag1 => tag => {context => 't1',
+                     tag_name => $current->generate_text ('name1' => {}),
+                     string_data => {
+                       abc => 3534,
+                       xya => undef,
+                       "\x{901}" => '',
+                     }}],
+    [tag2 => tag => {context => 't1',
+                     tag_name => $current->generate_text ('name2' => {}),
+                     string_data => {
+                       abc => 53,
+                       bar => 'foo',
+                     },
+                     redirect => {
+                       to => $current->o ('name1'),
+                     }}],
+  )->then (sub {
+    my $result = $_[0];
+    return $current->json (['tag', 'list.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      tag_name => $current->o ('name2'),
+      sd => ['abc', 'xya', "\x{901}", 'foo', "bar", 0, ''],
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      my $tag1 = $result->{json}->{tags}->{$current->o ('name1')};
+      my $tag2 = $result->{json}->{tags}->{$current->o ('name2')};
+      is $tag1->{tag_name}, $current->o ('name1');
+      is $tag1->{canon_tag_name}, $current->o ('name1');
+      like $tag1->{nobj_key},
+          qr{^apploach-tag-\[\Q@{[$current->o ('t1')->{nobj_key}]}\E\]-.+};
+      is $tag1->{author_status}, 0;
+      is $tag1->{owner_status}, 0;
+      is $tag1->{admin_status}, 0;
+      is $tag1->{count}, 0;
+      ok $tag1->{timestamp}, 0;
+      is $tag1->{string_data}->{abc}, 3534;
+      is $tag1->{string_data}->{xya}, undef;
+      is $tag1->{string_data}->{"\x{901}"}, '';
+      is $tag1->{string_data}->{bar}, undef;
+      is $tag1->{string_data}->{'0'}, undef;
+      is $tag1->{string_data}->{''}, undef;
+      is $tag2->{tag_name}, $current->o ('name2');
+      is $tag2->{canon_tag_name}, $current->o ('name1');
+      like $tag2->{nobj_key},
+          qr{^apploach-tag-\[\Q@{[$current->o ('t1')->{nobj_key}]}\E\]-.+};
+      is $tag2->{author_status}, 0;
+      is $tag2->{owner_status}, 0;
+      is $tag2->{admin_status}, 0;
+      is $tag2->{count}, 0;
+      ok $tag2->{timestamp}, 0;
+      is $tag2->{string_data}->{abc}, 53;
+      is $tag2->{string_data}->{xya}, undef;
+      is $tag2->{string_data}->{"\x{901}"}, undef;
+      is $tag2->{string_data}->{bar}, 'foo';
+      is $tag2->{string_data}->{'0'}, undef;
+      is $tag2->{string_data}->{''}, undef;
+    } $current->c;
+  });
+} n => 28, name => 'redirect';
+
+Test {
+  my $current = shift;
+  return $current->create (
+    [t1 => nobj => {}],
+    [tag1 => tag => {context => 't1',
+                     tag_name => $current->generate_text ('name1' => {}),
+                     string_data => {
+                       abc => 3534,
+                       xya => undef,
+                       "\x{901}" => '',
+                     },
+                     redirect => {
+                       to => $current->o ('name1'),
+                     }}],
+  )->then (sub {
+    my $result = $_[0];
+    return $current->json (['tag', 'list.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      tag_name => $current->o ('name1'),
+      sd => ['abc', 'xya', "\x{901}", 'foo', "bar", 0, ''],
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      my $tag1 = $result->{json}->{tags}->{$current->o ('name1')};
+      is $tag1->{tag_name}, $current->o ('name1');
+      is $tag1->{canon_tag_name}, $current->o ('name1');
+      like $tag1->{nobj_key},
+          qr{^apploach-tag-\[\Q@{[$current->o ('t1')->{nobj_key}]}\E\]-.+};
+      is $tag1->{author_status}, 0;
+      is $tag1->{owner_status}, 0;
+      is $tag1->{admin_status}, 0;
+      is $tag1->{count}, 0;
+      ok $tag1->{timestamp}, 0;
+      is $tag1->{string_data}->{abc}, 3534;
+      is $tag1->{string_data}->{xya}, undef;
+      is $tag1->{string_data}->{"\x{901}"}, '';
+      is $tag1->{string_data}->{bar}, undef;
+      is $tag1->{string_data}->{'0'}, undef;
+      is $tag1->{string_data}->{''}, undef;
+    } $current->c;
+  });
+} n => 14, name => 'self redirect';
 
 RUN;
 

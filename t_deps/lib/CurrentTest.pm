@@ -503,6 +503,7 @@ sub create_tag ($$$) {
     owner_status => $opts->{owner_status},
     admin_status => $opts->{admin_status},
     string_data => $opts->{string_data},
+    redirect => $opts->{redirect},
   }, app => $opts->{app})->then (sub {
     my $result = $_[0];
     $self->set_o ($name => $result->{json});
