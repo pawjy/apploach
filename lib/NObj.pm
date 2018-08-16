@@ -1,6 +1,7 @@
 package NObj;
 use strict;
 use warnings;
+use Carp qw(croak);
 
 sub new ($%) {
   my $class = shift;
@@ -24,7 +25,7 @@ sub is_error ($) {
 } # is_error
 
 sub nobj_id ($) {
-  die "Not available" unless defined $_[0]->{nobj_id};
+  croak "Not available" unless defined $_[0]->{nobj_id};
   return $_[0]->{nobj_id};
 } # nobj_id
 
@@ -34,7 +35,7 @@ sub nobj_key ($) {
 
 sub to_columns ($$) {
   my ($self, $name) = @_;
-  die "Not available" unless defined $self->{nobj_id};
+  croak "Not available" unless defined $self->{nobj_id};
   return ($name."_nobj_id" => $self->{nobj_id});
 } # to_columns
 

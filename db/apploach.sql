@@ -175,11 +175,12 @@ create table if not exists `tag_redirect` (
 create table if not exists `tag_name` (
   `app_id` bigint unsigned not null,
   `context_nobj_id` bigint unsigned not null,
-  `primary_tag_name_sha` binary(40) not null,
+  `tag_name_sha` binary(40) not null,
   `localized_tag_name_sha` binary(40) not null,
+  `localized_tag_name` varbinary(1023) not null,
   `lang` varbinary(31) not null,
   `timestamp` double not null,
-  primary key (`app_id`, `context_nobj_id`, `primary_tag_name_sha`, `lang`),
+  primary key (`app_id`, `context_nobj_id`, `tag_name_sha`, `lang`),
   key (`app_id`, `context_nobj_id`, `localized_tag_name_sha`),
   key (`app_id`, `timestamp`),
   key (`timestamp`)

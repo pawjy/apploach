@@ -388,6 +388,51 @@ Test {
   });
 } n => 28, name => 'implicit redirect (really implicit)';
 
+Test {
+  my $current = shift;
+  return $current->create (
+    [t1 => nobj => {}],
+    [_tag1 => tag => {context => 't1',
+                      tag_name => $current->generate_text (tag1 => {}),
+                      redirect => {
+                        langs => {
+                          abc => $current->generate_text (tag2 => {}),
+                          def => $current->generate_text (tag3 => {}),
+                          zab => "\x{FF11}",
+                        },
+                      }}],
+  )->then (sub {
+    my $result = $_[0];
+    return $current->json (['tag', 'list.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      tag_name => [
+        $current->o ('tag1'), $current->o ('tag2'), $current->o ('tag3'),
+        $current->generate_text (tag4 => {}),
+        "\x{FF11}", "\x31",
+      ],
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      my $tag1 = $result->{json}->{tags}->{$current->o ('tag1')};
+      my $tag2 = $result->{json}->{tags}->{$current->o ('tag2')};
+      my $tag3 = $result->{json}->{tags}->{$current->o ('tag3')};
+      my $tag4 = $result->{json}->{tags}->{$current->o ('tag4')};
+      my $tag5 = $result->{json}->{tags}->{"\x{FF11}"};
+      my $tag6 = $result->{json}->{tags}->{"\x31"};
+      is 0+keys %{$tag1->{localized_tag_names}}, 3;
+      is $tag1->{localized_tag_names}->{abc}, $current->o ('tag2');
+      is $tag1->{localized_tag_names}->{def}, $current->o ('tag3');
+      is $tag1->{localized_tag_names}->{zab}, "\x31";
+      is 0+keys %{$tag2->{localized_tag_names}}, 0;
+      is 0+keys %{$tag3->{localized_tag_names}}, 0;
+      is 0+keys %{$tag4->{localized_tag_names}}, 0;
+      is 0+keys %{$tag5->{localized_tag_names}}, 0;
+      is 0+keys %{$tag6->{localized_tag_names}}, 0;
+    } $current->c;
+  });
+} n => 9, name => 'lang redirect';
+
 RUN;
 
 =head1 LICENSE

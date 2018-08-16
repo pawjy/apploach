@@ -224,6 +224,10 @@ sub status_filter_columns ($) {
   return %$r;
 } # status_filter_columns
 
+sub sha ($) {
+  return sha1_hex +Dongry::Type->serialize ('text', $_[0]);
+} # sha
+
 sub db ($) {
   my $self = $_[0];
   return $self->{db} ||= Dongry::Database->new (
@@ -624,7 +628,7 @@ sub prepare_upload ($$%) {
           Version => '2011-06-15',
           Action => 'AssumeRole',
           ## Maximum length = 64 (sha1_hex length = 40)
-          RoleSessionName => 'apploach-' . sha1_hex (Dongry::Type->serialize ('text', $args{prefix})),
+          RoleSessionName => 'apploach-' . sha $args{prefix},
           RoleArn => $sts_role_arn,
           Policy => perl2json_chars ({
             "Version" => "2012-10-17",
@@ -1805,7 +1809,7 @@ sub run_tag ($) {
     ##
     ##       |timestamp| : Timestamp : The tag's timestamp.
     my $names = $self->{app}->text_param_list ('tag_name');
-    my $name_shas = {map { $_ => sha1_hex +Dongry::Type->serialize ('text', $_) } @$names};
+    my $name_shas = {map { $_ => sha $_ } @$names};
     my $all_name_shas = {map { $_ => 1 } values %$name_shas};
     my $context;
     my $sha_redirects = {};
@@ -1831,7 +1835,7 @@ sub run_tag ($) {
           next if defined $sha_redirects->{$name_shas->{$name}};
           my $normalized = normalize_tag_name $name;
           next if $name eq $normalized;
-          my $name_sha = sha1_hex +Dongry::Type->serialize ('text', $name);
+          my $name_sha = sha $name;
           $sha_redirects->{$name_shas->{$name}} = $name_sha;
           $all_name_shas->{$name_sha} = 1;
         }
@@ -1879,6 +1883,7 @@ sub run_tag ($) {
         $result->{tags}->{$name}->{canon_tag_name} = $sha2r->{
           $sha_redirects->{$name_shas->{$name}} // $name_shas->{$name}
         }->[0]->{tag_name};
+        $result->{tags}->{$name}->{localized_tag_names} = {};
       }
       
       my $string_data_names = $self->{app}->text_param_list ('sd');
@@ -1895,6 +1900,22 @@ sub run_tag ($) {
           for (@{$sha2r->{$v->{tag_name_sha}} || []}) {
             $_->{string_data}->{Dongry::Type->parse ('text', $v->{name})}
                 = Dongry::Type->parse ('text', $v->{value});
+          }
+        }
+      });
+    })->then (sub {
+      return if $context->is_error;
+      return unless keys %$all_name_shas;
+      return $self->db->select ('tag_name', {
+        ($self->app_id_columns),
+        ($context->to_columns ('context')),
+        tag_name_sha => {-in => [keys %$all_name_shas]},
+      }, source_name => 'master', fields => [
+        'tag_name_sha', 'lang', 'localized_tag_name',
+      ])->then (sub {
+        for my $v (@{$_[0]->all}) {
+          for (@{$sha2r->{$v->{tag_name_sha}} || []}) {
+            $_->{localized_tag_names}->{$v->{lang}} = Dongry::Type->parse ('text', $v->{localized_tag_name});
           }
         }
       });
@@ -1950,7 +1971,7 @@ sub run_tag ($) {
     ##
     ## Response.  No additional data.
     my $name = $self->{app}->text_param ('tag_name') // '';
-    my $name_sha = sha1_hex +Dongry::Type->serialize ('text', $name);
+    my $name_sha = sha $name;
     my $name_map = {$name => $name_sha};
     my $time = time;
     return Promise->all ([
@@ -2076,16 +2097,14 @@ sub run_tag ($) {
           if ($name eq $normalized) {
             push @from_sha, $name_sha;
           } else {
-            push @from_sha, $name_sha,
-                sha1_hex +Dongry::Type->serialize ('text', $redirects->{to});
+            push @from_sha, $name_sha, sha $redirects->{to};
             $name_map->{$redirects->{to}} = $from_sha[-1];
             $redirects->{to} = $normalized;
           }
           {
             my $normalized = normalize_tag_name $name;
             unless ($name eq $normalized) {
-              push @from_sha,
-                  sha1_hex +Dongry::Type->serialize ('text', $normalized);
+              push @from_sha, sha $normalized;
               $name_map->{$normalized} = $from_sha[-1];
             }
           }
@@ -2096,35 +2115,53 @@ sub run_tag ($) {
             push @from_sha, $name_sha;
           }
         }
+        for my $lang (keys %{$redirects->{langs} or {}}) {
+          my $n = $redirects->{langs}->{$lang};
+          next unless defined $n;
+          my $nn = normalize_tag_name $n;
+          next if $n eq $name or $nn eq $name;
+          push @from_sha, sha $n;
+          $name_map->{$n} = $from_sha[-1];
+          unless ($n eq $nn) {
+            push @from_sha, sha $nn;
+            $name_map->{$nn} = $from_sha[-1];
+            $redirects->{langs}->{$lang} = $nn;
+          }
+          $redirects->{to} //= $name;
+        }
         if (@from_sha) {
-          # XXX langs
-          # XXX transaction
-          
-          my $final_name_sha = sha1_hex +Dongry::Type->serialize ('text', $redirects->{to});
-          $name_map->{$redirects->{to}} = $final_name_sha;
-          return $self->db->select ('tag_redirect', {
-            ($self->app_id_columns),
-            ($context->to_columns ('context')),
-            from_tag_name_sha => $final_name_sha,
-          }, source_name => 'master', fields => ['to_tag_name_sha'])->then (sub {
-            my $v = $_[0]->first;
-            $final_name_sha = $v->{to_tag_name_sha} if defined $v;
-            return $self->db->insert ('tag_redirect', [map { {
+          return $self->db->transaction->then (sub {
+            my $tr = $_[0];
+            my $final_name_sha = sha $redirects->{to};
+            $name_map->{$redirects->{to}} = $final_name_sha;
+            return $tr->select ('tag_redirect', {
               ($self->app_id_columns),
               ($context->to_columns ('context')),
-              from_tag_name_sha => $_,
-              to_tag_name_sha => $final_name_sha,
-              timestamp => $time,
-            } } @from_sha], source_name => 'master', duplicate => 'replace');
-          })->then (sub {
-            return $self->db->update ('tag_redirect', { 
-              to_tag_name_sha => $final_name_sha,
-              timestamp => $time,
-            }, where => {
-              ($self->app_id_columns),
-              ($context->to_columns ('context')),
-              to_tag_name_sha => {-in => \@from_sha},
-            }, source_name => 'master');
+              from_tag_name_sha => $final_name_sha,
+            }, source_name => 'master', fields => ['to_tag_name_sha'])->then (sub {
+              my $v = $_[0]->first;
+              $final_name_sha = $v->{to_tag_name_sha} if defined $v;
+              return $tr->insert ('tag_redirect', [map { {
+                ($self->app_id_columns),
+                ($context->to_columns ('context')),
+                from_tag_name_sha => $_,
+                to_tag_name_sha => $final_name_sha,
+                timestamp => $time,
+              } } @from_sha], source_name => 'master', duplicate => 'replace');
+            })->then (sub {
+              return $tr->update ('tag_redirect', {
+                to_tag_name_sha => $final_name_sha,
+                timestamp => $time,
+              }, where => {
+                ($self->app_id_columns),
+                ($context->to_columns ('context')),
+                to_tag_name_sha => {-in => \@from_sha},
+              }, source_name => 'master');
+            })->then (sub {
+              return $tr->commit->then (sub { undef $tr });
+            })->finally (sub {
+              return $tr->rollback if defined $tr;
+            });
           });
         } elsif (exists $redirects->{to}) {
           return $self->db->delete ('tag_redirect', {
@@ -2133,6 +2170,33 @@ sub run_tag ($) {
             from_tag_name_sha => $name_sha,
           }, source_name => 'master');
         }
+      })->then (sub {
+        my @insert;
+        my @delete;
+        for my $lang (keys %{$redirects->{langs} or {}}) {
+          if (defined $redirects->{langs}->{$lang}) {
+            push @insert, {
+              ($self->app_id_columns),
+              ($context->to_columns ('context')),
+              tag_name_sha => $name_sha,
+              localized_tag_name => Dongry::Type->serialize ('text', $redirects->{langs}->{$lang}),
+              localized_tag_name_sha => sha $redirects->{langs}->{$lang},
+              lang => Dongry::Type->serialize ('text', $lang),
+              timestamp => $time,
+            };
+          } else {
+            push @delete, Dongry::Type->serialize ('text', $lang);
+          }
+        }
+        return Promise->all ([
+          (@insert ? $self->db->insert ('tag_name', \@insert, source_name => 'master') : undef),
+          (@delete ? $self->db->delete ('tag_name', {
+            ($self->app_id_columns),
+            ($context->to_columns ('context')),
+            tag_name_sha => $name_sha,
+            lang => {-in => \@delete},
+          }, source_name => 'master') : undef),
+        ]);
       })->then (sub {
         return unless keys %$name_map;
         return $self->db->insert ('tag', [map { {
