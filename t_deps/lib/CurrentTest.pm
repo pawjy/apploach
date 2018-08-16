@@ -5,6 +5,7 @@ use JSON::PS;
 use Promise;
 use Promised::Flow;
 use Web::Encoding;
+use Web::Encoding::Normalization;
 use Web::URL;
 use Web::Transport::ENVProxyManager;
 use Web::Transport::BasicClient;
@@ -65,11 +66,19 @@ sub generate_key ($$$) {
   $self->set_o ($name => $v);
 } # generate_key
 
+sub _sn ($) {
+  my $s = shift;
+  $s =~ s/\s+/ /g;
+  $s =~ s/\A //;
+  $s =~ s/ \z//;
+  return $s;
+} # _sn
+
 sub generate_text ($$$) {
   my ($self, $name, $opts) = @_;
   my $v = rand;
   $v .= chr int rand 0x10FFFF for 1..rand 10;
-  $self->set_o ($name => decode_web_utf8 encode_web_utf8 $v);
+  $self->set_o ($name => _sn to_nfkc decode_web_utf8 encode_web_utf8 $v);
 } # generate_text
 
 sub _expand_reqs ($$$) {

@@ -269,6 +269,125 @@ Test {
   });
 } n => 14, name => 'self redirect';
 
+Test {
+  my $current = shift;
+  return $current->create (
+    [t1 => nobj => {}],
+    [tag1 => tag => {context => 't1',
+                     tag_name => "\x42",
+                     string_data => {
+                       abc => 3534,
+                       xya => undef,
+                       "\x{901}" => '',
+                     }}],
+    [tag2 => tag => {context => 't1',
+                     tag_name => "\x0D\x{FF22} \x09",
+                     string_data => {
+                       abc => 53,
+                       bar => 'foo',
+                     }}],
+  )->then (sub {
+    my $result = $_[0];
+    return $current->json (['tag', 'list.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      tag_name => "\x0D\x{FF22} \x09",
+      sd => ['abc', 'xya', "\x{901}", 'foo', "bar", 0, ''],
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      my $tag1 = $result->{json}->{tags}->{"\x42"};
+      my $tag2 = $result->{json}->{tags}->{"\x0D\x{FF22} \x09"};
+      is $tag1->{tag_name}, "\x42";
+      is $tag1->{canon_tag_name}, "\x42";
+      like $tag1->{nobj_key},
+          qr{^apploach-tag-\[\Q@{[$current->o ('t1')->{nobj_key}]}\E\]-.+};
+      is $tag1->{author_status}, 0;
+      is $tag1->{owner_status}, 0;
+      is $tag1->{admin_status}, 0;
+      is $tag1->{count}, 0;
+      ok $tag1->{timestamp}, 0;
+      is $tag1->{string_data}->{abc}, 3534;
+      is $tag1->{string_data}->{xya}, undef;
+      is $tag1->{string_data}->{"\x{901}"}, '';
+      is $tag1->{string_data}->{bar}, undef;
+      is $tag1->{string_data}->{'0'}, undef;
+      is $tag1->{string_data}->{''}, undef;
+      is $tag2->{tag_name}, "\x0D\x{FF22} \x09";
+      is $tag2->{canon_tag_name}, "\x42";
+      like $tag2->{nobj_key},
+          qr{^apploach-tag-\[\Q@{[$current->o ('t1')->{nobj_key}]}\E\]-.+};
+      is $tag2->{author_status}, 0;
+      is $tag2->{owner_status}, 0;
+      is $tag2->{admin_status}, 0;
+      is $tag2->{count}, 0;
+      ok $tag2->{timestamp}, 0;
+      is $tag2->{string_data}->{abc}, 53;
+      is $tag2->{string_data}->{xya}, undef;
+      is $tag2->{string_data}->{"\x{901}"}, undef;
+      is $tag2->{string_data}->{bar}, 'foo';
+      is $tag2->{string_data}->{'0'}, undef;
+      is $tag2->{string_data}->{''}, undef;
+    } $current->c;
+  });
+} n => 28, name => 'implicit redirect';
+
+Test {
+  my $current = shift;
+  return $current->create (
+    [t1 => nobj => {}],
+    [tag2 => tag => {context => 't1',
+                     tag_name => "\x0D\x{FF22} \x09",
+                     string_data => {
+                       abc => 53,
+                       bar => 'foo',
+                     }}],
+  )->then (sub {
+    my $result = $_[0];
+    return $current->json (['tag', 'list.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      tag_name => "\x0D\x{FF22} \x09",
+      sd => ['abc', 'xya', "\x{901}", 'foo', "bar", 0, ''],
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      my $tag1 = $result->{json}->{tags}->{"\x42"};
+      my $tag2 = $result->{json}->{tags}->{"\x0D\x{FF22} \x09"};
+      is $tag1->{tag_name}, "\x42";
+      is $tag1->{canon_tag_name}, "\x42";
+      like $tag1->{nobj_key},
+          qr{^apploach-tag-\[\Q@{[$current->o ('t1')->{nobj_key}]}\E\]-.+};
+      is $tag1->{author_status}, 0;
+      is $tag1->{owner_status}, 0;
+      is $tag1->{admin_status}, 0;
+      is $tag1->{count}, 0;
+      ok $tag1->{timestamp}, 0;
+      is $tag1->{string_data}->{abc}, undef;
+      is $tag1->{string_data}->{xya}, undef;
+      is $tag1->{string_data}->{"\x{901}"}, undef;
+      is $tag1->{string_data}->{bar}, undef;
+      is $tag1->{string_data}->{'0'}, undef;
+      is $tag1->{string_data}->{''}, undef;
+      is $tag2->{tag_name}, "\x0D\x{FF22} \x09";
+      is $tag2->{canon_tag_name}, "\x42";
+      like $tag2->{nobj_key},
+          qr{^apploach-tag-\[\Q@{[$current->o ('t1')->{nobj_key}]}\E\]-.+};
+      is $tag2->{author_status}, 0;
+      is $tag2->{owner_status}, 0;
+      is $tag2->{admin_status}, 0;
+      is $tag2->{count}, 0;
+      ok $tag2->{timestamp}, 0;
+      is $tag2->{string_data}->{abc}, 53;
+      is $tag2->{string_data}->{xya}, undef;
+      is $tag2->{string_data}->{"\x{901}"}, undef;
+      is $tag2->{string_data}->{bar}, 'foo';
+      is $tag2->{string_data}->{'0'}, undef;
+      is $tag2->{string_data}->{''}, undef;
+    } $current->c;
+  });
+} n => 28, name => 'implicit redirect (really implicit)';
+
 RUN;
 
 =head1 LICENSE

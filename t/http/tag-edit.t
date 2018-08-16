@@ -471,6 +471,64 @@ Test {
   });
 } n => 4, name => 'redirect loop';
 
+Test {
+  my $current = shift;
+  return $current->create (
+    [t1 => nobj => {}],
+    [u1 => nobj => {}],
+  )->then (sub {
+    return $current->json (['tag', 'edit.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      operator_nobj_key => $current->o ('u1')->{nobj_key},
+      tag_name => "\x0A\x{FF20}  ",
+    });
+  })->then (sub {
+    my $result = $_[0];
+    return $current->json (['tag', 'list.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      tag_name => "\x0A\x{FF20}  ",
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      my $tag1 = $result->{json}->{tags}->{"\x0A\x{FF20}  "};
+      my $tag2 = $result->{json}->{tags}->{"\x40"};
+      is $tag1->{tag_name}, "\x0A\x{FF20}  ";
+      is $tag1->{canon_tag_name}, "\x40";
+      is $tag2->{tag_name}, "\x40";
+      is $tag2->{canon_tag_name}, "\x40";
+    } $current->c;
+    return $current->json (['tag', 'edit.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      operator_nobj_key => $current->o ('u1')->{nobj_key},
+      tag_name => "\x0A\x{FF20}  ",
+      redirect => {to => "\x{FF21}\x0D"},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    return $current->json (['tag', 'list.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      tag_name => ["\x0A\x{FF20}  ", "\x{FF21}\x0D", "\x40"],
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      my $tag1 = $result->{json}->{tags}->{"\x0A\x{FF20}  "};
+      my $tag2 = $result->{json}->{tags}->{"\x40"};
+      my $tag3 = $result->{json}->{tags}->{"\x{FF21}\x0D"};
+      my $tag4 = $result->{json}->{tags}->{"\x41"};
+      is $tag1->{tag_name}, "\x0A\x{FF20}  ";
+      is $tag1->{canon_tag_name}, "\x41";
+      is $tag2->{tag_name}, "\x40";
+      is $tag2->{canon_tag_name}, "\x41";
+      is $tag3->{tag_name}, "\x{FF21}\x0D";
+      is $tag3->{canon_tag_name}, "\x41";
+      is $tag4->{tag_name}, "\x41";
+      is $tag4->{canon_tag_name}, "\x41";
+    } $current->c;
+  });
+} n => 12, name => 'implicit redirect';
+
 RUN;
 
 =head1 LICENSE

@@ -10,6 +10,7 @@ use Promise;
 use Promised::Flow;
 use Dongry::Database;
 use Web::DomainName::Punycode;
+use Web::Encoding::Normalization;
 use Web::URL;
 use Web::DOM::Document;
 use Web::XML::Parser;
@@ -1748,6 +1749,14 @@ sub run_follow ($) {
   return $self->{app}->throw_error (404);
 } # run_follow
 
+sub normalize_tag_name ($) {
+  my $n = to_nfkc $_[0];
+  $n =~ s/\s+/ /g;
+  $n =~ s/\A //;
+  $n =~ s/ \z//;
+  return $n;
+} # normalize_tag_name
+
 sub run_tag ($) {
   my $self = $_[0];
 
@@ -1761,7 +1770,11 @@ sub run_tag ($) {
   ## The initial values of the statuses, count, and timestamp fields
   ## are zero (0).  A tag can be redirected to another tag.  A tag's
   ## canonical tag name is the tag name of the tag to which the tag is
-  ## redirected, if any, or the tag's tag name.
+  ## redirected, if any, or the tag's tag name.  If the tag name
+  ## normalized by NFKC, replaced any |\s+| by a U+0020 character, and
+  ## trimmed leading and trailing any U+0020 character is different
+  ## from the original tag name, there is an implicit redirect from
+  ## the original tag name to the normalized tag name.
 
   if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'list.json') {
     ## /{app_id}/tag/list.json - Get tag data.
@@ -1813,6 +1826,14 @@ sub run_tag ($) {
         for (@{$_[0]->all}) {
           $sha_redirects->{$_->{from_tag_name_sha}} = $_->{to_tag_name_sha};
           $all_name_shas->{$_->{to_tag_name_sha}} = 1;
+        }
+        for my $name (@$names) {
+          next if defined $sha_redirects->{$name_shas->{$name}};
+          my $normalized = normalize_tag_name $name;
+          next if $name eq $normalized;
+          my $name_sha = sha1_hex +Dongry::Type->serialize ('text', $name);
+          $sha_redirects->{$name_shas->{$name}} = $name_sha;
+          $all_name_shas->{$name_sha} = 1;
         }
         return $self->db->select ('tag', {
           ($self->app_id_columns),
@@ -2049,9 +2070,33 @@ sub run_tag ($) {
           name => {-in => [map { Dongry::Type->serialize ('text', $_) } @$deleted_string_data]},
         }, source_name => 'master');
       })->then (sub {
-        return unless exists $redirects->{to};
+        my @from_sha;
         if (defined $redirects->{to}) {
-          # XXX normalize
+          my $normalized = normalize_tag_name $redirects->{to};
+          if ($name eq $normalized) {
+            push @from_sha, $name_sha;
+          } else {
+            push @from_sha, $name_sha,
+                sha1_hex +Dongry::Type->serialize ('text', $redirects->{to});
+            $name_map->{$redirects->{to}} = $from_sha[-1];
+            $redirects->{to} = $normalized;
+          }
+          {
+            my $normalized = normalize_tag_name $name;
+            unless ($name eq $normalized) {
+              push @from_sha,
+                  sha1_hex +Dongry::Type->serialize ('text', $normalized);
+              $name_map->{$normalized} = $from_sha[-1];
+            }
+          }
+        } else {
+          my $normalized = normalize_tag_name $name;
+          unless ($name eq $normalized) {
+            $redirects->{to} = $normalized;
+            push @from_sha, $name_sha;
+          }
+        }
+        if (@from_sha) {
           # XXX langs
           # XXX transaction
           
@@ -2064,13 +2109,13 @@ sub run_tag ($) {
           }, source_name => 'master', fields => ['to_tag_name_sha'])->then (sub {
             my $v = $_[0]->first;
             $final_name_sha = $v->{to_tag_name_sha} if defined $v;
-            return $self->db->insert ('tag_redirect', [{
+            return $self->db->insert ('tag_redirect', [map { {
               ($self->app_id_columns),
               ($context->to_columns ('context')),
-              from_tag_name_sha => $name_sha,
+              from_tag_name_sha => $_,
               to_tag_name_sha => $final_name_sha,
               timestamp => $time,
-            }], source_name => 'master', duplicate => 'replace');
+            } } @from_sha], source_name => 'master', duplicate => 'replace');
           })->then (sub {
             return $self->db->update ('tag_redirect', { 
               to_tag_name_sha => $final_name_sha,
@@ -2078,10 +2123,10 @@ sub run_tag ($) {
             }, where => {
               ($self->app_id_columns),
               ($context->to_columns ('context')),
-              to_tag_name_sha => $name_sha,
+              to_tag_name_sha => {-in => \@from_sha},
             }, source_name => 'master');
           });
-        } else {
+        } elsif (exists $redirects->{to}) {
           return $self->db->delete ('tag_redirect', {
             ($self->app_id_columns),
             ($context->to_columns ('context')),
