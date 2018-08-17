@@ -5,6 +5,7 @@ use JSON::PS;
 use Promise;
 use Promised::Flow;
 use Web::Encoding;
+use Web::Encoding::Normalization;
 use Web::URL;
 use Web::Transport::ENVProxyManager;
 use Web::Transport::BasicClient;
@@ -65,11 +66,19 @@ sub generate_key ($$$) {
   $self->set_o ($name => $v);
 } # generate_key
 
+sub _sn ($) {
+  my $s = shift;
+  $s =~ s/\s+/ /g;
+  $s =~ s/\A //;
+  $s =~ s/ \z//;
+  return $s;
+} # _sn
+
 sub generate_text ($$$) {
   my ($self, $name, $opts) = @_;
   my $v = rand;
   $v .= chr int rand 0x10FFFF for 1..rand 10;
-  $self->set_o ($name => decode_web_utf8 encode_web_utf8 $v);
+  $self->set_o ($name => _sn to_nfkc decode_web_utf8 encode_web_utf8 $v);
 } # generate_text
 
 sub _expand_reqs ($$$) {
@@ -107,6 +116,13 @@ sub _expand_reqs ($$$) {
           my $n = $_[1];
           return [
             {p => {$n => undef}, reason => "Bad JSON parameter |$n|"},
+            {p => {$n => '"a"'}, reason => "Bad JSON parameter |$n|"},
+            {p => {$n => '["a"]'}, reason => "Bad JSON parameter |$n|"},
+          ];
+        },
+        json_opt => sub {
+          my $n = $_[1];
+          return [
             {p => {$n => '"a"'}, reason => "Bad JSON parameter |$n|"},
             {p => {$n => '["a"]'}, reason => "Bad JSON parameter |$n|"},
           ];
@@ -387,7 +403,9 @@ sub create_account ($$$) {
 
 sub create_nobj ($$$) {
   my ($self, $name, $opts) = @_;
-  $self->set_o ($name => {nobj_key => $self->generate_key (rand, {})});
+  my $v = {nobj_key => $self->generate_key (rand, {})};
+  $v->{item_nobj_key} = $v->{nobj_key};
+  $self->set_o ($name => $v);
   return Promise->resolve;
 } # create_nobj
 
@@ -485,6 +503,23 @@ sub create_log ($$$) {
     $self->set_o ($name => $result->{json});
   });
 } # create_log
+
+sub create_tag ($$$) {
+  my ($self, $name, $opts) = @_;
+  return $self->json (['tag', 'edit.json'], {
+    ($self->_nobj ('operator', $opts)),
+    ($self->_nobj ('context', $opts)),
+    tag_name => $opts->{tag_name} // $self->generate_text (rand, {}),
+    author_status => $opts->{author_status},
+    owner_status => $opts->{owner_status},
+    admin_status => $opts->{admin_status},
+    string_data => $opts->{string_data},
+    redirect => $opts->{redirect},
+  }, app => $opts->{app})->then (sub {
+    my $result = $_[0];
+    $self->set_o ($name => $result->{json});
+  });
+} # create_tag
 
 1;
 
