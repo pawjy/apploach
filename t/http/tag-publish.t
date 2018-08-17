@@ -222,6 +222,159 @@ Test {
   });
 } n => 19, name => 'normalized tags';
 
+Test {
+  my $current = shift;
+  return $current->create (
+    [t1 => nobj => {}],
+    [i1 => nobj => {}],
+  )->then (sub {
+    return $current->json (['tag', 'publish.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      tag => [
+        $current->generate_text ('name1' => {}),
+        $current->generate_text ('name2' => {}),
+      ],
+      item_nobj_key => $current->o ('i1')->{nobj_key},
+    });
+  })->then (sub {
+    return $current->json (['tag', 'publish.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      tag => [
+        $current->o ('name2'),
+        $current->generate_text ('name3' => {}),
+      ],
+      item_nobj_key => $current->o ('i1')->{nobj_key},
+    });
+  })->then (sub {
+    return $current->json (['tag', 'items.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      tag_name => $current->o ('name1'),
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 0;
+    } $current->c;
+    return $current->json (['tag', 'items.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      tag_name => $current->o ('name2'),
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $item = $result->{json}->{items}->[0];
+      is $item->{item_nobj_key}, $current->o ('i1')->{nobj_key};
+      ok $item->{timestamp};
+      is $item->{score}, 0;
+    } $current->c;
+    return $current->json (['tag', 'items.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      tag_name => $current->o ('name3'),
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $item = $result->{json}->{items}->[0];
+      is $item->{item_nobj_key}, $current->o ('i1')->{nobj_key};
+      ok $item->{timestamp};
+      is $item->{score}, 0;
+    } $current->c;
+    return $current->json (['tag', 'list.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      tag_name => [$current->o ('name1'), $current->o ('name2'),
+                   $current->o ('name3')],
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+keys %{$result->{json}->{tags}}, 3;
+      my $item = $result->{json}->{tags}->{$current->o ('name1')};
+      is $item->{count}, 1, 'This is unfortunate';
+      is $item->{author_status}, 0;
+      is $item->{owner_status}, 0;
+      is $item->{admin_status}, 0;
+      ok $item->{timestamp};
+      my $item2 = $result->{json}->{tags}->{$current->o ('name2')};
+      is $item2->{count}, 1;
+      is $item2->{author_status}, 0;
+      is $item2->{owner_status}, 0;
+      is $item2->{admin_status}, 0;
+      ok $item2->{timestamp};
+      my $item3 = $result->{json}->{tags}->{$current->o ('name3')};
+      is $item3->{count}, 1;
+      is $item3->{author_status}, 0;
+      is $item3->{owner_status}, 0;
+      is $item3->{admin_status}, 0;
+      ok $item3->{timestamp};
+    } $current->c;
+  });
+} n => 25, name => 'tag updates';
+
+Test {
+  my $current = shift;
+  return $current->create (
+    [t1 => nobj => {}],
+    [i1 => nobj => {}],
+  )->then (sub {
+    return $current->json (['tag', 'publish.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      tag => [
+        $current->generate_text ('name1' => {}),
+        $current->generate_text ('name2' => {}),
+      ],
+      item_nobj_key => $current->o ('i1')->{nobj_key},
+    });
+  })->then (sub {
+    return $current->json (['tag', 'publish.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      tag => [],
+      item_nobj_key => $current->o ('i1')->{nobj_key},
+    });
+  })->then (sub {
+    return $current->json (['tag', 'items.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      tag_name => $current->o ('name1'),
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 0;
+    } $current->c;
+    return $current->json (['tag', 'items.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      tag_name => $current->o ('name2'),
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 0;
+    } $current->c;
+    return $current->json (['tag', 'list.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      tag_name => [$current->o ('name1'), $current->o ('name2')],
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+keys %{$result->{json}->{tags}}, 2;
+      my $item = $result->{json}->{tags}->{$current->o ('name1')};
+      is $item->{count}, 1, 'This is unfortunate';
+      is $item->{author_status}, 0;
+      is $item->{owner_status}, 0;
+      is $item->{admin_status}, 0;
+      ok $item->{timestamp};
+      my $item2 = $result->{json}->{tags}->{$current->o ('name2')};
+      is $item2->{count}, 1, 'This is also unfortunate';
+      is $item2->{author_status}, 0;
+      is $item2->{owner_status}, 0;
+      is $item2->{admin_status}, 0;
+      ok $item2->{timestamp};
+    } $current->c;
+  });
+} n => 13, name => 'tag delete';
+
 RUN;
 
 =head1 LICENSE

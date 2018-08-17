@@ -887,6 +887,20 @@ sub edit_comment ($$$%) {
         blog_entry_id => $current->{blog_entry_id},
       }) if $args{blog};
     });
+  })->then (sub {
+    my $dd = $args{data_delta};
+    if ($args{blog} and
+        defined $args{tag_context_nobj} and
+        not $args{tag_context_nobj}->is_error and
+        defined $dd and
+        defined $dd->{tags} and ref $dd->{tags} eq 'ARRAY') {
+      # no return
+      $self->publish_tags
+          ($self->db, $args{tag_context_nobj}, $args{comment_nobj}, $dd->{tags}, undef, time);
+      ## This is executed after $tr is completed.
+      undef;
+    }
+    
     # XXX revision if $args{blog}
     # XXX notifications
   });
@@ -1405,6 +1419,11 @@ sub run_blog ($) {
     ##   |status_info_admin_data| : JSON Object : The blog entry
     ##   NObj's status info's admin data.  Optional if no change.
     ##
+    ##   NObj (|tag_context|) : If this parameter is specified and
+    ##   |data_delta|'s |data| member is an array, |data| members are
+    ##   considered as tag names in the context of NObj
+    ##   (|tag_context|).
+    ##
     ##   NObj (|operator|) : The operator of this editing.
     ##   Required.
     ##
@@ -1412,13 +1431,15 @@ sub run_blog ($) {
     my $operator;
     my $cnobj;
     my $ssnobj;
+    my $tag_context;
     my $comment_id = $self->id_param ('blog_entry');
     return Promise->all ([
       $self->new_nobj_list (['operator',
                              \('apploach-bentry-' . $comment_id),
-                             \'apploach-set-status']),
+                             \'apploach-set-status',
+                             (defined $self->{app}->bare_param ('tag_context_nobj_key') ? 'tag_context' : ())]),
     ])->then (sub {
-      ($operator, $cnobj, $ssnobj) = @{$_[0]->[0]};
+      ($operator, $cnobj, $ssnobj, $tag_context) = @{$_[0]->[0]};
       return $self->db->transaction;
     })->then (sub {
       my $tr = $_[0];
@@ -1428,6 +1449,7 @@ sub run_blog ($) {
         summary_data_delta => $self->optional_json_object_param ('summary_data_delta'),
         internal_data_delta => $self->optional_json_object_param ('internal_data_delta'),
         operator_nobj => $operator,
+        tag_context_nobj => $tag_context,
         comment_nobj => $cnobj,
         set_status_nobj => $ssnobj,
         author_status => $self->{app}->bare_param ('author_status'),
@@ -1766,6 +1788,52 @@ sub normalize_tag_name ($) {
   $n =~ s/ \z//;
   return $n;
 } # normalize_tag_name
+
+sub publish_tags ($$$$$$$) {
+  my ($self, $tr, $context, $item, $tags, $score, $time) = @_;
+  return Promise->resolve->then (sub {
+    return $tr->insert ('tag_item', [map { {
+      ($self->app_id_columns),
+      ($context->to_columns ('context')),
+      ($item->to_columns ('item')),
+      tag_name_sha => (sha $_),
+      score => (defined $score ? 0+$score : 0),
+      timestamp => $time,
+    } } @$tags], source_name => 'master', duplicate => {
+      (defined $score ? 
+           (score => $self->db->bare_sql_fragment ('VALUES(`score`)')) : ()),
+      timestamp => $self->db->bare_sql_fragment ('VALUES(`timestamp`)'),
+    }) if @$tags;
+  })->then (sub {
+    return $tr->delete ('tag_item', {
+      ($self->app_id_columns),
+      ($context->to_columns ('context')),
+      ($item->to_columns ('item')),
+      tag_name_sha => {-not_in => [map { sha $_ } @$tags]},
+    }, source_name => 'master') if @$tags;
+    return $tr->delete ('tag_item', {
+      ($self->app_id_columns),
+      ($context->to_columns ('context')),
+      ($item->to_columns ('item')),
+    }, source_name => 'master');
+  })->then (sub {
+    return promised_for {
+      my $tag_name = shift;
+      return $tr->execute (q{insert into `tag` (`app_id`, `context_nobj_id`, `tag_name_sha`, `tag_name`, `count`, `author_status`, `owner_status`, `admin_status`, `timestamp`)
+        select :app_id as `app_id`, :context_nobj_id as `context_nobj_id`, :tag_name_sha as `tag_name_sha`, :tag_name as `tag_name`, count(*) as `count`, :author_status as `author_status`, :owner_status as `owner_status`, :admin_status as `admin_status`, :timestamp as `timestamp` from `tag_item` where `app_id` = :app_id and `context_nobj_id` = :context_nobj_id and `tag_name_sha` = :tag_name_sha
+        on duplicate key update `count` = values(`count`), `timestamp` = values(`timestamp`)}, {
+          ($self->app_id_columns),
+          ($context->to_columns ('context')),
+          tag_name => Dongry::Type->serialize ('text', $tag_name),
+          tag_name_sha => sha $tag_name,
+          author_status => 0,
+          owner_status => 0,
+          admin_status => 0,
+          timestamp => $time,
+        }, source_name => 'master');
+    } $tags;
+  });
+} # publish_tags
 
 sub run_tag ($) {
   my $self = $_[0];
@@ -2333,52 +2401,10 @@ sub run_tag ($) {
       $self->new_nobj_list (['context', 'item']),
     ])->then (sub {
       my ($context, $item) = @{$_[0]->[0]};
-
-      my $score = 0+($self->{app}->bare_param ('score') || 0);
       my $tags = $self->{app}->text_param_list ('tag');
+      my $score = $self->{app}->bare_param ('score');
       my $time = time;
-
-      return Promise->resolve->then (sub {
-        return $self->db->insert ('tag_item', [map { {
-          ($self->app_id_columns),
-          ($context->to_columns ('context')),
-          ($item->to_columns ('item')),
-          tag_name_sha => (sha $_),
-          score => $score,
-          timestamp => $time,
-        } } @$tags], source_name => 'master', duplicate => {
-          score => $self->db->bare_sql_fragment ('VALUES(`score`)'),
-          timestamp => $self->db->bare_sql_fragment ('VALUES(`timestamp`)'),
-        }) if @$tags;
-      })->then (sub {
-        return $self->db->delete ('tag_item', {
-          ($self->app_id_columns),
-          ($context->to_columns ('context')),
-          ($item->to_columns ('item')),
-          tag_name_sha => {-not_in => [map { sha $_ } @$tags]},
-        }, source_name => 'master') if @$tags;
-        return $self->db->delete ('tag_item', {
-          ($self->app_id_columns),
-          ($context->to_columns ('context')),
-          ($item->to_columns ('item')),
-        }, source_name => 'master');
-      })->then (sub {
-        return promised_for {
-          my $tag_name = shift;
-          return $self->db->execute (q{insert into `tag` (`app_id`, `context_nobj_id`, `tag_name_sha`, `tag_name`, `count`, `author_status`, `owner_status`, `admin_status`, `timestamp`)
-            select :app_id as `app_id`, :context_nobj_id as `context_nobj_id`, :tag_name_sha as `tag_name_sha`, :tag_name as `tag_name`, count(*) as `count`, :author_status as `author_status`, :owner_status as `owner_status`, :admin_status as `admin_status`, :timestamp as `timestamp` from `tag_item` where `app_id` = :app_id and `context_nobj_id` = :context_nobj_id and `tag_name_sha` = :tag_name_sha
-            on duplicate key update `count` = values(`count`), `timestamp` = values(`timestamp`)}, {
-            ($self->app_id_columns),
-            ($context->to_columns ('context')),
-            tag_name => Dongry::Type->serialize ('text', $tag_name),
-            tag_name_sha => sha $tag_name,
-            author_status => 0,
-            owner_status => 0,
-            admin_status => 0,
-            timestamp => $time,
-          }, source_name => 'master');
-        } $tags;
-      });
+      return $self->publish_tags ($self->db, $context, $item, $tags, $score, $time);
     })->then (sub {
       return $self->json ({});
     });

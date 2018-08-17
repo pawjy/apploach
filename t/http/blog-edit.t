@@ -721,6 +721,70 @@ Test {
   });
 } n => 8, name => 'modify internal_data';
 
+Test {
+  my $current = shift;
+  return $current->create (
+    [t1 => nobj => {}],
+    [a1 => account => {}],
+    [e1 => blog_entry => {}],
+  )->then (sub {
+    return $current->json (['blog', 'edit.json'], {
+      blog_entry_id => $current->o ('e1')->{blog_entry_id},
+      operator_nobj_key => $current->o ('a1')->{nobj_key},
+      tag_context_nobj_key => $current->o ('t1')->{nobj_key},
+      data_delta => {
+        tags => [$current->generate_text (name1 => {}),
+                 $current->generate_text (name2 => {})],
+      },
+    });
+  })->then (sub {
+    return $current->json (['tag', 'items.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      tag_name => $current->o ('name1'),
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $item1 = $result->{json}->{items}->[0];
+      is $item1->{item_nobj_key}, $current->o ('e1')->{nobj_key};
+      is $item1->{score}, 0;
+      ok $item1->{timestamp};
+    } $current->c;
+    return $current->json (['blog', 'edit.json'], {
+      blog_entry_id => $current->o ('e1')->{blog_entry_id},
+      operator_nobj_key => $current->o ('a1')->{nobj_key},
+      tag_context_nobj_key => $current->o ('t1')->{nobj_key},
+      data_delta => {
+        tags => [$current->generate_text (name2 => {})],
+      },
+    });
+  })->then (sub {
+    return $current->json (['tag', 'items.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      tag_name => $current->o ('name1'),
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 0;
+    } $current->c;
+    return $current->json (['tag', 'items.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      tag_name => $current->o ('name2'),
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $item1 = $result->{json}->{items}->[0];
+      is $item1->{item_nobj_key}, $current->o ('e1')->{nobj_key};
+      is $item1->{score}, 0;
+      ok $item1->{timestamp};
+    } $current->c;
+  });
+} n => 9, name => 'tags';
+
 RUN;
 
 =head1 LICENSE
