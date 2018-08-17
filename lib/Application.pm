@@ -2019,6 +2019,49 @@ sub run_tag ($) {
       return $self->json ($result);
     });
   } # /tag/list.json
+
+  if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'index.json') {
+    ## /{app_id}/tag/index.json - Get tag list, sorted by count.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|context|) : The tag's context NObj.
+    ##
+    ## List response of:
+    ##
+    ##   |tag_name| : String : The tag's tag name.
+    ##
+    ##   Statuses : The tag's statuses (or |0| value, if not
+    ##   specified).
+    ##
+    ##   |count| : Integer : The tag's count.
+    ##
+    ##   |timestamp| : Timestamp : The tag's timestamp.
+    return Promise->all ([
+      $self->nobj ('context'),
+    ])->then (sub {
+      my ($context) = @{$_[0]};
+      return [] if $context->is_error;
+      my $limit = 0+($self->{app}->bare_param ('limit') // 100);
+      return $self->throw ({reason => 'Bad |limit|'}) if $limit > 10000;
+      return $self->db->select ('tag', {
+        ($self->app_id_columns),
+        ($context->to_columns ('context')),
+      }, source_name => 'master', fields => [
+        'tag_name', 'count', 'timestamp',
+        'author_status', 'owner_status', 'admin_status',
+      ], limit => $limit, order => [
+        'count', 'desc', 'timestamp', 'desc',
+      ])->then (sub {
+        return [map {
+          $_->{tag_name} = Dongry::Type->parse ('text', $_->{tag_name});
+          $_;
+        } @{$_[0]->all}];
+      });
+    })->then (sub {
+      return $self->json ({items => $_[0]});
+    });
+  } # /tag/index.json
   
   if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'edit.json') {
     ## /{app_id}/tag/edit.json - Edit a tag.
