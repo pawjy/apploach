@@ -2453,9 +2453,74 @@ sub run_tag ($) {
     });
   } # /tag/publish.json
 
-  # XXX /tag/related.json
-
-
+  if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'related.json') {
+    ## /{app_id}/tag/related.json - Get related tags.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|context|) : The tag's context NObj.
+    ##
+    ##   |tag_name| : String : The tag's tag name.
+    ##
+    ## List response of:
+    ##
+    ##   |tag_name| : String : The tag's tag name.
+    ##
+    ##   |score| : Number : The score of "related"ness.  The greater,
+    ##   the more related.
+    return Promise->all ([
+      $self->nobj ('context'),
+    ])->then (sub {
+      my ($context) = @{$_[0]};
+      return [] if $context->is_error;
+      my $n = $self->{app}->text_param ('tag_name') // '';
+      my $nn = normalize_tag_name $n;
+      my $shas = {sha $n => 1, sha $nn => 1};
+      my $limit = $self->{app}->bare_param ('limit') // 30;
+      return $self->throw ({reason => "Bad |limit|"}) if $limit > 100;
+      return $self->db->select ('tag_item', {
+        ($self->app_id_columns),
+        ($context->to_columns ('context')),
+        tag_name_sha => {-in => [keys %$shas]},
+      }, fields => ['item_nobj_id'], limit => 500, source_name => 'master')->then (sub {
+        my $ids = [map { $_->{item_nobj_id} } @{$_[0]->all}];
+        return [] unless @$ids;
+        return $self->db->select ('tag_item', {
+          ($self->app_id_columns),
+          ($context->to_columns ('context')),
+          item_nobj_id => {-in => $ids},
+          tag_name_sha => {-not_in => [keys %$shas]},
+        }, fields => [{-count => undef, as => 'count'}, 'tag_name_sha'],
+          group => ['tag_name_sha'],
+          order => ['count', 'DESC'], limit => $limit,
+          source_name => 'master',
+        )->then (sub {
+          my $items = $_[0]->all;
+          return [] unless @$items;
+          return $self->db->select ('tag', {
+            ($self->app_id_columns),
+            ($context->to_columns ('context')),
+            tag_name_sha => {-in => [map { $_->{tag_name_sha} } @$items]},
+          }, source_name => 'master', fields => ['tag_name', 'tag_name_sha'])->then (sub {
+            my $map = {};
+            for (@{$_[0]->all}) {
+              $map->{$_->{tag_name_sha}} = Dongry::Type->parse ('text', $_->{tag_name});
+            }
+            return [map {
+              {
+                tag_name => $map->{$_->{tag_name_sha}},
+                score => $_->{count},
+              };
+            } @$items];
+          });
+        });
+      });
+    })->then (sub {
+      my $items = $_[0];
+      return $self->json ({items => $items});
+    });
+  } # /tag/related.json
+  
   return $self->{app}->throw_error (404);
 } # run_tag
 
