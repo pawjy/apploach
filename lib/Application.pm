@@ -129,6 +129,12 @@ use Pager;
 ##
 ## Account ID.  The ID of an account in the scope of the application.
 ##
+## String.  A Unicode string.
+##
+## Language.  An ASCII string whose length is less than or equal to
+## 40.  Though its semantics is application specific, the value should
+## be a BCP 47 language tag normalized in an application defined way.
+##
 ## Key.  A non-empty ASCII string whose length is less than 4096.
 ##
 ## Timestamp.  A unix time, represented as a floating-point number.
@@ -1764,22 +1770,38 @@ sub normalize_tag_name ($) {
 sub run_tag ($) {
   my $self = $_[0];
 
-  ## Tags.  A tag has context : NObj, tag name : String, Statuses,
-  ## count : Integer, timestamp : Timestamp.  Tag names are unique
-  ## within their context.  A tag's NObj key is
-  ## |apploach-tag-[/context/]-/tag/| where /context/ is the tag's
-  ## context NObj key and /tag/ is the punycode-encoded tag's tag
-  ## name.  A tag has zero or more string data, which are name :
-  ## String and value : String pairs where names are unique for a tag.
-  ## The initial values of the statuses, count, and timestamp fields
-  ## are zero (0).  A tag can be redirected to another tag.  A tag's
-  ## canonical tag name is the tag name of the tag to which the tag is
-  ## redirected, if any, or the tag's tag name.  If the tag name
-  ## normalized by NFKC, replaced any |\s+| by a U+0020 character, and
-  ## trimmed leading and trailing any U+0020 character is different
-  ## from the original tag name, there is an implicit redirect from
-  ## the original tag name to the normalized tag name.
-
+  ## Tags.
+  ##
+  ## A tag has context : NObj, tag name : String, Statuses, timestamp
+  ## : Timestamp.  Tag names are unique within their context.  The
+  ## initial values of the statuses and timestamp fields are zero (0).
+  ##
+  ## A tag's NObj key is |apploach-tag-[/context/]-/tag/| where
+  ## /context/ is the tag's context NObj key and /tag/ is the
+  ## punycode-encoded tag's tag name.
+  ##
+  ## A tag has zero or more string data, which are name : String and
+  ## value : String pairs where names are unique for a tag.
+  ##
+  ## A tag can be redirected to another tag.  A tag's canonical tag
+  ## name is the tag name of the tag to which the tag is redirected,
+  ## if any, or the tag's tag name.  If the tag name normalized by
+  ## NFKC, replaced any |\s+| by a U+0020 character, and trimmed
+  ## leading and trailing any U+0020 character is different from the
+  ## original tag name, there is an implicit redirect from the
+  ## original tag name to the normalized tag name.  A tag can have
+  ## zero or more localized tag names, which are pairs of language :
+  ## Language and value : String.  Languages are unique for a tag.
+  ## Whenever a localized tag name pair is generated, a redirect from
+  ## the localized tag name's value to the tag name is created.
+  ## Initially there is no tag redirects or localized tag name, except
+  ## for implicit redirects.
+  ##
+  ## A tag can be associated with zero or more tag items, which are
+  ## context NObj, tag name : String, item NObj, score : Integer,
+  ## timestamp : Timestamp.  Item NObjs are unique for a tag.
+  ## Initially there is no tag item.  The tag's count : Integer is the
+  ## number of tag items associated with the tag.
   if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'list.json') {
     ## /{app_id}/tag/list.json - Get tag data.
     ##
@@ -1799,6 +1821,12 @@ sub run_tag ($) {
     ##       |tag_name| : String : The tag's tag name.
     ##
     ##       |canon_tag_name| : String : The tag's canonical tag name.
+    ##
+    ##       |localized_tag_name| : JSON object : The tag's localized
+    ##       tag names.
+    ##
+    ##         /localized tag name's language : Language/ : Localized
+    ##         tag name's value.
     ##
     ##       |nobj_key| : String : The tag's NObj key.
     ##
@@ -1923,12 +1951,6 @@ sub run_tag ($) {
       return $self->json ($result);
     });
   } # /tag/list.json
-
-  # XXX /tag/items.json
-
-  # XXX /tag/related.json
-
-  # XXX /tag/publish.json
   
   if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'edit.json') {
     ## /{app_id}/tag/edit.json - Edit a tag.
@@ -1967,7 +1989,14 @@ sub run_tag ($) {
     ##
     ##     |to| : String? : Tag name to which this tag is redirected.
     ##     If |null|, any existing redirect is removed.  Otherwise,
-    ##     redirect is set.
+    ##     redirect is set to the value.
+    ##
+    ##     |langs| : JSON object : Optional if no change.
+    ##
+    ##       /localized tag name's language : Language/ : String? :
+    ##       Localized tag name's value.  If |null|, any existing
+    ##       localized tag name is removed.  Otherwise, localized tag
+    ##       name's value is set to the value.
     ##
     ## Response.  No additional data.
     my $name = $self->{app}->text_param ('tag_name') // '';
@@ -2215,6 +2244,148 @@ sub run_tag ($) {
       return $self->json ({});
     });
   }
+
+  if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'items.json') {
+    ## /{app_id}/tag/items.json - Get items associated with a tag.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|context|) : The tag item's context NObj.
+    ##
+    ##   |tag_name| : String : The tag item's tag name.
+    ##
+    ##   |score| : Boolean : Sort by tag item's score.
+    ##
+    ##   Pages.  Not available when |score| is true.
+    ##
+    ## List response of tag items.
+    ##
+    ##   NObj (|item|) : The tag item's item NObj.
+    ##
+    ##   |timestamp| : Timestamp : The tag item's timestamp.
+    ##
+    ##   |score| : Integer : The tag item's score.
+    my $page = Pager::this_page ($self, limit => 10, max_limit => 10000);
+    return Promise->all ([
+      $self->nobj ('context'),
+    ])->then (sub {
+      my ($context) = @{$_[0]};
+      return [] if $context->is_error;
+      my $n = $self->{app}->text_param ('tag_name') // '';
+      my $nn = normalize_tag_name $n;
+      my $shas = {sha $n => 1, sha $nn => 1};
+      return $self->db->select ('tag_redirect', {
+        ($self->app_id_columns),
+        ($context->to_columns ('context')),
+        from_tag_name_sha => {-in => [keys %$shas]},
+      }, source_name => 'master', fields => ['to_tag_name_sha'])->then (sub {
+        my $v = $_[0];
+        for (@{defined $v ? $v->all : []}) {
+          $shas->{$_->{to_tag_name_sha}} = 1;
+        }
+        return $self->db->select ('tag_redirect', {
+          ($self->app_id_columns),
+          ($context->to_columns ('context')),
+          to_tag_name_sha => {-in => [keys %$shas]},
+        }, source_name => 'master', fields => ['from_tag_name_sha']);
+      })->then (sub {
+        my $v = $_[0];
+        for (@{defined $v ? $v->all : []}) {
+          $shas->{$_->{from_tag_name_sha}} = 1;
+        }
+        my $where = {
+          ($self->app_id_columns),
+          ($context->to_columns ('context')),
+          tag_name_sha => {-in => [keys %$shas]},
+        };
+        $where->{timestamp} = $page->{value} if defined $page->{value};
+        return $self->db->select ('tag_item', $where, source_name => 'master',
+          fields => ['item_nobj_id', 'score', 'timestamp'],
+          offset => $page->{offset}, limit => $page->{limit},
+          order => (defined $self->{app}->bare_param ('score') ? ['score', 'desc'] : ['timestamp', $page->{order_direction}]),
+        );
+      })->then (sub {
+        return $_[0]->all->to_a;
+      });
+    })->then (sub {
+      my $items = $_[0];
+      return $self->replace_nobj_ids ($items, ['item'])->then (sub {
+        my $next_page = Pager::next_page $page, $items, 'timestamp';
+        return $self->json ({items => $items, %$next_page});
+      });
+    });
+  } # /tag/items.json
+
+  if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'publish.json') {
+    ## /{app_id}/tag/publish.json - Update tags associated with an item.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|context|) : The tag item's context NObj.
+    ##
+    ##   NObj (|item|) : The tag item's item NObj.
+    ##
+    ##   |tag| : String : The tag item's tag name.  Zero or more
+    ##   parameters can be specified.
+    ##
+    ## Response.  No additional data.
+    return Promise->all ([
+      $self->new_nobj_list (['context', 'item']),
+    ])->then (sub {
+      my ($context, $item) = @{$_[0]->[0]};
+
+      my $score = 0+($self->{app}->bare_param ('score') || 0);
+      my $tags = $self->{app}->text_param_list ('tag');
+      my $time = time;
+
+      return Promise->resolve->then (sub {
+        return $self->db->insert ('tag_item', [map { {
+          ($self->app_id_columns),
+          ($context->to_columns ('context')),
+          ($item->to_columns ('item')),
+          tag_name_sha => (sha $_),
+          score => $score,
+          timestamp => $time,
+        } } @$tags], source_name => 'master', duplicate => {
+          score => $self->db->bare_sql_fragment ('VALUES(`score`)'),
+          timestamp => $self->db->bare_sql_fragment ('VALUES(`timestamp`)'),
+        }) if @$tags;
+      })->then (sub {
+        return $self->db->delete ('tag_item', {
+          ($self->app_id_columns),
+          ($context->to_columns ('context')),
+          ($item->to_columns ('item')),
+          tag_name_sha => {-not_in => [map { sha $_ } @$tags]},
+        }, source_name => 'master') if @$tags;
+        return $self->db->delete ('tag_item', {
+          ($self->app_id_columns),
+          ($context->to_columns ('context')),
+          ($item->to_columns ('item')),
+        }, source_name => 'master');
+      })->then (sub {
+        return promised_for {
+          my $tag_name = shift;
+          return $self->db->execute (q{insert into `tag` (`app_id`, `context_nobj_id`, `tag_name_sha`, `tag_name`, `count`, `author_status`, `owner_status`, `admin_status`, `timestamp`)
+            select :app_id as `app_id`, :context_nobj_id as `context_nobj_id`, :tag_name_sha as `tag_name_sha`, :tag_name as `tag_name`, count(*) as `count`, :author_status as `author_status`, :owner_status as `owner_status`, :admin_status as `admin_status`, :timestamp as `timestamp` from `tag_item` where `app_id` = :app_id and `context_nobj_id` = :context_nobj_id and `tag_name_sha` = :tag_name_sha
+            on duplicate key update `count` = values(`count`), `timestamp` = values(`timestamp`)}, {
+            ($self->app_id_columns),
+            ($context->to_columns ('context')),
+            tag_name => Dongry::Type->serialize ('text', $tag_name),
+            tag_name_sha => sha $tag_name,
+            author_status => 0,
+            owner_status => 0,
+            admin_status => 0,
+            timestamp => $time,
+          }, source_name => 'master');
+        } $tags;
+      });
+    })->then (sub {
+      return $self->json ({});
+    });
+  } # /tag/publish.json
+
+  # XXX /tag/related.json
+
 
   return $self->{app}->throw_error (404);
 } # run_tag
@@ -2480,6 +2651,13 @@ sub run_nobj ($) {
       }, where => {
         ($self->app_id_columns),
         object_nobj_id => {-in => [map { $_->nobj_id } @$targets]},
+      })->then (sub {
+        return $self->db->update ('tag_item', {
+          timestamp => time,
+        }, where => {
+          ($self->app_id_columns),
+          item_nobj_id => {-in => [map { $_->nobj_id } @$targets]},
+        });
       });
     })->then (sub {
       return $self->json ({});

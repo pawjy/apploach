@@ -208,6 +208,9 @@ create table if not exists `tag_item` (
   primary key (`app_id`, `context_nobj_id`, `tag_name_sha`, `item_nobj_id`),
   key (`app_id`, `context_nobj_id`, `tag_name_sha`, `timestamp`),
   key (`app_id`, `context_nobj_id`, `tag_name_sha`, `score`),
+  key (`app_id`, `context_nobj_id`, `timestamp`),
+  key (`app_id`, `context_nobj_id`, `score`),
+  key (`app_id`, `item_nobj_id`, `timestamp`),
   key (`app_id`, `timestamp`),
   key (`timestamp`)
 ) default charset=binary engine=innodb;

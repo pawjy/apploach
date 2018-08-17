@@ -403,7 +403,9 @@ sub create_account ($$$) {
 
 sub create_nobj ($$$) {
   my ($self, $name, $opts) = @_;
-  $self->set_o ($name => {nobj_key => $self->generate_key (rand, {})});
+  my $v = {nobj_key => $self->generate_key (rand, {})};
+  $v->{item_nobj_key} = $v->{nobj_key};
+  $self->set_o ($name => $v);
   return Promise->resolve;
 } # create_nobj
 
