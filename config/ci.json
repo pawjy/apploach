@@ -5,7 +5,7 @@
     "required_docker_images": [
       "quay.io/wakaba/docker-perl-app-base",
       "minio/minio",
-      "mysql/mysql-server"
+      "mariadb"
     ],
     "merger": 1,
     "gaa": 1,
