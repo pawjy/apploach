@@ -23,6 +23,9 @@ my $RootPath = path (__FILE__)->parent->parent->parent->absolute;
 my $dockerhost = Web::Host->parse_string
     (Promised::Command::Docker->dockerhost_host_for_container);
 
+#my $MySQLImage = 'mysql/mysql-server';
+my $MySQLImage = 'mariadb';
+
 {
   use Socket;
   sub is_listenable_port ($) {
@@ -284,7 +287,7 @@ sub _docker ($%) {
           $self->_write_file ('my.cnf', $my_cnf),
         ])->then (sub {
           return {
-            image => 'mysql/mysql-server',
+            image => $MySQLImage,
             volumes => [
               $self->_path ('my.cnf')->absolute . ':/etc/my.cnf',
               $data->{_data_path}->absolute . ':/var/lib/mysql',
@@ -363,7 +366,7 @@ sub _docker ($%) {
           'docker',
           'run',
           '-v', $data->{_data_path}->absolute . ':/var/lib/mysql',
-          'mysql/mysql-server',
+          $MySQLImage,
           'chown', '-R', $<, '/var/lib/mysql',
         ]);
         return $cmd->run->then (sub { return $cmd->wait });
