@@ -59,6 +59,10 @@ use Pager;
 ##   port, and path in the bucket on the storage server, under which
 ##   the files are stored.  Required when the storage server is used.
 ##
+##   |s3_file_url_signed_hostport| : String : The hostport of the
+##   storage server, used to sign file URLs.  Required when it is
+##   different from |s3_file_url_prefix|'s hostport.
+##
 ## There must be a storage server that has AWS S3 compatible Web API,
 ## such as Minio, when storage-server-bound features are used.  The
 ## bucket must be configured such that files in the directory of
@@ -692,6 +696,7 @@ sub prepare_upload ($$%) {
            region => $self->{config}->{s3_aws4}->[2],
            service => 's3',
            method => 'GET',
+           signed_hostport => $self->{config}->{s3_file_url_signed_hostport}, # or undef
            url => Web::URL->parse_string ($file_url));
       
       return {
@@ -749,6 +754,7 @@ sub signed_storage_url ($$$) {
        region => $self->{config}->{s3_aws4}->[2],
        service => 's3',
        method => 'GET',
+       signed_hostport => $self->{config}->{s3_file_url_signed_hostport}, # or undef
        url => $url);
   return $signed->stringify;
 } # signed_storage_url
