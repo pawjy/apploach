@@ -38,14 +38,6 @@
 	path = t_deps/modules/promised-command
 	url = https://github.com/wakaba/perl-promised-command
 	track = master
-[submodule "t_deps/modules/promise"]
-	path = t_deps/modules/promise
-	url = https://github.com/wakaba/perl-promise
-	track = master
-[submodule "t_deps/modules/streams"]
-	path = t_deps/modules/streams
-	url = https://github.com/manakai/perl-streams
-	track = transport
 [submodule "modules/sarze"]
 	path = modules/sarze
 	url = https://github.com/wakaba/sarze
