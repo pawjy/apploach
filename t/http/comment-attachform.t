@@ -23,6 +23,9 @@ Test {
         {p => {mime_type => undef}, reason => 'Bad MIME type'},
         {p => {byte_length => undef}, reason => 'Bad byte length'},
         {p => {byte_length => 'gaegaee'}, reason => 'Bad byte length'},
+        {p => {path_prefix => ''}, reason => 'Bad |path_prefix|'},
+        {p => {path_prefix => 'abc'}, reason => 'Bad |path_prefix|'},
+        {p => {path_prefix => '/a!?/ggg'}, reason => 'Bad |path_prefix|'},
         ['new_nobj', 'operator'],
       ],
     );
@@ -39,7 +42,7 @@ Test {
     test {
       ok $result->{json}->{form_url};
       ok 0+keys %{$result->{json}->{form_data}};
-      ok $result->{json}->{file}->{file_url};
+      like $result->{json}->{file}->{file_url}, qr{\Ahttps?://[^/]+/[^/]+/apploach/comment/[0-9]+/[0-9]+\z};
       is $result->{json}->{file}->{mime_type}, 'application/octet-stream';
       is $result->{json}->{file}->{byte_length}, length $current->o ('k1');
     } $current->c;
@@ -82,7 +85,8 @@ Test {
       my $v = $result->{json}->{items}->[0];
       is 0+@{$v->{data}->{files}}, 1;
       is $v->{data}->{files}->[0]->{file_url}, $current->o ('file1')->{file_url};
-      ok $v->{data}->{files}->[0]->{signed_url};
+      like $v->{data}->{files}->[0]->{signed_url},
+          qr{\A\Q@{[$v->{data}->{files}->[0]->{file_url}]}\E\?.+\z};
       is $v->{data}->{files}->[0]->{mime_type}, $current->o ('file1')->{mime_type};
       is $v->{data}->{files}->[0]->{byte_length}, $current->o ('file1')->{byte_length};
     } $current->c;
@@ -106,6 +110,96 @@ Test {
     });
   });
 } n => 19, name => 'attach a file';
+
+Test {
+  my $current = shift;
+  $current->generate_key (k1 => {});
+  return $current->create (
+    [a1 => account => {}],
+    [a2 => account => {}],
+    [c1 => comment => {account => 'a1'}],
+  )->then (sub {
+    return $current->json (['comment', 'attachform.json'], {
+      comment_id => $current->o ('c1')->{comment_id},
+      mime_type => 'application/octet-stream',
+      byte_length => length ($current->o ('k1')),
+      operator_nobj_key => $current->o ('a2')->{nobj_key},
+      path_prefix => '/foo/bar/baz',
+    });
+  })->then (sub {
+    my $result = $_[0];
+    $current->set_o (file1 => $result->{json}->{file});
+    test {
+      ok $result->{json}->{form_url};
+      ok 0+keys %{$result->{json}->{form_data}};
+      like $result->{json}->{file}->{file_url}, qr{\Ahttps?://[^/]+/[^/]+/foo/bar/baz/[0-9]+/[0-9]+\z};
+      is $result->{json}->{file}->{mime_type}, 'application/octet-stream';
+      is $result->{json}->{file}->{byte_length}, length $current->o ('k1');
+    } $current->c;
+    my $url = Web::URL->parse_string ($result->{json}->{form_url});
+    return $current->client_for ($url)->request (
+      url => $url,
+      method => 'POST',
+      params => $result->{json}->{form_data},
+      files => {
+        file => {body_ref => \($current->o ('k1')), mime_filename => rand},
+      },
+    )->then (sub {
+      my $res = $_[0];
+      die $res unless $res->is_success;
+      $url = Web::URL->parse_string ($result->{json}->{file}->{file_url});
+      $current->client_for ($url)->request (url => $url);
+    })->then (sub {
+      my $res = $_[0];
+      test {
+        is $res->status, 403;
+      } $current->c;
+      $url = Web::URL->parse_string ($result->{json}->{file}->{signed_url});
+      return $current->client_for ($url)->request (
+        url => $url,
+      );
+    });
+  })->then (sub {
+    my $res = $_[0];
+    test {
+      is $res->status, 200;
+      is $res->header ('content-type'), 'application/octet-stream';
+      is $res->body_bytes, $current->o ('k1');
+    } $current->c;
+    return $current->json (['comment', 'list.json'], {
+      comment_id => $current->o ('c1')->{comment_id},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      my $v = $result->{json}->{items}->[0];
+      is 0+@{$v->{data}->{files}}, 1;
+      is $v->{data}->{files}->[0]->{file_url}, $current->o ('file1')->{file_url};
+      like $v->{data}->{files}->[0]->{signed_url},
+          qr{\A\Q@{[$v->{data}->{files}->[0]->{file_url}]}\E\?.+\z};
+      is $v->{data}->{files}->[0]->{mime_type}, $current->o ('file1')->{mime_type};
+      is $v->{data}->{files}->[0]->{byte_length}, $current->o ('file1')->{byte_length};
+    } $current->c;
+    my $url = Web::URL->parse_string ($result->{json}->{items}->[0]->{data}->{files}->[0]->{file_url});
+    return $current->client_for ($url)->request (url => $url)->then (sub {
+      my $res = $_[0];
+      test {
+        is $res->status, 403;
+      } $current->c;
+      $url = Web::URL->parse_string ($result->{json}->{items}->[0]->{data}->{files}->[0]->{signed_url});
+      return $current->client_for ($url)->request (
+        url => $url,
+      );
+    })->then (sub {
+      my $res = $_[0];
+      test {
+        is $res->status, 200;
+        is $res->header ('content-type'), 'application/octet-stream';
+        is $res->body_bytes, $current->o ('k1');
+      } $current->c;
+    });
+  });
+} n => 18, name => 'attach a file, custom path_prefix';
 
 RUN;
 
