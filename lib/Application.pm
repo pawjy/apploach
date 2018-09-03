@@ -59,6 +59,10 @@ use Pager;
 ##   port, and path in the bucket on the storage server, under which
 ##   the files are stored.  Required when the storage server is used.
 ##
+##   |s3_file_url_signed_hostport| : String : The hostport of the
+##   storage server, used to sign file URLs.  Required when it is
+##   different from |s3_file_url_prefix|'s hostport.
+##
 ## There must be a storage server that has AWS S3 compatible Web API,
 ## such as Minio, when storage-server-bound features are used.  The
 ## bucket must be configured such that files in the directory of
@@ -692,6 +696,7 @@ sub prepare_upload ($$%) {
            region => $self->{config}->{s3_aws4}->[2],
            service => 's3',
            method => 'GET',
+           signed_hostport => $self->{config}->{s3_file_url_signed_hostport}, # or undef
            url => Web::URL->parse_string ($file_url));
       
       return {
@@ -749,6 +754,7 @@ sub signed_storage_url ($$$) {
        region => $self->{config}->{s3_aws4}->[2],
        service => 's3',
        method => 'GET',
+       signed_hostport => $self->{config}->{s3_file_url_signed_hostport}, # or undef
        url => $url);
   return $signed->stringify;
 } # signed_storage_url
@@ -1147,6 +1153,12 @@ sub run_comment ($) {
     ##   |validate_operator_is_author| : Boolean : Whether the
     ##   operator has to be the comment's author or not.
     ##
+    ##   |path_prefix| : String : The path of the attachment's URL,
+    ##   within the directory specified by the configuration, without
+    ##   random string part assigned by the Apploach server.  It must
+    ##   be a string matching to |(/[A-Za-z0-9]+)+|.  Default is
+    ##   |/apploach/comment|.
+    ##
     ##   File upload parameters: |mime_type| and |byte_length|.
     ##
     ## Response.
@@ -1163,6 +1175,13 @@ sub run_comment ($) {
     my $operator;
     my $cnobj;
     my $comment_id = $self->id_param ('comment');
+
+    my $path = $self->{app}->bare_param ('path_prefix') // '/apploach/comment';
+    return $self->throw ({reason => 'Bad |path_prefix|'})
+        unless $path =~ m{\A(?:/[0-9A-Za-z]+)+\z} and
+        512 > length $path;
+    $path =~ s{^/}{};
+    
     return Promise->all ([
       $self->new_nobj_list (['operator',
                              \('apploach-comment-' . $comment_id)]),
@@ -1175,7 +1194,7 @@ sub run_comment ($) {
         target => $cnobj,
         mime_type => $self->{app}->bare_param ('mime_type'),
         byte_length => $self->{app}->bare_param ('byte_length'),
-        prefix => 'apploach/comment/' . $comment_id,
+        prefix => $path . '/' . $comment_id,
       )->then (sub {
         my $result = $_[0];
         return $self->edit_comment ($tr, $comment_id,
