@@ -22,7 +22,7 @@
             {
                "run" : {
                   "background" : true,
-                  "command" : "docker pull quay.io/wakaba/docker-perl-app-base && docker pull minio/minio && docker pull mysql/mysql-server"
+                  "command" : "docker pull quay.io/wakaba/docker-perl-app-base && docker pull minio/minio && docker pull mariadb"
                }
             },
             {
