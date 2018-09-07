@@ -30,6 +30,15 @@ Test {
       ],
     );
   })->then (sub {
+    return $current->are_errors (
+      [['stats', 'list.json'], {
+        item_nobj_key => $current->o ('i1')->{nobj_key},
+      }],
+      [
+        {p => {limit => 422200}, reason => 'Bad |limit|'},
+      ],
+    );
+  })->then (sub {
     return $current->json (['stats', 'list.json'], {
       item_nobj_key => $current->o ('i1')->{nobj_key},
     });
@@ -71,8 +80,20 @@ Test {
       is $result->{json}->{items}->[0]->{day}, 24710400 + 0*24*60*60;
       is $result->{json}->{items}->[4]->{day}, 24710400 + 4*24*60*60;
     } $current->c;
+    return $current->json (['stats', 'list.json'], {
+      item_nobj_key => $current->o ('i1')->{nobj_key},
+      min => 24710400 + 24*60*60,
+      limit => 3,
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 3;
+      is $result->{json}->{items}->[0]->{day}, 24710400 + 1*24*60*60;
+      is $result->{json}->{items}->[2]->{day}, 24710400 + 3*24*60*60;
+    } $current->c;
   });
-} n => 19, name => '/stats/list.json';
+} n => 23, name => '/stats/list.json';
 
 Test {
   my $current = shift;
