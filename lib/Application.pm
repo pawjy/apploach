@@ -15,6 +15,7 @@ use Web::URL;
 use Web::DOM::Document;
 use Web::XML::Parser;
 use Web::Transport::AWS;
+use Web::DateTime;
 use Web::DateTime::Clock;
 use Web::Transport::BasicClient;
 
@@ -2543,6 +2544,207 @@ sub run_tag ($) {
   return $self->{app}->throw_error (404);
 } # run_tag
 
+sub run_stats ($) {
+  my $self = $_[0];
+
+  ## Stats of days.
+  ##
+  ## A day stats has item : NObj, day : Timestamp, value_all : Number,
+  ## value_1 : Number, value_7 : Number, value_30 : Number.
+  if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'list.json') {
+    ## /{app_id}/stats/list.json - Get a set of data of a day.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|item|) : The day stats' item NObj.  Zero or more
+    ##   parameters can be specified.
+    ##
+    ##   |min| : Timestamp : The minimum day stats' day.  Defaulted to
+    ##   -Inf.
+    ##
+    ##   |max| : Timestamp : The maximum day stats' day.  Defaulted to
+    ##   Inf.  Though the range of |min| and |max| is not limited,
+    ##   only first 10000 days are returned in the response.
+    ##
+    ## List response of:
+    ##
+    ##   |day| : Timestamp : The day stats' day.
+    ##
+    ##   /The day stats' item NObj key/ : JSON object.
+    ##
+    ##     |value_all| : Number : The day stats' value_all.
+    ##
+    ##     |value_1| : Number : The day stats' value_1.
+    ##
+    ##     |value_7| : Number : The day stats' value_7.
+    ##
+    ##     |value_30| : Number : The day stats' value_30.
+    return Promise->all ([
+      $self->nobj_list ('item'),
+    ])->then (sub {
+      my ($items) = @{$_[0]};
+
+      my @nobj_id;
+      for (@$items) {
+        push @nobj_id, $_->nobj_id unless $_->is_error;
+      }
+      return [] unless @nobj_id;
+      
+      my $min = $self->{app}->bare_param ('min');
+      my $max = $self->{app}->bare_param ('max');
+      my $day_range = {};
+      $day_range->{'>='} = 0+$min if defined $min;
+      $day_range->{'<='} = 0+$max if defined $max;
+
+      return $self->db->select ('day_stats', {
+        ($self->app_id_columns),
+        item_nobj_id => {-in => \@nobj_id},
+        (keys %$day_range ? (day => $day_range) : ()),
+      }, fields => [
+        'day', 'item_nobj_id',
+        'value_all', 'value_1', 'value_7', 'value_30',
+      ], order => ['day', 'asc'], limit => 10000, source_name => 'master')->then (sub {
+        return $_[0]->all;
+      });
+    })->then (sub {
+      my $items = $_[0];
+      return $self->replace_nobj_ids ($items, ['item']);
+    })->then (sub {
+      my $items = $_[0];
+      my $result = [];
+      my $last = {day => -"Inf", items => {}};
+      for (@$items) {
+        unless ($_->{day} == $last->{day}) {
+          push @$result, $last = {day => $_->{day}};
+        }
+        $last->{items}->{$_->{item_nobj_key}} = {
+          value_all => $_->{value_all},
+          value_1 => $_->{value_1},
+          value_7 => $_->{value_7},
+          value_30 => $_->{value_30},
+        };
+      }
+      return $self->json ({items => $result});
+    });
+  }
+  
+  if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'post.json') {
+    ## /{app_id}/stats/post.json - Post a set of data of a day.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|item|) : The day stats' item NObj.
+    ##
+    ##   |day| : Timestamp : The day stats' day.
+    ##
+    ##   |value_all| : Number : The day stats' value_all.
+    ##
+    ## Response.  No additional data.
+    return Promise->all ([
+      $self->new_nobj_list (['item']),
+    ])->then (sub {
+      my ($item) = @{$_[0]->[0]};
+      my $day = $self->{app}->bare_param ('day') //
+          return $self->throw ({reason => 'Bad |day|'});
+      $day = Web::DateTime->new_from_unix_time ($day);
+      $day = Web::DateTime->new_from_components
+          ($day->utc_year, $day->utc_month, $day->utc_day);
+      my $value_all = $self->{app}->bare_param ('value_all') //
+          return $self->throw ({reason => 'Bad |value_all|'});
+      my $time = time;
+      my @updated_1 = ($day->to_unix_integer);
+      return $self->db->execute ('select get_lock(?, 100)', [
+        join $;, 'apploach-stats-post', $item->nobj_id,
+      ], source_name => 'master')->then (sub {
+        return Promise->all ([
+          $self->db->select ('day_stats', {
+            ($self->app_id_columns),
+            ($item->to_columns ('item')),
+            day => {'<', $day->to_unix_integer},
+          }, fields => ['value_all'], order => ['day', 'desc'], limit => 1, source_name => 'master')->then (sub {
+            return (($_[0]->first || {})->{value_all}); # or undef
+          }),
+          $self->db->select ('day_stats', {
+            ($self->app_id_columns),
+            ($item->to_columns ('item')),
+            day => {'>', $day->to_unix_integer},
+          }, fields => ['day'], order => ['day', 'asc'], limit => 1, source_name => 'master')->then (sub {
+            return (($_[0]->first || {})->{day}); # or undef
+          }),
+        ])->then (sub {
+          my ($prev_value_all, $next_day) = @{$_[0]};
+          return $self->db->insert ('day_stats', [{
+            ($self->app_id_columns),
+            ($item->to_columns ('item')),
+            day => $day->to_unix_integer,
+            value_all => $value_all,
+            value_1 => $value_all - ($prev_value_all || 0),
+            value_7 => $value_all, # to be updated
+            value_30 => $value_all, # to be updated
+            created => $time,
+            updated => $time,
+          }], duplicate => {
+            value_all => $self->db->bare_sql_fragment ('VALUES(`value_all`)'),
+            value_1 => $self->db->bare_sql_fragment ('VALUES(`value_1`)'),
+            updated => $self->db->bare_sql_fragment ('VALUES(`updated`)'),
+          }, source_name => 'master')->then (sub {
+            return unless defined $next_day;
+            push @updated_1, $next_day;
+            return $self->db->execute ('update `day_stats` set `value_1` = `value_all` - :prev_value_all, `updated` = :updated where `app_id` = :app_id and `item_nobj_id` = :item_nobj_id and `day` = :day', {
+              prev_value_all => $value_all,
+              updated => $time,
+              
+              ($self->app_id_columns),
+              ($item->to_columns ('item')),
+              day => $next_day,
+            }, source_name => 'master');
+          });
+        })->then (sub {
+          return $self->db->execute ('select release_lock(?)', [
+            join $;, 'apploach-stats-post', $item->nobj_id,
+          ], source_name => 'master');
+        });
+      })->then (sub {
+        return promised_for {
+          my $day_this = shift;
+          my $day_after = $day_this + 24*60*60;
+          my $day_before = $day_after - 7*24*60*60;
+          return $self->db->execute (q{update `day_stats`, (
+            select sum(`value_1`) as `sum` from `day_stats` where `app_id` = :app_id and `item_nobj_id` = :item_nobj_id and :day_before <= `day` and `day` < :day_after
+          ) `sum` set `day_stats`.`value_7` = ifnull(`sum`.`sum`, 0), `day_stats`.`updated` = :updated where `app_id` = :app_id and `item_nobj_id` = :item_nobj_id and `day` = :day}, {
+            ($self->app_id_columns),
+            ($item->to_columns ('item')),
+            day_before => $day_before,
+            day_after => $day_after,
+            day => $day_this,
+            updated => $time,
+          }, source_name => 'master');
+        } [map { my $x = $_; map { $x+$_ } 0..6 } @updated_1];
+      })->then (sub {
+        return promised_for {
+          my $day_this = shift;
+          my $day_after = $day_this + 24*60*60;
+          my $day_before = $day_after - 30*24*60*60;
+          return $self->db->execute (q{update `day_stats`, (
+            select sum(`value_1`) as `sum` from `day_stats` where `app_id` = :app_id and `item_nobj_id` = :item_nobj_id and :day_before <= `day` and `day` < :day_after
+          ) `sum` set `day_stats`.`value_30` = ifnull(`sum`.`sum`, 0), `day_stats`.`updated` = :updated where `app_id` = :app_id and `item_nobj_id` = :item_nobj_id and `day` = :day}, {
+            ($self->app_id_columns),
+            ($item->to_columns ('item')),
+            day_before => $day_before,
+            day_after => $day_after,
+            day => $day_this,
+            updated => $time,
+          }, source_name => 'master');
+        } [map { my $x = $_; map { $x+$_ } 0..29 } @updated_1];
+      });
+    })->then (sub {
+      return $self->json ({});
+    });
+  }
+  
+  return $self->{app}->throw_error (404);
+} # run_stats
+
 sub run_nobj ($) {
   my $self = $_[0];
 
@@ -3067,6 +3269,7 @@ sub run ($) {
       $self->{type} eq 'blog' or
       $self->{type} eq 'follow' or
       $self->{type} eq 'tag' or
+      $self->{type} eq 'stats' or
       $self->{type} eq 'nobj') {
     my $method = 'run_'.$self->{type};
     return $self->$method;
