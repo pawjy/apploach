@@ -214,3 +214,22 @@ create table if not exists `tag_item` (
   key (`app_id`, `timestamp`),
   key (`timestamp`)
 ) default charset=binary engine=innodb;
+
+create table if not exists `day_stats` (
+  `app_id` bigint unsigned not null,
+  `item_nobj_id` bigint unsigned not null,
+  `day` double not null,
+  `value_all` double not null,
+  `value_1` double not null,
+  `value_7` double not null,
+  `value_30` double not null,
+  `created` double not null,
+  `updated` double not null,
+  primary key (`app_id`, `item_nobj_id`, `day`),
+  key (`app_id`, `item_nobj_id`, `value_all`),
+  key (`app_id`, `item_nobj_id`, `value_1`),
+  key (`app_id`, `item_nobj_id`, `created`),
+  key (`app_id`, `item_nobj_id`, `updated`),
+  key (`app_id`, `day`, `item_nobj_id`),
+  key (`created`)
+) default charset=binary engine=innodb;
