@@ -2563,8 +2563,13 @@ sub run_stats ($) {
     ##   -Inf.
     ##
     ##   |max| : Timestamp : The maximum day stats' day.  Defaulted to
-    ##   Inf.  Though the range of |min| and |max| is not limited,
-    ##   only first 10000 days are returned in the response.
+    ##   Inf.
+    ##
+    ##   |limit| : Integer : The maximum number of data.  The only
+    ##   first data from the |min| day is returned.  Note that the
+    ##   value constraints the number of the day stats records, which
+    ##   might be different from the number of the days.  Defaulted to
+    ##   10000.
     ##
     ## List response of:
     ##
@@ -2583,6 +2588,9 @@ sub run_stats ($) {
       $self->nobj_list ('item'),
     ])->then (sub {
       my ($items) = @{$_[0]};
+
+      my $limit = $self->{app}->bare_param ('limit') || 10000;
+      return $self->throw ({reason => 'Bad |limit|'}) if $limit > 10000;
 
       my @nobj_id;
       for (@$items) {
@@ -2603,7 +2611,7 @@ sub run_stats ($) {
       }, fields => [
         'day', 'item_nobj_id',
         'value_all', 'value_1', 'value_7', 'value_30',
-      ], order => ['day', 'asc'], limit => 10000, source_name => 'master')->then (sub {
+      ], order => ['day', 'asc'], limit => 0+$limit, source_name => 'master')->then (sub {
         return $_[0]->all;
       });
     })->then (sub {
