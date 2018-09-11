@@ -2645,7 +2645,16 @@ sub run_stats ($) {
     ##
     ##   |day| : Timestamp : The day stats' day.
     ##
-    ##   |value_all| : Number : The day stats' value_all.
+    ##   |value_all| : Number : The day stats' value_all.  If
+    ##   specified, value_1, value_7, and value_30 of this and related
+    ##   day stats records are updated.
+    ##
+    ##   |value_1| : Number : The day stats' value_1.  If specified,
+    ##   value_7 and value_30 of this and related day stats records
+    ##   are updated.  Exactly one of |value_all| and |value_1| is
+    ##   required.  Only one of them should be specified for a NObj
+    ##   (|item|) among all |day| updates to not lost any original
+    ##   data.
     ##
     ## Response.  No additional data.
     return Promise->all ([
@@ -2657,13 +2666,32 @@ sub run_stats ($) {
       $day = Web::DateTime->new_from_unix_time ($day);
       $day = Web::DateTime->new_from_components
           ($day->utc_year, $day->utc_month, $day->utc_day);
-      my $value_all = $self->{app}->bare_param ('value_all') //
-          return $self->throw ({reason => 'Bad |value_all|'});
+      my $value_all = $self->{app}->bare_param ('value_all');
+      my $value_1 = $self->{app}->bare_param ('value_1');
+      return $self->throw ({reason => 'Bad |value_all|'})
+          unless defined $value_all or defined $value_1;
       my $time = time;
       my @updated_1 = ($day->to_unix_integer);
       return $self->db->execute ('select get_lock(?, 100)', [
         join $;, 'apploach-stats-post', $item->nobj_id,
       ], source_name => 'master')->then (sub {
+        ## If |value_1|
+        return $self->db->insert ('day_stats', [{
+          ($self->app_id_columns),
+          ($item->to_columns ('item')),
+          day => $day->to_unix_integer,
+          value_all => 0,
+          value_1 => $value_1,
+          value_7 => $value_1, # to be updated
+          value_30 => $value_1, # to be updated
+          created => $time,
+          updated => $time,
+        }], duplicate => {
+          value_1 => $self->db->bare_sql_fragment ('VALUES(`value_1`)'),
+          updated => $self->db->bare_sql_fragment ('VALUES(`updated`)'),
+        }, source_name => 'master') if defined $value_1;
+
+        ## If |value_all|
         return Promise->all ([
           $self->db->select ('day_stats', {
             ($self->app_id_columns),
@@ -2707,11 +2735,11 @@ sub run_stats ($) {
               day => $next_day,
             }, source_name => 'master');
           });
-        })->then (sub {
-          return $self->db->execute ('select release_lock(?)', [
-            join $;, 'apploach-stats-post', $item->nobj_id,
-          ], source_name => 'master');
-        });
+        }); # if |value_all|
+      })->then (sub {
+        return $self->db->execute ('select release_lock(?)', [
+          join $;, 'apploach-stats-post', $item->nobj_id,
+        ], source_name => 'master');
       })->then (sub {
         return promised_for {
           my $day_this = shift;
