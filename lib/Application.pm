@@ -2383,7 +2383,8 @@ sub run_tag ($) {
     ##
     ##   NObj (|context|) : The tag item's context NObj.
     ##
-    ##   |tag_name| : String : The tag item's tag name.
+    ##   |tag_name| : String : The tag item's tag name.  Zero or more
+    ##   parameters can be specified.
     ##
     ##   |score| : Boolean : Sort by tag item's score.
     ##
@@ -2402,9 +2403,13 @@ sub run_tag ($) {
     ])->then (sub {
       my ($context) = @{$_[0]};
       return [] if $context->is_error;
-      my $n = $self->{app}->text_param ('tag_name') // '';
-      my $nn = normalize_tag_name $n;
-      my $shas = {sha $n => 1, sha $nn => 1};
+      my $shas = {};
+      for my $n (@{$self->{app}->text_param_list ('tag_name')}) {
+        my $nn = normalize_tag_name $n;
+        $shas->{sha $n} = 1;
+        $shas->{sha $nn} = 1;
+      }
+      return [] unless keys %$shas;
       return $self->db->select ('tag_redirect', {
         ($self->app_id_columns),
         ($context->to_columns ('context')),
@@ -2432,6 +2437,7 @@ sub run_tag ($) {
         $where->{timestamp} = $page->{value} if defined $page->{value};
         return $self->db->select ('tag_item', $where, source_name => 'master',
           fields => ['item_nobj_id', 'score', 'timestamp'],
+          distinct => 1,
           offset => $page->{offset}, limit => $page->{limit},
           order => (defined $self->{app}->bare_param ('score') ? ['score', 'desc'] : ['timestamp', $page->{order_direction}]),
         );
