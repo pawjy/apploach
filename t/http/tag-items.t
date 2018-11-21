@@ -64,6 +64,9 @@ Test {
       [
         ['get_nobj', 'context'],
         'app_id',
+        {params => {
+          context_nobj_key => $current->o ('t1')->{nobj_key},
+        }, name => 'no |tag_name|'},
       ],
     );
   })->then (sub {
@@ -177,15 +180,60 @@ Test {
       is $item1->{item_nobj_key}, $current->o ('i3')->{nobj_key};
       my $item2 = $result->{json}->{items}->[1];
       is $item2->{item_nobj_key}, $current->o ('i2')->{nobj_key};
-      my $item2 = $result->{json}->{items}->[2];
-      is $item2->{item_nobj_key}, $current->o ('i5')->{nobj_key};
-      my $item2 = $result->{json}->{items}->[3];
-      is $item2->{item_nobj_key}, $current->o ('i4')->{nobj_key};
-      my $item2 = $result->{json}->{items}->[4];
-      is $item2->{item_nobj_key}, $current->o ('i1')->{nobj_key};
+      my $item3 = $result->{json}->{items}->[2];
+      is $item3->{item_nobj_key}, $current->o ('i5')->{nobj_key};
+      my $item4 = $result->{json}->{items}->[3];
+      is $item4->{item_nobj_key}, $current->o ('i4')->{nobj_key};
+      my $item5 = $result->{json}->{items}->[4];
+      is $item5->{item_nobj_key}, $current->o ('i1')->{nobj_key};
     } $current->c;
   });
 } n => 6, name => 'score';
+
+Test {
+  my $current = shift;
+  return $current->create (
+    [t1 => nobj => {}],
+    [t2 => nobj => {}],
+    [i1 => nobj => {}],
+    [i2 => nobj => {}],
+  )->then (sub {
+    return $current->json (['tag', 'publish.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      tag => [
+        $current->generate_text ('name1' => {}),
+        $current->generate_text ('name2' => {}),
+      ],
+      item_nobj_key => $current->o ('i1')->{nobj_key},
+    });
+  })->then (sub {
+    return $current->json (['tag', 'publish.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      tag => $current->o ('name2'),
+      item_nobj_key => $current->o ('i2')->{nobj_key},
+    });
+  })->then (sub {
+    return $current->json (['tag', 'items.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      tag_name => [
+        $current->o ('name1'),
+        $current->o ('name2'),
+        $current->generate_text ('name3' => {}),
+      ],
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 2;
+      my $item1 = $result->{json}->{items}->[0];
+      is $item1->{item_nobj_key}, $current->o ('i2')->{nobj_key};
+      ok $item1->{timestamp};
+      my $item2 = $result->{json}->{items}->[1];
+      is $item2->{item_nobj_key}, $current->o ('i1')->{nobj_key};
+      ok $item2->{timestamp};
+    } $current->c;
+  });
+} n => 5, name => 'multiple tag_name parameters';
 
 RUN;
 
