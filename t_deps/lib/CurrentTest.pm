@@ -41,6 +41,22 @@ sub client_for ($$) {
   });
 } # client_for
 
+# XXX minio
+{
+  use Web::Transport::RequestConstructor;
+  my $create_orig = \&Web::Transport::RequestConstructor::create;
+  *Web::Transport::RequestConstructor::create = sub {
+    my $args = $_[1];
+    $args->{headers} ||= {};
+    if (ref $args->{headers} eq 'ARRAY') {
+      push @{$args->{headers}}, ['user-agent', rand];
+    } else {
+      $args->{headers}->{'user-agent'} ||= rand;
+    }
+    return $create_orig->(@_);
+  };
+}
+
 sub o ($$) {
   my ($self, $name) = @_;
   return $self->{o}->{$name} // die new TestError ("No object |$name|");
