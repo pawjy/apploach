@@ -504,6 +504,24 @@ sub create_log ($$$) {
   });
 } # create_log
 
+sub create_revision ($$$) {
+  my ($self, $name, $opts) = @_;
+  return $self->json (['nobj', 'revision', 'create.json'], {
+    ($self->_nobj ('target', $opts)),
+    ($self->_nobj ('author', $opts)),
+    ($self->_nobj ('operator', $opts)),
+    summary_data => $opts->{summary_data} // {},
+    data => $opts->{data} // {},
+    revision_data => $opts->{revision_data} // {},
+    author_status => $opts->{author_status} // 2,
+    owner_status => $opts->{owner_status} // 2,
+    admin_status => $opts->{admin_status} // 2,
+  }, app => $opts->{app})->then (sub {
+    my $result = $_[0];
+    $self->set_o ($name => $result->{json});
+  });
+} # create_revision
+
 sub create_tag ($$$) {
   my ($self, $name, $opts) = @_;
   return $self->json (['tag', 'edit.json'], {

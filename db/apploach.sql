@@ -28,6 +28,27 @@ create table if not exists `log` (
   key (`timestamp`)
 ) default charset=binary engine=innodb;
 
+create table if not exists `revision` (
+  `app_id` bigint unsigned not null,
+  `revision_id` bigint unsigned not null,
+  `target_nobj_id` bigint unsigned not null,
+  `author_nobj_id` bigint unsigned not null,
+  `operator_nobj_id` bigint unsigned not null,
+  `summary_data` mediumblob not null,
+  `data` mediumblob not null,
+  `revision_data` mediumblob not null,
+  `author_status` tinyint unsigned not null,
+  `owner_status` tinyint unsigned not null,
+  `admin_status` tinyint unsigned not null,
+  `timestamp` double not null,
+  primary key (`revision_id`),
+  key (`app_id`, `target_nobj_id`, `timestamp`),
+  key (`app_id`, `author_nobj_id`, `timestamp`),
+  key (`app_id`, `operator_nobj_id`, `timestamp`),
+  key (`app_id`, `timestamp`),
+  key (`timestamp`)
+) default charset=binary engine=innodb;
+
 create table if not exists `status_info` (
   `app_id` bigint unsigned not null,
   `target_nobj_id` bigint unsigned not null,

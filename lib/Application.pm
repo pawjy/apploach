@@ -2913,14 +2913,188 @@ sub run_nobj ($) {
       });
     }
 
+  ## Revisions.  An NObj can have zero or more revisions.  A revision
+  ## has target NObj, which is the revised NObj, revision ID : ID,
+  ## statuses : Statuses, which is the statuses of the revision
+  ## itself, timestamp : Timestamp, author NObj : NObj, operator NObj
+  ## : NObj, summary data : Object, which can contain
+  ## application-specific summary of the revision, data : Object,
+  ## which can contain application-specific snapshot or delta of the
+  ## revision, revision info : Object, which can contain
+  ## application-specific metadata of the revision itself.
+
+  if (@{$self->{path}} == 2 and $self->{path}->[0] eq 'revision' and
+      $self->{path}->[1] eq 'create.json') {
+    ## /{app_id}/nobj/revision/create.json - Create a new revision of an
+    ## NObj.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|target|) : The revision's target NObj.  Required.
+    ##
+    ##   NObj (|operator|) : The revision's operator NObj.  Required.
+    ##
+    ##   NObj (|author|) : The revision's author NObj.  Required.
+    ##
+    ##   Statuses : The revision's statuses.
+    ##
+    ##   |summary_data| : JSON object : The revision's summary data.
+    ##   Required.
+    ##
+    ##   |data| : JSON object : The revision's data.  Required.
+    ##
+    ##   |revision_data| : JSON object : The revision's revision data.
+    ##   Required.
+    ##
+    ## Created object response.
+    ##
+    ##   |revision_id| : ID : The revision's ID.
+    ##
+    ##   |timestamp| : Timestamp : The revision's data's timestamp.
+    return Promise->all ([
+      $self->new_nobj_list (['target', 'operator', 'author']),
+      $self->ids (1),
+    ])->then (sub {
+      my (undef, $ids) = @{$_[0]};
+      my ($target, $operator, $author) = @{$_[0]->[0]};
+      my $time = time;
+      my $summary_data = $self->json_object_param ('summary_data');
+      my $data = $self->json_object_param ('data');
+      my $revision_data = $self->json_object_param ('revision_data');
+      return $self->db->insert ('revision', [{
+        ($self->app_id_columns),
+        ($target->to_columns ('target')),
+        revision_id => $ids->[0],
+        ($author->to_columns ('author')),
+        ($operator->to_columns ('operator')),
+        summary_data => Dongry::Type->serialize ('json', $summary_data),
+        data => Dongry::Type->serialize ('json', $data),
+        revision_data => Dongry::Type->serialize ('json', $revision_data),
+        ($self->status_columns),
+        timestamp => $time,
+      }])->then (sub {
+        return $self->json ({
+          revision_id => ''.$ids->[0],
+          timestamp => $time,
+        });
+      });
+    });
+  } elsif (@{$self->{path}} == 2 and $self->{path}->[0] eq 'revision' and
+           $self->{path}->[1] eq 'list.json') {
+    ## /{app_id}/nobj/revision/list.json - Get revisions.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|target|) : The revision's target NObj.
+    ##
+    ##   |revision_id| : ID : The revision's ID.  Either the target
+    ##   NObj or the revision ID, or both, is required.  If the target
+    ##   NObj is specified, returned revisions are limited to those
+    ##   for the target NObj.  If |revision_id| is specified, it is
+    ##   further limited to one with that |revision_id|.
+    ##
+    ##   |with_summary_data| : Boolean : Whether |summary_data| should
+    ##   be returned or not.
+    ##
+    ##   |with_data| : Boolean : Whether |data| should be returned or
+    ##   not.
+    ##
+    ##   |with_revision_data| : Boolean : Whether |revision_data|
+    ##   should be returned or not.
+    ##
+    ##   Status filters.
+    ##
+    ##   Pages.
+    ##
+    ## List response of revisions.
+    ##
+    ##   NObj (|target|) : The revision's target NObj.
+    ##
+    ##   |revision_id| : ID : The revision's revision ID.
+    ##
+    ##   |timestamp| : Timestamp : The revision's timestamp.
+    ##
+    ##   NObj (|author|) : The revision's author.
+    ##
+    ##   NObj (|operator|) : The revision's operator NObj.
+    ##
+    ##   |summary_data| : JSON object: The revision's summary data.
+    ##   Only when |with_summary_data| is true.
+    ##
+    ##   |data| : JSON object: The revision's data.  Only when
+    ##   |with_data| is true.
+    ##
+    ##   |revision_data| : JSON object: The revision's revision data.
+    ##   Only when |with_revision_data| is true.
+    ##
+    ##   Statuses.
+    my $page = Pager::this_page ($self, limit => 10, max_limit => 10000);
+    return Promise->all ([
+      $self->nobj ('target'),
+    ])->then (sub {
+      my $target = $_[0]->[0];
+      return [] if $target->not_found;
+
+      my $where = {
+        ($self->app_id_columns),
+        ($target->missing ? () : ($target->to_columns ('target'))),
+        ($self->status_filter_columns),
+      };
+      $where->{timestamp} = $page->{value} if defined $page->{value};
+      
+      my $revision_id = $self->{app}->bare_param ('revision_id');
+      if (defined $revision_id) {
+        $where->{revision_id} = $revision_id;
+      } else {
+        return $self->throw
+            ({reason => 'Either target or |revision_id| is required'})
+            if $target->missing;
+      }
+
+      return $self->db->select ('revision', $where, fields => [
+        'revision_id',
+        'target_nobj_id',
+        'author_nobj_id',
+        'operator_nobj_id',
+        ($self->{app}->bare_param ('with_summary_data') ? ('summary_data') : ()),
+        ($self->{app}->bare_param ('with_data') ? ('data') : ()),
+        ($self->{app}->bare_param ('with_revision_data') ? ('revision_data') : ()),
+        'author_status', 'owner_status', 'admin_status',
+        'timestamp',
+      ], source_name => 'master',
+        offset => $page->{offset}, limit => $page->{limit},
+        order => ['timestamp', $page->{order_direction}],
+      )->then (sub {
+        return $_[0]->all->to_a;
+      });
+    })->then (sub {
+      my $items = $_[0];
+      for my $item (@$items) {
+        $item->{revision_id} .= '';
+        $item->{summary_data} = Dongry::Type->parse ('json', $item->{summary_data})
+            if defined $item->{summary_data};
+        $item->{data} = Dongry::Type->parse ('json', $item->{data})
+            if defined $item->{data};
+        $item->{revision_data} = Dongry::Type->parse ('json', $item->{revision_data})
+            if defined $item->{revision_data};
+      }
+      return $self->replace_nobj_ids ($items, ['author', 'target', 'operator'])->then (sub {
+        my $next_page = Pager::next_page $page, $items, 'timestamp';
+        return $self->json ({items => $items, %$next_page});
+      });
+    });
+  }
+
+  # XXX revision status editing API
+
     ## Status info.  An NObj can have status info.  It is additional
     ## data on the current statuses of the NObj, such as reasons of
     ## admin's action of hiding the object from the public.  A status
-    ## info have target NObj, which is an NObj to which the status
-    ## info is associated, and data, author data, owner data, and
-    ## admin data, which are JSON objects.  Author, owner, and admin
-    ## data are intended to be used to have additional data associated
-    ## with author, owner, and admin statuses.
+    ## info has target NObj, which is an NObj to which the status info
+    ## is associated, and data, author data, owner data, and admin
+    ## data, which are JSON objects.  Author, owner, and admin data
+    ## are intended to be used to have additional data associated with
+    ## author, owner, and admin statuses.
     if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'setstatusinfo.json') {
       ## /{app_id}/nobj/setstatusinfo.json - Set status info of an
       ## NObj.
