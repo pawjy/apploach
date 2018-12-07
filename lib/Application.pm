@@ -392,6 +392,19 @@ sub nobj_list ($$) {
   return $self->_no ($self->{app}->bare_param_list ($param.'_nobj_key'));
 } # nobj_list
 
+sub nobj_list_set ($$) {
+  my ($self, $params) = @_;
+  my @key;
+  my $lists = {};
+  for my $param (@$params) {
+    $lists->{$param} = $self->{app}->bare_param_list ($param.'_nobj_key');
+    push @key, @{$lists->{$param}};
+  }
+  return $self->_no (\@key)->then (sub {
+    return Promise->all ([map { $self->_no ($lists->{$_}) } @$params]);
+  });
+} # nobj_list_set
+
 sub _no ($$) {
   my ($self, $nobj_keys) = @_;
   my @key;
@@ -2550,6 +2563,171 @@ sub run_tag ($) {
   return $self->{app}->throw_error (404);
 } # run_tag
 
+sub run_notification ($) {
+  my $self = $_[0];
+
+  ## Notifications.
+
+  ## Topics.  A topic is an NObj representing a kind of notification
+  ## events, which can be subscribed by notification event
+  ## subscribers.
+
+  ## A topic subscription has topic : NObj with index, subscriber :
+  ## NObj, created : Timestamp, updated : Timestamp, channel : NObj,
+  ## which identifies an application-specific destination media or
+  ## platform of the notification, e.g. email, Web notification, and
+  ## IRC, status : 2 - enabled, 3 - disabled, 4 - inherit, data :
+  ## object, which can contain application-specific parameters
+  ## applicable to the channel.
+
+  if (@{$self->{path}} == 2 and
+      $self->{path}->[0] eq 'topic' and
+      $self->{path}->[1] eq 'subscribe.json') {
+    ## /{app_id}/notification/topic/subscribe.json - Update a topic
+    ## subscription.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|topic| with index) : The topic subscription's topic.
+    ##   Required.
+    ##
+    ##   NObj (|subscriber|) : The topic subscription's subscriber.
+    ##   Required.
+    ##
+    ##   NObj (|channel|) : The topic subscription's channel.
+    ##   Required.
+    ##
+    ##   |status| : Integer : The topic subscription's status.
+    ##   Required.
+    ##
+    ##   |data| : JSON object : The topic subscription's data.
+    ##   Required.
+    ##
+    ## Empty response.
+    return Promise->all ([
+      $self->new_nobj_list (['topic', 'topic_index', 'subscriber', 'channel']),
+    ])->then (sub {
+      my ($topic, $topic_index, $subscriber, $channel) = @{$_[0]->[0]};
+      
+      my $status = $self->{app}->bare_param ('status') // '';
+      return $self->throw ({reason => "Bad |status|"})
+          unless $status =~ /\A[1-9][0-9]*\z/ and
+                 1 < $status and $status < 255;
+      my $data = $self->json_object_param ('data');
+      
+      my $time = time;
+      return $self->db->insert ('topic_subscription', [{
+        ($self->app_id_columns),
+        ($topic->to_columns ('topic')),
+        ($topic_index->to_columns ('topic_index')),
+        ($subscriber->to_columns ('subscriber')),
+        ($channel->to_columns ('channel')),
+        created => $time,
+        updated => $time,
+        status => 0+$status,
+        data => Dongry::Type->serialize ('json', $data),
+      }], duplicate => {
+        status => $self->db->bare_sql_fragment ('VALUES(`status`)'),
+        data => $self->db->bare_sql_fragment ('VALUES(`data`)'),
+        updated => $self->db->bare_sql_fragment ('VALUES(`updated`)'),
+      }, source_name => 'master');
+    })->then (sub {
+      return $self->json ({});
+    });
+  } elsif (@{$self->{path}} == 2 and
+           $self->{path}->[0] eq 'topic' and
+           $self->{path}->[1] eq 'list.json') {
+    ## /{app_id}/notification/topic/list.json - Get topic
+    ## subscriptions.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|subscriber|) : The topic subscription's subscriber.
+    ##   Required.
+    ##
+    ##   NObj (|topic|) : The topic subscription's topic.  Zero or
+    ##   more parameters can be specified.
+    ##
+    ##   NObj (|topic_index|) : The topic subscription's topic's
+    ##   index.
+    ##
+    ##   NObj (|channel|) : The topic subscription's channel.  Zero or
+    ##   more parameters can be specified.
+    ##
+    ##   Pages.
+    ##
+    ## List response of:
+    ##
+    ##   NObj (|topic|) : The topic subscription's topic.
+    ##
+    ##   NObj (|subscriber|) : The topic subscription's subscriber.
+    ##
+    ##   NObj (|channel|) : The topic subscription's channel.
+    ##
+    ##   |created| : The topic subscription's created.
+    ##
+    ##   |updated| : The topic subscription's updated.
+    ##
+    ##   |status| : The topic subscription's status.
+    ##
+    ##   |data| : The topic subscription's data.
+    ##
+    my $page = Pager::this_page ($self, limit => 100, max_limit => 10000);
+    return Promise->all ([
+      $self->nobj_list_set (['topic', 'topic_index', 'channel', 'subscriber']),
+    ])->then (sub {
+      my ($topics, $topic_indexes, $channels, $subscribers) = @{$_[0]->[0]};
+
+      my $has_topics = 0+@$topics;
+      $topics = [grep { not $_->is_error } @$topics];
+      my $has_channels = 0+@$channels;
+      $channels = [grep { not $_->is_error } @$channels];
+      my $subscriber = $subscribers->[0];
+      return $self->throw ({reason => "Bad subscriber"})
+          unless defined $subscriber;
+      my $topic_index = $topic_indexes->[0];
+      
+      return [] if $subscriber->is_error;
+      return [] if $has_topics and not @$topics;
+      return [] if $has_channels and not @$channels;
+      return [] if defined $topic_index and $topic_index->is_error;
+
+      my $where = {
+        ($self->app_id_columns),
+        ($subscriber->to_columns ('subscriber')),
+      };
+      $where->{topic_nobj_id} = {-in => [map { $_->nobj_id } @$topics]}
+          if @$topics;
+      $where->{channel_nobj_id} = {-in => [map { $_->nobj_id } @$channels]}
+          if @$channels;
+      $where = {%$where, ($topic_index->to_columns ('topic_index'))}
+          if defined $topic_index;
+      $where->{updated} = $page->{value} if defined $page->{value};
+
+      return $self->db->select ('topic_subscription', $where, fields => [
+        'topic_nobj_id', 'subscriber_nobj_id', 'channel_nobj_id',
+        'status', 'data', 'created', 'updated',
+      ], source_name => 'master',
+        offset => $page->{offset}, limit => $page->{limit},
+        order => ['updated', $page->{order_direction}],
+      )->then (sub {
+        return $_[0]->all->to_a;
+      });
+    })->then (sub {
+      return $self->replace_nobj_ids ($_[0], ['topic', 'subscriber', 'channel']);
+    })->then (sub {
+      my $items = $_[0];
+      my $next_page = Pager::next_page $page, $items, 'updated';
+      for (@$items) {
+        $_->{data} = Dongry::Type->parse ('json', $_->{data});
+      }
+      return $self->json ({items => $items, %$next_page});
+    });
+  }
+  
+  return $self->{app}->throw_error (404);
+} # run_notification
+
 sub run_stats ($) {
   my $self = $_[0];
 
@@ -3485,6 +3663,7 @@ sub run ($) {
       $self->{type} eq 'blog' or
       $self->{type} eq 'follow' or
       $self->{type} eq 'tag' or
+      $self->{type} eq 'notification' or
       $self->{type} eq 'stats' or
       $self->{type} eq 'nobj') {
     my $method = 'run_'.$self->{type};

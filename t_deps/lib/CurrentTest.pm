@@ -504,6 +504,21 @@ sub create_follow ($$$) {
   });
 } # create_follow
 
+sub create_topic_subscription ($$$) {
+  my ($self, $name, $opts) = @_;
+  return $self->json (['notification', 'topic', 'subscribe.json'], {
+    ($self->_nobj ('topic', $opts)),
+    ($self->_nobj ('topic_index', $opts)),
+    ($self->_nobj ('channel', $opts)),
+    ($self->_nobj ('subscriber', $opts)),
+    status => $opts->{status} // 2,
+    data => $opts->{data} // {},
+  }, app => $opts->{app})->then (sub {
+    my $result = $_[0];
+    $self->set_o ($name => $result->{json});
+  });
+} # create_topic_subscription
+
 sub create_log ($$$) {
   my ($self, $name, $opts) = @_;
   return $self->json (['nobj', $opts->{status_info} ? 'setstatusinfo.json' : 'addlog.json'], {

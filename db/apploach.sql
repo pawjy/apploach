@@ -236,6 +236,24 @@ create table if not exists `tag_item` (
   key (`timestamp`)
 ) default charset=binary engine=innodb;
 
+create table if not exists `topic_subscription` (
+  `app_id` bigint unsigned not null,
+  `topic_nobj_id` bigint unsigned not null,
+  `topic_index_nobj_id` bigint unsigned not null,
+  `subscriber_nobj_id` bigint unsigned not null,
+  `channel_nobj_id` bigint unsigned not null,
+  `created` double not null,
+  `updated` double not null,
+  `status` tinyint unsigned not null,
+  `data` mediumblob not null,
+  primary key (`app_id`, `topic_nobj_id`, `subscriber_nobj_id`, `channel_nobj_id`),
+  key (`app_id`, `topic_nobj_id`, `updated`),
+  key (`app_id`, `subscriber_nobj_id`, `updated`),
+  key (`app_id`, `subscriber_nobj_id`, `topic_index_nobj_id`, `updated`),
+  key (`created`),
+  key (`updated`)
+) default charset=binary engine=innodb;
+
 create table if not exists `day_stats` (
   `app_id` bigint unsigned not null,
   `item_nobj_id` bigint unsigned not null,
