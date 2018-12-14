@@ -254,6 +254,39 @@ create table if not exists `topic_subscription` (
   key (`updated`)
 ) default charset=binary engine=innodb;
 
+create table if not exists `nevent` (
+  `app_id` bigint unsigned not null,
+  `nevent_id` bigint unsigned not null,
+  `topic_nobj_id` bigint unsigned not null,
+  `subscriber_nobj_id` bigint unsigned not null,
+  `unique_nevent_key` binary(40) not null,
+  `data` mediumblob not null,
+  `timestamp` double not null,
+  `expires` double not null,
+  primary key (`app_id`, `nevent_id`, `subscriber_nobj_id`),
+  unique key (`app_id`, `subscriber_nobj_id`, `unique_nevent_key`),
+  key (`app_id`, `subscriber_nobj_id`, `timestamp`),
+  key (`timestamp`),
+  key (`expires`)
+) default charset=binary engine=innodb;
+
+create table if not exists `nevent_queue` (
+  `app_id` bigint unsigned not null,
+  `nevent_id` bigint unsigned not null,
+  `channel_nobj_id` bigint unsigned not null,
+  `subscriber_nobj_id` bigint unsigned not null,
+  `topic_subscription_data` mediumblob not null,
+  `timestamp` double not null,
+  `expires` double not null,
+  `locked` double not null,
+  `result_done` tinyint unsigned not null,
+  `result_data` mediumblob not null,
+  primary key (`app_id`, `nevent_id`, `subscriber_nobj_id`, `channel_nobj_id`),
+  key (`app_id`, `channel_nobj_id`, `timestamp`),
+  key (`timestamp`),
+  key (`expires`)
+) default charset=binary engine=innodb;
+
 create table if not exists `day_stats` (
   `app_id` bigint unsigned not null,
   `item_nobj_id` bigint unsigned not null,

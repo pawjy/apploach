@@ -127,7 +127,9 @@ use Pager;
 ##
 ## Boolean.  A Perl boolean.
 ##
-## ID.  A non-zero 64-bit unsigned integer.
+## ID.  A non-zero 64-bit unsigned integer.  The underlying MySQL
+## server has to be properly configured such that |uuid_short()|
+## returns unique identifiers.
 ##
 ## Application ID.  The ID which identifies the application.  The
 ## application defines the scope of the objects.
@@ -2724,7 +2726,276 @@ sub run_notification ($) {
       return $self->json ({items => $items, %$next_page});
     });
   }
-  
+
+  ## NEvents.  An nevent is an event in the notification system.  An
+  ## nevent has a topic : NObj, data : object, which is an
+  ## application-specific detail of the nevent, timestamp : Timestamp,
+  ## expires : Timestamp, after which the nevent is discarded.
+
+  if (@{$self->{path}} == 2 and
+      $self->{path}->[0] eq 'nevent' and
+      $self->{path}->[1] eq 'fire.json') {
+    ## /{app_id}/notification/nevent/fire.json - Fire an nevent.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|topic|) : The nevent's topic.  Required.
+    ##
+    ##   NObj (|topic_fallback|) : The fallback topics.  Zero or more
+    ##   parameters can be specified.
+    ##
+    ##   |data| : JSON object : The nevent's data.  Required.
+    ##
+    ##   |timestamp| : Timestamp : The nevent's timestamp.  If
+    ##   omitted, the curernt time.
+    ##
+    ##   |expires| : Timestamp : The nevent's expires.  If omitted, 30
+    ##   days later of the current time.
+    ##
+    ## Response.
+    ##
+    ##   |nevent_id| : ID : The nevent's ID.
+    ##
+    ##   |timestamp| : Timestamp : The nevent's timestamp.
+    ##
+    ##   |expires| : Timestamp : The nevent's expires.
+    ##
+    ## When an nevent is fired, applicable topic notifications are
+    ## looked up by their topics.  First, the notification whose topic
+    ## is equal to the NObj (|topic|) is searched.  If not found, NObj
+    ## (|topic_fallback|) are searched in order.  Any first matched
+    ## topic subscription for each subscriber is used to determine who
+    ## and whether the nevent is routed.
+    my $nevent_id;
+    my $now = time;
+    my $timestamp = 0+($self->{app}->bare_param ('timestamp') || $now);
+    my $expires = 0+($self->{app}->bare_param ('expires') || ($now + 30*24*60*60));
+    my $m = 0;
+    return Promise->all ([
+      $self->new_nobj_list (['topic']),
+      $self->nobj_list ('topic_fallback'),
+      $self->ids (1),
+    ])->then (sub {
+      my ($topic) = @{$_[0]->[0]};
+      my $topic_fallbacks = $_[0]->[1];
+      $nevent_id = $_[0]->[2]->[0];
+      my $nevent_key = $self->{app}->bare_param ('nevent_key') // ('id-' . $nevent_id);
+      my $data = $self->json_object_param ('data');
+
+      my $done_subscribers = {};
+      return promised_for {
+        my $current_topic = shift;
+        return if $current_topic->is_error;
+
+        my $n = 0;
+        my $ref;
+        return promised_until {
+          return 'done' if $n++ > 1000;
+          my $where = {
+            ($self->app_id_columns),
+            ($current_topic->to_columns ('topic')),
+          };
+          $where->{updated} = {'>', $ref} if defined $ref;
+          return $self->db->select ('topic_subscription', $where, fields => [
+            'subscriber_nobj_id', 'channel_nobj_id',
+            'status', 'data', 'updated',
+          ], source_name => 'master', limit => 10, order => ['updated', 'asc'])->then (sub {
+            my $all = $_[0]->all;
+            return 'done' unless @$all;
+            return ((promised_for {
+              my $v = $_[0];
+
+              if ($done_subscribers->{$v->{subscriber_nobj_id}, $v->{channel_nobj_id}}) {
+                return;
+              } elsif ($v->{status} == 2) { # enabled
+                $done_subscribers->{$v->{subscriber_nobj_id}, $v->{channel_nobj_id}} = 1;
+                #
+              } elsif ($v->{status} == 3) { # disabled
+                $done_subscribers->{$v->{subscriber_nobj_id}, $v->{channel_nobj_id}} = 1;
+                return;
+              } elsif ($v->{status} == 4) { # inherit
+                return;
+              } else {
+                return;
+              }
+
+              $m++;
+              return $self->db->insert ('nevent', [{
+                ($self->app_id_columns),
+                ($topic->to_columns ('topic')),
+                subscriber_nobj_id => $v->{subscriber_nobj_id},
+                nevent_id => $nevent_id,
+                unique_nevent_key => sha1_hex ($nevent_key),
+                data => Dongry::Type->serialize ('json', $data),
+                timestamp => $timestamp,
+                expires => $expires,
+              }], duplicate => 'ignore')->then (sub {
+                my $w = $_[0];
+                return $self->db->insert ('nevent_queue', [{
+                  ($self->app_id_columns),
+                  subscriber_nobj_id => $v->{subscriber_nobj_id},
+                  channel_nobj_id => $v->{channel_nobj_id},
+                  nevent_id => $nevent_id,
+                  topic_subscription_data => $v->{data},
+                  result_done => 0,
+                  result_data => '{}',
+                  locked => 0,
+                  timestamp => $timestamp,
+                  expires => $expires,
+                }], duplicate => 'ignore');
+              });
+            } $all)->then (sub {
+              $ref = $all->[-1]->{updated};
+              return not 'done';
+            }));
+          });
+        }; # promised_until
+      } [$topic, @$topic_fallbacks]; # XXX $subscriber_fallback_topics
+    })->then (sub {
+      return $self->json ({
+        nevent_id => '' . $nevent_id,
+        timestamp => $timestamp,
+        expires => $expires,
+        queued_count => $m,
+      });
+    });
+  } elsif (@{$self->{path}} == 2 and
+           $self->{path}->[0] eq 'nevent' and
+           $self->{path}->[1] eq 'list.json') {
+    ## /{app_id}/notification/nevent/list.json - Get a list of nevents
+    ## for a subscriber.
+    ##
+    ## Parameters.
+    ##
+    ## XXX
+    my $page = Pager::this_page ($self, limit => 10, max_limit => 10000);
+    return Promise->all ([
+      $self->nobj ('subscriber'),
+    ])->then (sub {
+      my ($subscriber) = @{$_[0]};
+      return [] if $subscriber->is_error and not $subscriber->missing;
+
+      my $now = time;
+      my $where = {
+        ($self->app_id_columns),
+        expires => {'>=', $now},
+      };
+      $where = {%$where, ($subscriber->to_columns ('subscriber'))}
+          unless $subscriber->is_error;
+      my $nevent_id = $self->{app}->bare_param ('nevent_id');
+      $where->{nevent_id} = $nevent_id if defined $nevent_id;
+      return $self->{app}->throw ({reason => 'Bad subscriber'})
+          unless defined $where->{subscriber_nobj_id} or
+                 defined $where->{nevent_id};
+      $where->{timestamp} = $page->{value} if defined $page->{value};
+      
+      # XXX topic / topic_excluded
+      #($current_topic->to_columns ('topic')),
+
+      return $self->db->select ('nevent', $where, fields => [
+        'subscriber_nobj_id', 'topic_nobj_id',
+        'nevent_id', 'data', 'timestamp', 'expires',
+      ], source_name => 'master',
+        offset => $page->{offset}, limit => $page->{limit},
+        order => ['timestamp', $page->{order_direction}],
+      )->then (sub {
+        return $_[0]->all->to_a;
+      });
+    })->then (sub {
+      my $items = $_[0];
+      return $self->replace_nobj_ids ($items, ['subscriber', 'topic']);
+    })->then (sub {
+      my $items = $_[0];
+      my $next_page = Pager::next_page $page, $items, 'timestamp';
+      for (@$items) {
+        $_->{nevent_id} .= '';
+        $_->{data} = Dongry::Type->parse ('json', $_->{data});
+      }
+      # XXX $lastchecked
+      return $self->json ({items => $items, %$next_page});
+    });
+  } elsif (@{$self->{path}} == 2 and
+           $self->{path}->[0] eq 'nevent' and
+           $self->{path}->[1] eq 'lockqueued.json') {
+    ## /{app_id}/notification/nevent/lockqueued.json - Lock nevents
+    ## queued for a channel for processing.
+    ##
+    ## Parameters.
+    ##
+    ## XXX
+    return Promise->all ([
+      $self->nobj ('channel'),
+    ])->then (sub {
+      my ($channel) = @{$_[0]};
+      return [] if $channel->is_error and not $channel->missing;
+      
+      my $limit = 0+($self->{app}->bare_param ('limit') || 10);
+      my $now = time;
+      my $max_locked = $now - 10*60;
+      return $self->db->update ('nevent_queue', {
+        locked => $now,
+      }, source_name => 'master', where => {
+        ($self->app_id_columns),
+        ($channel->to_columns ('channel')),
+        timestamp => {'<=', $now},
+        expires => {'>', $now},
+        result_done => 0, # not yet done
+        locked => {'<', $max_locked},
+      }, order => ['timestamp', 'asc'], limit => $limit)->then (sub {
+        my $v = $_[0];
+        return [] unless $v->row_count;
+        return $self->db->execute (q{select
+            `nevent`.`nevent_id` as `nevent_id`,
+            `nevent`.`topic_nobj_id` as `topic_nobj_id`,
+            `nevent`.`subscriber_nobj_id` as `subscriber_nobj_id`,
+            `nevent`.`data` as `data`,
+            `nevent`.`timestamp` as `timestamp`,
+            `nevent`.`expires` as `expires`,
+            `nevent_queue`.`topic_subscription_data` as `topic_subscription_data`
+          from `nevent_queue` inner join `nevent` on
+            `nevent_queue`.`app_id` = `nevent`.`app_id` and
+            `nevent_queue`.`nevent_id` = `nevent`.`nevent_id` and
+            `nevent_queue`.`subscriber_nobj_id` = `nevent`.`subscriber_nobj_id`
+          where
+            `nevent`.`app_id` = :app_id and
+            `nevent_queue`.`locked` = :locked
+          order by `nevent`.`timestamp` asc
+        }, {
+          ($self->app_id_columns),
+          locked => $now,
+        }, source_name => 'master')->then (sub {
+          return $_[0]->all;
+        });
+      });
+    })->then (sub {
+      my $items = $_[0];
+      return $self->replace_nobj_ids ($items, ['subscriber', 'topic']);
+    })->then (sub {
+      my $items = $_[0];
+      for (@$items) {
+        $_->{nevent_id} .= '';
+        $_->{data} = Dongry::Type->parse ('json', $_->{data});
+        $_->{topic_subscription_data} = Dongry::Type->parse ('json', $_->{topic_subscription_data});
+      }
+      return $self->json ({items => $items});
+    });
+  } elsif (@{$self->{path}} == 2 and
+           $self->{path}->[0] eq 'nevent' and
+           $self->{path}->[1] eq 'donequeued.json') {
+    ## /{app_id}/notification/nevent/donequeued.json - Mark locked
+    ## nevent as processed.
+    ##
+    ## Parameters.
+    ##
+    ## XXX
+
+    # XXX expiration
+  }
+
+  # XXX
+  ## /{app_id}/notification/nevent/listcount.json
+  ## /{app_id}/notification/nevent/listtouch.json
+
   return $self->{app}->throw_error (404);
 } # run_notification
 
