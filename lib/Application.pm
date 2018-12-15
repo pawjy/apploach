@@ -2867,7 +2867,27 @@ sub run_notification ($) {
     ##
     ## Parameters.
     ##
-    ## XXX
+    ##   NObj (|subscriber|) : The nevent's subscriber.
+    ##
+    ##   |nevent_id| : ID : The nevent's ID.  Either NObj
+    ##   (|subscriber|) or |nevent_id|, or both, is required.
+    ##
+    ##   Pages.
+    ##
+    ## List response of:
+    ##
+    ##   NObj (|subscriber|) : The nevent's subscriber.
+    ##
+    ##   NObj (|topic|) : The nevent's topic.
+    ##
+    ##   |nevent_id| : ID : The nevent's ID.
+    ##
+    ##   |data| : JSON object : The nevent's data.
+    ##
+    ##   |timestamp| : Timestamp : The nevent's timestamp.
+    ##
+    ##   |expires| : Timestamp : The nevent's expires.
+    ##
     my $page = Pager::this_page ($self, limit => 10, max_limit => 10000);
     return Promise->all ([
       $self->nobj ('subscriber'),
@@ -2884,7 +2904,7 @@ sub run_notification ($) {
           unless $subscriber->is_error;
       my $nevent_id = $self->{app}->bare_param ('nevent_id');
       $where->{nevent_id} = $nevent_id if defined $nevent_id;
-      return $self->{app}->throw ({reason => 'Bad subscriber'})
+      return $self->throw ({reason => 'Bad subscriber'})
           unless defined $where->{subscriber_nobj_id} or
                  defined $where->{nevent_id};
       $where->{timestamp} = $page->{value} if defined $page->{value};

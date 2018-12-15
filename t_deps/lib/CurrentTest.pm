@@ -432,6 +432,13 @@ sub _nobj ($$$) {
   ));
 } # _nobj
 
+sub _nobj_list ($$$) {
+  my ($self, $prefix, $opts) = @_;
+  return ($prefix.'_nobj_key' => [
+    map { $self->o ($_)->{nobj_key} } @{$opts->{$prefix} || []}
+  ]);
+} # _nobj_list
+
 sub create_comment ($$$) {
   my ($self, $name, $opts) = @_;
   return $self->json (['comment', 'post.json'], {
@@ -518,6 +525,18 @@ sub create_topic_subscription ($$$) {
     $self->set_o ($name => $result->{json});
   });
 } # create_topic_subscription
+
+sub create_nevent ($$$) {
+  my ($self, $name, $opts) = @_;
+  return $self->json (['notification', 'nevent', 'fire.json'], {
+    ($self->_nobj ('topic', $opts)),
+    ($self->_nobj_list ('topic_fallback', $opts)),
+    data => $opts->{data} // {},
+  }, app => $opts->{app})->then (sub {
+    my $result = $_[0];
+    $self->set_o ($name => $result->{json});
+  });
+} # create_nevent
 
 sub create_log ($$$) {
   my ($self, $name, $opts) = @_;
