@@ -2953,6 +2953,7 @@ sub run_notification ($) {
         order => ['timestamp', $page->{order_direction}],
       )->then (sub {
         my $list = $_[0]->all->to_a;
+        return $list if $subscriber->is_error;
         return $self->db->select ('nevent_list', {
           ($self->app_id_columns),
           ($subscriber->to_columns ('subscriber')),
