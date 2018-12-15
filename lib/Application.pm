@@ -2881,6 +2881,13 @@ sub run_notification ($) {
     ##   |nevent_id| : ID : The nevent's ID.  Either NObj
     ##   (|subscriber|) or |nevent_id|, or both, is required.
     ##
+    ##   NObj (|topic|) : The nevent's topic.  Zero or more parameters
+    ##   can be specified.
+    ##
+    ##   NObj (|topic_excluded|) : The topic that should not match to
+    ##   the nevent's topic.  Zero or more parameters can be
+    ##   specified.
+    ##
     ##   Pages.
     ##
     ## List response of:
@@ -2900,8 +2907,10 @@ sub run_notification ($) {
     my $page = Pager::this_page ($self, limit => 10, max_limit => 10000);
     return Promise->all ([
       $self->nobj ('subscriber'),
+      $self->nobj_list_set (['topic', 'topic_excluded']),
     ])->then (sub {
       my ($subscriber) = @{$_[0]};
+      my ($topic_includeds, $topic_excludeds) = @{$_[0]->[1]};
       return [] if $subscriber->is_error and not $subscriber->missing;
 
       my $now = time;
@@ -2917,9 +2926,16 @@ sub run_notification ($) {
           unless defined $where->{subscriber_nobj_id} or
                  defined $where->{nevent_id};
       $where->{timestamp} = $page->{value} if defined $page->{value};
-      
-      # XXX topic / topic_excluded
-      #($current_topic->to_columns ('topic')),
+
+      if (@$topic_includeds) {
+        $topic_includeds = [grep { not $_->is_error } @$topic_includeds];
+        return [] unless @$topic_includeds;
+        $where->{topic_nobj_id}->{-in} = [map { $_->nobj_id } @$topic_includeds];
+      }
+      if (@$topic_excludeds) {
+        $topic_excludeds = [grep { not $_->is_error } @$topic_excludeds];
+        $where->{topic_nobj_id}->{-not_in} = [map { $_->nobj_id } @$topic_excludeds];
+      }
 
       return $self->db->select ('nevent', $where, fields => [
         'subscriber_nobj_id', 'topic_nobj_id',
@@ -2940,7 +2956,6 @@ sub run_notification ($) {
         $_->{nevent_id} .= '';
         $_->{data} = Dongry::Type->parse ('json', $_->{data});
       }
-      # XXX $lastchecked
       return $self->json ({items => $items, %$next_page});
     });
   } elsif (@{$self->{path}} == 2 and

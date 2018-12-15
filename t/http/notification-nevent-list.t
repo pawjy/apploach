@@ -145,6 +145,98 @@ Test {
   });
 } n => 1, name => 'pager paging';
 
+Test {
+  my $current = shift;
+  return $current->create (
+    [t1 => nobj => {}],
+    [t2 => nobj => {}],
+    [t3 => nobj => {}],
+    [t4 => nobj => {}],
+    [u1 => nobj => {}],
+    [sub1 => topic_subscription => {topic => 't1', subscriber => 'u1'}],
+    [sub2 => topic_subscription => {topic => 't2', subscriber => 'u1'}],
+    [sub3 => topic_subscription => {topic => 't3', subscriber => 'u1'}],
+    [ev1 => nevent => {topic => 't1'}],
+    [ev2 => nevent => {topic => 't2'}],
+    [ev3 => nevent => {topic => 't3'}],
+  )->then (sub {
+    return $current->are_empty (
+      [['notification', 'nevent', 'list.json'], {
+        subscriber_nobj_key => $current->o ('u1')->{nobj_key},
+        topic_nobj_key => [rand,
+                           $current->o ('t1')->{nobj_key},
+                           $current->o ('t2')->{nobj_key}],
+      }],
+      [
+        ['get_nobj', 'topic'],
+        {p => {topic_nobj_key => [rand]}},
+        {p => {topic_nobj_key => [$current->o ('t4')->{nobj_key}]}},
+      ],
+    );
+  })->then (sub {
+    return $current->json (['notification', 'nevent', 'list.json'], {
+      subscriber_nobj_key => $current->o ('u1')->{nobj_key},
+      topic_nobj_key => [rand,
+                         $current->o ('t1')->{nobj_key},
+                         $current->o ('t2')->{nobj_key}],
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 2;
+      my $ev1 = $result->{json}->{items}->[0];
+      is $ev1->{nevent_id}, $current->o ('ev2')->{nevent_id};
+
+      my $ev2 = $result->{json}->{items}->[1];
+      is $ev2->{nevent_id}, $current->o ('ev1')->{nevent_id};
+    } $current->c;
+  });
+} n => 4, name => 'topic included';
+
+Test {
+  my $current = shift;
+  return $current->create (
+    [t1 => nobj => {}],
+    [t2 => nobj => {}],
+    [t3 => nobj => {}],
+    [t4 => nobj => {}],
+    [u1 => nobj => {}],
+    [sub1 => topic_subscription => {topic => 't1', subscriber => 'u1'}],
+    [sub2 => topic_subscription => {topic => 't2', subscriber => 'u1'}],
+    [sub3 => topic_subscription => {topic => 't3', subscriber => 'u1'}],
+    [ev1 => nevent => {topic => 't1'}],
+    [ev2 => nevent => {topic => 't2'}],
+    [ev3 => nevent => {topic => 't3'}],
+  )->then (sub {
+    return $current->are_empty (
+      [['notification', 'nevent', 'list.json'], {
+        subscriber_nobj_key => $current->o ('u1')->{nobj_key},
+        topic_excluded_nobj_key => [rand,
+                                    $current->o ('t3')->{nobj_key}],
+      }],
+      [
+        {p => {topic_nobj_key => $current->o ('t3')->{nobj_key}}},
+      ],
+    );
+  })->then (sub {
+    return $current->json (['notification', 'nevent', 'list.json'], {
+      subscriber_nobj_key => $current->o ('u1')->{nobj_key},
+      topic_excluded_nobj_key => [rand,
+                                  $current->o ('t3')->{nobj_key}],
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 2;
+      my $ev1 = $result->{json}->{items}->[0];
+      is $ev1->{nevent_id}, $current->o ('ev2')->{nevent_id};
+
+      my $ev2 = $result->{json}->{items}->[1];
+      is $ev2->{nevent_id}, $current->o ('ev1')->{nevent_id};
+    } $current->c;
+  });
+} n => 4, name => 'topic excluded';
+
 RUN;
 
 =head1 LICENSE
