@@ -287,6 +287,14 @@ create table if not exists `nevent_queue` (
   key (`expires`)
 ) default charset=binary engine=innodb;
 
+create table if not exists `nevent_list` (
+  `app_id` bigint unsigned not null,
+  `subscriber_nobj_id` bigint unsigned not null,
+  `last_checked` double not null,
+  primary key (`app_id`, `subscriber_nobj_id`),
+  key (`last_checked`)
+) default charset=binary engine=innodb;
+
 create table if not exists `day_stats` (
   `app_id` bigint unsigned not null,
   `item_nobj_id` bigint unsigned not null,

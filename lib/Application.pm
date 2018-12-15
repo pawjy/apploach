@@ -2741,6 +2741,8 @@ sub run_notification ($) {
   ##
   ## Expired nevents and queued nevents are removed.
 
+  ## A subscriber : NObj has a last checked timestamp : Timestamp.
+
   if (@{$self->{path}} == 2 and
       $self->{path}->[0] eq 'nevent' and
       $self->{path}->[1] eq 'fire.json') {
@@ -2904,7 +2906,13 @@ sub run_notification ($) {
     ##
     ##   |expires| : Timestamp : The nevent's expires.
     ##
+    ## ... with additional property:
+    ##
+    ##   |last_checked| : Timestamp : The subscriber's last checked
+    ##   timestamp.
+    ##
     my $page = Pager::this_page ($self, limit => 10, max_limit => 10000);
+    my $last_checked = 0;
     return Promise->all ([
       $self->nobj ('subscriber'),
       $self->nobj_list_set (['topic', 'topic_excluded']),
@@ -2944,7 +2952,15 @@ sub run_notification ($) {
         offset => $page->{offset}, limit => $page->{limit},
         order => ['timestamp', $page->{order_direction}],
       )->then (sub {
-        return $_[0]->all->to_a;
+        my $list = $_[0]->all->to_a;
+        return $self->db->select ('nevent_list', {
+          ($self->app_id_columns),
+          ($subscriber->to_columns ('subscriber')),
+        }, fields => ['last_checked'], source_name => 'master')->then (sub {
+          my $v = $_[0]->first;
+          $last_checked = defined $v ? $v->{last_checked} : 0;
+          return $list;
+        });
       });
     })->then (sub {
       my $items = $_[0];
@@ -2956,11 +2972,40 @@ sub run_notification ($) {
         $_->{nevent_id} .= '';
         $_->{data} = Dongry::Type->parse ('json', $_->{data});
       }
-      return $self->json ({items => $items, %$next_page});
+      return $self->json ({items => $items, %$next_page,
+                           last_checked => $last_checked});
     });
   } elsif (@{$self->{path}} == 2 and
            $self->{path}->[0] eq 'nevent' and
-           $self->{path}->[1] eq 'lockqueued.json') {
+           $self->{path}->[1] eq 'listtouch.json') {
+    ## /{app_id}/notification/nevent/listtouch.json - Set the last
+    ## checked timestamp of the nevent list to the current time.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|subscriber|) : The subscriber.
+    ##
+    ## Empty response.
+    return Promise->all ([
+      $self->new_nobj_list (['subscriber']),
+    ])->then (sub {
+      my ($subscriber) = @{$_[0]->[0]};
+      my $now = time;
+      return $self->db->insert ('nevent_list', [{
+        ($self->app_id_columns),
+        ($subscriber->to_columns ('subscriber')),
+        last_checked => $now,
+      }], duplicate => {
+        last_checked => $self->db->bare_sql_fragment ('VALUES(`last_checked`)'),
+      });
+    })->then (sub {
+      return $self->json ({});
+    });
+  }
+  
+  if (@{$self->{path}} == 2 and
+      $self->{path}->[0] eq 'nevent' and
+      $self->{path}->[1] eq 'lockqueued.json') {
     ## /{app_id}/notification/nevent/lockqueued.json - Lock nevents
     ## queued for a channel for processing.
     ##
@@ -3102,10 +3147,6 @@ sub run_notification ($) {
       ]);
     });
   }
-
-  # XXX
-  ## /{app_id}/notification/nevent/listcount.json
-  ## /{app_id}/notification/nevent/listtouch.json
 
   return $self->{app}->throw_error (404);
 } # run_notification
