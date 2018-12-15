@@ -2728,9 +2728,18 @@ sub run_notification ($) {
   }
 
   ## NEvents.  An nevent is an event in the notification system.  An
-  ## nevent has a topic : NObj, data : object, which is an
+  ## nevent has topic : NObj, data : object, which is an
   ## application-specific detail of the nevent, timestamp : Timestamp,
   ## expires : Timestamp, after which the nevent is discarded.
+  ##
+  ## When an nevent is fired, it is queued to notification channels
+  ## according to the applicable topic subscriptions.  A queued nevent
+  ## has nevent : nevent, channel : NObj, topic subscription : topic
+  ## subscription, result data : object, which is an
+  ## application-specific result log of the processing of the queued
+  ## nevent.
+  ##
+  ## Expired nevents and queued nevents are removed.
 
   if (@{$self->{path}} == 2 and
       $self->{path}->[0] eq 'nevent' and
@@ -2942,12 +2951,37 @@ sub run_notification ($) {
     ##
     ## Parameters.
     ##
-    ## XXX
+    ##   NObj (|channel|) : The queued nevent's channel.  Required.
+    ##
+    ##   |limit| : Integer : The maximum number of queued nevents to
+    ##   return and lock.  Defaulted to 10.
+    ##
+    ## List response of:
+    ##
+    ##   NObj (|subscriber|) : The queued nevent's nevent's
+    ##   subscriber.
+    ##
+    ##   NObj (|topic|) : The queued nevent's nevent's topic.
+    ##
+    ##   |nevent_id| : ID : The queued nevent's nevent's ID.
+    ##
+    ##   |data| : JSON object : The queued nevent's nevent's data.
+    ##
+    ##   |timestamp| : Timestamp : The queued nevent's nevent's
+    ##   timestamp.
+    ##
+    ##   |expires| : Timestamp : The queued nevent's nevent's expires.
+    ##
+    ##   |topic_subscription_data| : JSON object : The queued nevent's
+    ##   topic subscription's data.
+    ##
+    ## The returned queued nevents are locked for 600 seconds after
+    ## the invocation of this end point.
     return Promise->all ([
       $self->nobj ('channel'),
     ])->then (sub {
       my ($channel) = @{$_[0]};
-      return [] if $channel->is_error and not $channel->missing;
+      return [] if $channel->is_error;
       
       my $limit = 0+($self->{app}->bare_param ('limit') || 10);
       my $now = time;
@@ -3003,13 +3037,55 @@ sub run_notification ($) {
            $self->{path}->[0] eq 'nevent' and
            $self->{path}->[1] eq 'donequeued.json') {
     ## /{app_id}/notification/nevent/donequeued.json - Mark locked
-    ## nevent as processed.
+    ## queued nevent as processed.
     ##
     ## Parameters.
     ##
-    ## XXX
-
-    # XXX expiration
+    ##   NObj (|subscriber|) : The queued nevent's nevent's
+    ##   subscriber.  Required.
+    ##
+    ##   |nevent_id| : ID : The queued nevent's nevent's ID.
+    ##   Required.
+    ##
+    ##   NObj (|channel|) : The queued nevent's channel.  Required.
+    ##
+    ##   |data| : JSON object : The queued nevent's result data.
+    ##   Required.
+    ##
+    ## Empty response.
+    ##
+    return Promise->all ([
+      $self->nobj ('subscriber'),
+      $self->nobj ('channel'),
+    ])->then (sub {
+      my ($subscriber, $channel) = @{$_[0]};
+      my $nevent_id = $self->{app}->bare_param ('nevent_id') // '';
+      my $data = $self->json_object_param ('data');
+      return if $subscriber->is_error or $channel->is_error;
+      return unless length $nevent_id;
+      
+      return $self->db->update ('nevent_queue', {
+        result_done => 1,
+        result_data => Dongry::Type->serialize ('json', $data),
+      }, where => {
+        ($self->app_id_columns),
+        ($subscriber->to_columns ('subscriber')),
+        ($channel->to_columns ('channel')),
+        nevent_id => $nevent_id,
+      }, source_name => 'master');
+    })->then (sub {
+      return $self->json ({});
+    })->then (sub {
+      my $now = time;
+      return Promise->all ([
+        $self->db->delete ('nevent', {
+          expires => {'<=', $now},
+        }, source_name => 'master'),
+        $self->db->delete ('nevent_queue', {
+          expires => {'<=', $now},
+        }, source_name => 'master'),
+      ]);
+    });
   }
 
   # XXX
