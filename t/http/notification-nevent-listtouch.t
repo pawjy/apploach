@@ -15,9 +15,11 @@ Test {
     return $current->are_errors (
       [['notification', 'nevent', 'listtouch.json'], {
         subscriber_nobj_key => $current->o ('u1')->{nobj_key},
+        timestamp => 643634,
       }],
       [
         ['new_nobj', 'subscriber'],
+        {p => {timestamp => undef}, reason => 'Bad |timestamp|'},
       ],
     );
   })->then (sub {
@@ -31,6 +33,7 @@ Test {
     } $current->c, name => 'initial';
     return $current->json (['notification', 'nevent', 'listtouch.json'], {
       subscriber_nobj_key => $current->o ('u1')->{nobj_key},
+      timestamp => 634634634,
     });
   })->then (sub {
     return $current->json (['notification', 'nevent', 'list.json'], {
@@ -39,7 +42,7 @@ Test {
   })->then (sub {
     my $result = $_[0];
     test {
-      ok $result->{json}->{last_checked};
+      is $result->{json}->{last_checked}, 634634634;
     } $current->c;
     return $current->create (
       [ev1 => nevent => {topic => 't1'}],
@@ -53,8 +56,21 @@ Test {
     test {
       ok $result->{json}->{last_checked} < $result->{json}->{items}->[0]->{timestamp};
     } $current->c;
+    return $current->json (['notification', 'nevent', 'listtouch.json'], {
+      subscriber_nobj_key => $current->o ('u1')->{nobj_key},
+      timestamp => 4634634,
+    });
+  })->then (sub {
+    return $current->json (['notification', 'nevent', 'list.json'], {
+      subscriber_nobj_key => $current->o ('u1')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is $result->{json}->{last_checked}, 634634634, 'unchanged';
+    } $current->c;
   });
-} n => 4, name => 'touch';
+} n => 5, name => 'touch';
 
 RUN;
 

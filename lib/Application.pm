@@ -2980,24 +2980,27 @@ sub run_notification ($) {
            $self->{path}->[0] eq 'nevent' and
            $self->{path}->[1] eq 'listtouch.json') {
     ## /{app_id}/notification/nevent/listtouch.json - Set the last
-    ## checked timestamp of the nevent list to the current time.
+    ## checked timestamp of the nevent list.
     ##
     ## Parameters.
     ##
-    ##   NObj (|subscriber|) : The subscriber.
+    ##   NObj (|subscriber|) : The subscriber.  Required.
+    ##
+    ##   |timestamp| : Timestamp : The timestamp.  Required.
     ##
     ## Empty response.
     return Promise->all ([
       $self->new_nobj_list (['subscriber']),
     ])->then (sub {
       my ($subscriber) = @{$_[0]->[0]};
-      my $now = time;
+      my $time = $self->{app}->bare_param ('timestamp');
+      return $self->throw ({reason => 'Bad |timestamp|'}) unless defined $time;
       return $self->db->insert ('nevent_list', [{
         ($self->app_id_columns),
         ($subscriber->to_columns ('subscriber')),
-        last_checked => $now,
+        last_checked => 0+$time,
       }], duplicate => {
-        last_checked => $self->db->bare_sql_fragment ('VALUES(`last_checked`)'),
+        last_checked => $self->db->bare_sql_fragment ('GREATEST(VALUES(`last_checked`), `last_checked`)'),
       });
     })->then (sub {
       return $self->json ({});
