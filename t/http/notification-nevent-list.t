@@ -234,8 +234,17 @@ Test {
       my $ev2 = $result->{json}->{items}->[1];
       is $ev2->{nevent_id}, $current->o ('ev1')->{nevent_id};
     } $current->c;
+    return $current->json (['notification', 'nevent', 'list.json'], {
+      subscriber_nobj_key => $current->o ('u1')->{nobj_key},
+      topic_excluded_nobj_key => [rand],
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 3;
+    } $current->c;
   });
-} n => 4, name => 'topic excluded';
+} n => 5, name => 'topic excluded';
 
 RUN;
 

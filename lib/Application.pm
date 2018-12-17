@@ -2942,7 +2942,8 @@ sub run_notification ($) {
       }
       if (@$topic_excludeds) {
         $topic_excludeds = [grep { not $_->is_error } @$topic_excludeds];
-        $where->{topic_nobj_id}->{-not_in} = [map { $_->nobj_id } @$topic_excludeds];
+        $where->{topic_nobj_id}->{-not_in} = [map { $_->nobj_id } @$topic_excludeds]
+            if @$topic_excludeds;
       }
 
       return $self->db->select ('nevent', $where, fields => [
@@ -2975,6 +2976,80 @@ sub run_notification ($) {
       }
       return $self->json ({items => $items, %$next_page,
                            last_checked => $last_checked});
+    });
+  } elsif (@{$self->{path}} == 2 and
+           $self->{path}->[0] eq 'nevent' and
+           $self->{path}->[1] eq 'listcount.json') {
+    ## /{app_id}/notification/nevent/listcount.json - Get the number
+    ## of unchecked nevents for a subscriber.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|subscriber|) : The nevent's subscriber.  Required.
+    ##
+    ##   NObj (|topic|) : The nevent's topic.  Zero or more parameters
+    ##   can be specified.
+    ##
+    ##   NObj (|topic_excluded|) : The topic that should not match to
+    ##   the nevent's topic.  Zero or more parameters can be
+    ##   specified.
+    ##
+    ## Response.
+    ##
+    ##   |unchecked_count| : Integer : The number of unchecked
+    ##   nevents.
+    ##
+    ##   |last_checked| : Timestamp : The subscriber's last checked
+    ##   timestamp.
+    ##
+    my $last_checked = 0;
+    return Promise->all ([
+      $self->nobj ('subscriber'),
+      $self->nobj_list_set (['topic', 'topic_excluded']),
+    ])->then (sub {
+      my ($subscriber) = @{$_[0]};
+      my ($topic_includeds, $topic_excludeds) = @{$_[0]->[1]};
+      return 0 if $subscriber->is_error;
+
+      my $now = time;
+      my $where = {
+        ($self->app_id_columns),
+        ($subscriber->to_columns ('subscriber')),
+        expires => {'>=', $now},
+      };
+
+      return $self->db->select ('nevent_list', {
+        ($self->app_id_columns),
+        ($subscriber->to_columns ('subscriber')),
+      }, fields => ['last_checked'], source_name => 'master')->then (sub {
+        my $v = $_[0]->first;
+        $last_checked = defined $v ? $v->{last_checked} : 0;
+
+        if (@$topic_includeds) {
+          $topic_includeds = [grep { not $_->is_error } @$topic_includeds];
+          return 0 unless @$topic_includeds;
+          $where->{topic_nobj_id}->{-in} = [map { $_->nobj_id } @$topic_includeds];
+        }
+        if (@$topic_excludeds) {
+          $topic_excludeds = [grep { not $_->is_error } @$topic_excludeds];
+          $where->{topic_nobj_id}->{-not_in} = [map { $_->nobj_id } @$topic_excludeds]
+              if @$topic_excludeds;
+        }
+        
+        $where->{timestamp} = {'>', $last_checked};
+        return $self->db->select ('nevent', $where, fields => [
+          {-count => undef, as => 'count'},
+        ], source_name => 'master')->then (sub {
+          my $v = $_[0]->first;
+          return defined $v ? $v->{count} : 0;
+        });
+      });
+    })->then (sub {
+      my $count = $_[0];
+      return $self->json ({
+        unchecked_count => $count,
+        last_checked => $last_checked,
+      });
     });
   } elsif (@{$self->{path}} == 2 and
            $self->{path}->[0] eq 'nevent' and
