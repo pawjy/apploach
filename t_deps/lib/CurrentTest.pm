@@ -428,7 +428,7 @@ sub create_nobj ($$$) {
 sub _nobj ($$$) {
   my ($self, $prefix, $opts) = @_;
   return ($prefix.'_nobj_key' => (
-    defined $opts->{$prefix} ? $self->o ($opts->{$prefix})->{nobj_key} : $self->generate_key (rand, {})
+    defined $opts->{$prefix.'_nobj_key'} ? $opts->{$prefix.'_nobj_key'} :defined $opts->{$prefix} ? $self->o ($opts->{$prefix})->{nobj_key} : $self->generate_key (rand, {})
   ));
 } # _nobj
 

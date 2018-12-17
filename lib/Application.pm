@@ -394,6 +394,11 @@ sub nobj_list ($$) {
   return $self->_no ($self->{app}->bare_param_list ($param.'_nobj_key'));
 } # nobj_list
 
+sub nobj_list_by_values ($$) {
+  my ($self, $values) = @_;
+  return $self->_no ($values);
+} # nobj_list_by_values
+
 sub nobj_list_set ($$) {
   my ($self, $params) = @_;
   my @key;
@@ -2755,6 +2760,19 @@ sub run_notification ($) {
     ##   NObj (|topic_fallback|) : The fallback topics.  Zero or more
     ##   parameters can be specified.
     ##
+    ##   |topic_fallback_nobj_key_template| : The template to generate
+    ##   fallback topics.  Zero or more parameters can be specified.
+    ##   If any applicable topic subscription for NObj (|topic|) and
+    ##   NObj (|topic_fallback|) remains unresolved with the status of
+    ##   4 (inherit), the topic chain is further extended with the
+    ##   NObjs whose keys are replacements of the templates where
+    ##   /{subscriber}/ is replaced with the topic notification's
+    ##   subscriber's NObj key.  If there is an "inherit" topic
+    ##   notification for the |apploach-any-channel| special channel,
+    ##   any channel topic notification (without explicit overridden
+    ##   topic notification) is applied.  Otherwise, only explicitly
+    ##   "inherit"ed topic notifications are applied.
+    ##
     ##   |data| : JSON object : The nevent's data.  Required.
     ##
     ##   |timestamp| : Timestamp : The nevent's timestamp.  If
@@ -2783,20 +2801,23 @@ sub run_notification ($) {
     my $expires = 0+($self->{app}->bare_param ('expires') || ($now + 30*24*60*60));
     my $m = 0;
     return Promise->all ([
-      $self->new_nobj_list (['topic']),
+      $self->new_nobj_list (['topic', \'apploach-any-channel']),
       $self->nobj_list ('topic_fallback'),
       $self->ids (1),
     ])->then (sub {
-      my ($topic) = @{$_[0]->[0]};
+      my ($topic, $any_channel) = @{$_[0]->[0]};
       my $topic_fallbacks = $_[0]->[1];
       $nevent_id = $_[0]->[2]->[0];
       my $nevent_key = $self->{app}->bare_param ('nevent_key') // ('id-' . $nevent_id);
       my $data = $self->json_object_param ('data');
 
       my $done_subscribers = {};
-      return promised_for {
+      my $undecided_subscribers = {};
+
+      my $write_for_topic = sub {
         my $current_topic = shift;
         return if $current_topic->is_error;
+        my $ch_ids = shift; # or undef
 
         my $n = 0;
         my $ref;
@@ -2807,6 +2828,7 @@ sub run_notification ($) {
             ($current_topic->to_columns ('topic')),
           };
           $where->{updated} = {'>', $ref} if defined $ref;
+          $where->{channel_nobj_id} = {-in => $ch_ids} if defined $ch_ids;
           return $self->db->select ('topic_subscription', $where, fields => [
             'subscriber_nobj_id', 'channel_nobj_id',
             'status', 'data', 'updated',
@@ -2825,6 +2847,7 @@ sub run_notification ($) {
                 $done_subscribers->{$v->{subscriber_nobj_id}, $v->{channel_nobj_id}} = 1;
                 return;
               } elsif ($v->{status} == 4) { # inherit
+                $undecided_subscribers->{$v->{subscriber_nobj_id}}->{$v->{channel_nobj_id}} = 1;
                 return;
               } else {
                 return;
@@ -2861,7 +2884,37 @@ sub run_notification ($) {
             }));
           });
         }; # promised_until
-      } [$topic, @$topic_fallbacks]; # XXX $subscriber_fallback_topics
+      }; # $write_for_topic
+      
+      return ((promised_for {
+        return $write_for_topic->($_[0], undef);
+      } [$topic, @$topic_fallbacks])->then (sub {
+        my $templates = $self->{app}->bare_param_list
+            ('topic_fallback_nobj_key_template');
+        return unless @$templates;
+        return unless keys %$undecided_subscribers;
+        return $self->_nobj_list_by_ids ([keys %$undecided_subscribers])->then (sub {
+          my $sub_map = $_[0];
+          return promised_for {
+            my $sub_id = $_[0];
+            my $sub_key = $sub_map->{$sub_id}->nobj_key;
+            my $ch_ids = $undecided_subscribers->{$sub_id}->{$any_channel->nobj_id} ? undef : [grep {
+              not $done_subscribers->{$sub_id, $_};
+            } keys %{$undecided_subscribers->{$sub_id}}];
+            return if defined $ch_ids and not @$ch_ids;
+            my $keys = [map {
+              my $v = $_;
+              $v =~ s/\{subscriber\}/$sub_key/g;
+              $v;
+            } @$templates];
+            return $self->nobj_list_by_values ($keys)->then (sub {
+              return promised_for {
+                return $write_for_topic->($_[0], $ch_ids);
+              } $_[0];
+            });
+          } [keys %$undecided_subscribers];
+        });
+      }));
     })->then (sub {
       return $self->json ({
         nevent_id => '' . $nevent_id,

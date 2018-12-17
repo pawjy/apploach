@@ -852,6 +852,279 @@ Test {
   });
 } n => 54, name => 'nevent_key';
 
+Test {
+  my $current = shift;
+  return $current->create (
+    ['g1-followed' => nobj => {}],
+    ['g1-notifications' => nobj => {}],
+    [c1 => nobj => {}],
+    [c2 => nobj => {}],
+    [u1 => nobj => {}],
+  )->then (sub {
+    return $current->create (
+      [sub1 => topic_subscription => {
+        topic => 'g1-notifications',
+        channel => 'c1', subscriber => 'u1',
+        status => 4, # inherit
+        data => {foo => 5632},
+      }],
+      [sub2 => topic_subscription => {
+        topic_nobj_key => $current->o ('u1')->{nobj_key} . '-group-notifications',
+        channel => 'c1', subscriber => 'u1',
+        status => 2, data => {foo => 54},
+      }],
+      [sub3 => topic_subscription => {
+        topic_nobj_key => $current->o ('u1')->{nobj_key} . '-group-notifications',
+        channel => 'c2', subscriber => 'u1',
+        status => 2, data => {foo => 561},
+      }],
+    );
+  })->then (sub {
+    return $current->json (['notification', 'nevent', 'fire.json'], {
+      topic_nobj_key => $current->o ('g1-followed')->{nobj_key},
+      topic_fallback_nobj_key => [
+        $current->o ('g1-notifications')->{nobj_key},
+      ],
+      topic_fallback_nobj_key_template => [
+        '{subscriber}-group-followed',
+        '{subscriber}-group-notifications',
+      ],
+      data => {abv => 774},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      ok $result->{json}->{nevent_id};
+      ok $result->{json}->{timestamp};
+      ok $result->{json}->{expires};
+      is $result->{json}->{queued_count}, 1;
+    } $current->c;
+    $current->set_o (ev1 => $result->{json});
+    return $current->json (['notification', 'nevent', 'list.json'], {
+      subscriber_nobj_key => $current->o ('u1')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $ev1 = $result->{json}->{items}->[0];
+      is $ev1->{nevent_id}, $current->o ('ev1')->{nevent_id};
+      is $ev1->{timestamp}, $current->o ('ev1')->{timestamp};
+      is $ev1->{expires}, $current->o ('ev1')->{expires};
+      is $ev1->{topic_nobj_key}, $current->o ('g1-followed')->{nobj_key};
+      is $ev1->{subscriber_nobj_key}, $current->o ('u1')->{nobj_key};
+      is $ev1->{data}->{abv}, 774;
+    } $current->c, name => 'nevent record';
+    return $current->json (['notification', 'nevent', 'lockqueued.json'], {
+      channel_nobj_key => $current->o ('c1')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $ev1 = $result->{json}->{items}->[0];
+      is $ev1->{nevent_id}, $current->o ('ev1')->{nevent_id};
+      is $ev1->{timestamp}, $current->o ('ev1')->{timestamp};
+      is $ev1->{expires}, $current->o ('ev1')->{expires};
+      is $ev1->{topic_nobj_key}, $current->o ('g1-followed')->{nobj_key};
+      is $ev1->{subscriber_nobj_key}, $current->o ('u1')->{nobj_key};
+      is $ev1->{data}->{abv}, 774;
+      is $ev1->{topic_subscription_data}->{foo}, 54;
+    } $current->c, name => 'nevent_queue record';
+  });
+} n => 19, name => 'topic_fallback_nobj_key_template';
+
+Test {
+  my $current = shift;
+  return $current->create (
+    ['g1-followed' => nobj => {}],
+    ['g1-notifications' => nobj => {}],
+    [c1 => nobj => {}],
+    [c2 => nobj => {}],
+    [u1 => nobj => {}],
+  )->then (sub {
+    return $current->create (
+      [sub1 => topic_subscription => {
+        topic => 'g1-notifications',
+        channel_nobj_key => 'apploach-any-channel',
+        subscriber => 'u1',
+        status => 4, # inherit
+        data => {foo => 5632},
+      }],
+      [sub2 => topic_subscription => {
+        topic_nobj_key => $current->o ('u1')->{nobj_key} . '-group-notifications',
+        channel => 'c1', subscriber => 'u1',
+        status => 2, data => {foo => 54},
+      }],
+      [sub3 => topic_subscription => {
+        topic_nobj_key => $current->o ('u1')->{nobj_key} . '-group-notifications',
+        channel => 'c2', subscriber => 'u1',
+        status => 2, data => {foo => 561},
+      }],
+    );
+  })->then (sub {
+    return $current->json (['notification', 'nevent', 'fire.json'], {
+      topic_nobj_key => $current->o ('g1-followed')->{nobj_key},
+      topic_fallback_nobj_key => [
+        $current->o ('g1-notifications')->{nobj_key},
+      ],
+      topic_fallback_nobj_key_template => [
+        '{subscriber}-group-followed',
+        '{subscriber}-group-notifications',
+      ],
+      data => {abv => 774},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      ok $result->{json}->{nevent_id};
+      ok $result->{json}->{timestamp};
+      ok $result->{json}->{expires};
+      is $result->{json}->{queued_count}, 2;
+    } $current->c;
+    $current->set_o (ev1 => $result->{json});
+    return $current->json (['notification', 'nevent', 'list.json'], {
+      subscriber_nobj_key => $current->o ('u1')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $ev1 = $result->{json}->{items}->[0];
+      is $ev1->{nevent_id}, $current->o ('ev1')->{nevent_id};
+      is $ev1->{timestamp}, $current->o ('ev1')->{timestamp};
+      is $ev1->{expires}, $current->o ('ev1')->{expires};
+      is $ev1->{topic_nobj_key}, $current->o ('g1-followed')->{nobj_key};
+      is $ev1->{subscriber_nobj_key}, $current->o ('u1')->{nobj_key};
+      is $ev1->{data}->{abv}, 774;
+    } $current->c, name => 'nevent record';
+    return $current->json (['notification', 'nevent', 'lockqueued.json'], {
+      channel_nobj_key => $current->o ('c1')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $ev1 = $result->{json}->{items}->[0];
+      is $ev1->{nevent_id}, $current->o ('ev1')->{nevent_id};
+      is $ev1->{timestamp}, $current->o ('ev1')->{timestamp};
+      is $ev1->{expires}, $current->o ('ev1')->{expires};
+      is $ev1->{topic_nobj_key}, $current->o ('g1-followed')->{nobj_key};
+      is $ev1->{subscriber_nobj_key}, $current->o ('u1')->{nobj_key};
+      is $ev1->{data}->{abv}, 774;
+      is $ev1->{topic_subscription_data}->{foo}, 54;
+    } $current->c, name => 'nevent_queue record 1';
+    return $current->json (['notification', 'nevent', 'lockqueued.json'], {
+      channel_nobj_key => $current->o ('c2')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $ev1 = $result->{json}->{items}->[0];
+      is $ev1->{nevent_id}, $current->o ('ev1')->{nevent_id};
+      is $ev1->{timestamp}, $current->o ('ev1')->{timestamp};
+      is $ev1->{expires}, $current->o ('ev1')->{expires};
+      is $ev1->{topic_nobj_key}, $current->o ('g1-followed')->{nobj_key};
+      is $ev1->{subscriber_nobj_key}, $current->o ('u1')->{nobj_key};
+      is $ev1->{data}->{abv}, 774;
+      is $ev1->{topic_subscription_data}->{foo}, 561;
+    } $current->c, name => 'nevent_queue record 2';
+  });
+} n => 27, name => 'topic_fallback_nobj_key_template apploach-any-channel';
+
+Test {
+  my $current = shift;
+  return $current->create (
+    ['g1-followed' => nobj => {}],
+    ['g1-notifications' => nobj => {}],
+    [c1 => nobj => {}],
+    [c2 => nobj => {}],
+    [u1 => nobj => {}],
+  )->then (sub {
+    return $current->create (
+      [sub1 => topic_subscription => {
+        topic => 'g1-notifications',
+        channel_nobj_key => 'apploach-any-channel',
+        subscriber => 'u1',
+        status => 4, # inherit
+        data => {foo => 5632},
+      }],
+      [sub2 => topic_subscription => {
+        topic_nobj_key => $current->o ('u1')->{nobj_key} . '-group-notifications',
+        channel => 'c1', subscriber => 'u1',
+        status => 2, data => {foo => 54},
+      }],
+      [sub3 => topic_subscription => {
+        topic_nobj_key => $current->o ('u1')->{nobj_key} . '-group-notifications',
+        channel => 'c2', subscriber => 'u1',
+        status => 3, # disabled
+        data => {foo => 561},
+      }],
+    );
+  })->then (sub {
+    return $current->json (['notification', 'nevent', 'fire.json'], {
+      topic_nobj_key => $current->o ('g1-followed')->{nobj_key},
+      topic_fallback_nobj_key => [
+        $current->o ('g1-notifications')->{nobj_key},
+      ],
+      topic_fallback_nobj_key_template => [
+        '{subscriber}-group-followed',
+        '{subscriber}-group-notifications',
+      ],
+      data => {abv => 774},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      ok $result->{json}->{nevent_id};
+      ok $result->{json}->{timestamp};
+      ok $result->{json}->{expires};
+      is $result->{json}->{queued_count}, 1;
+    } $current->c;
+    $current->set_o (ev1 => $result->{json});
+    return $current->json (['notification', 'nevent', 'list.json'], {
+      subscriber_nobj_key => $current->o ('u1')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $ev1 = $result->{json}->{items}->[0];
+      is $ev1->{nevent_id}, $current->o ('ev1')->{nevent_id};
+      is $ev1->{timestamp}, $current->o ('ev1')->{timestamp};
+      is $ev1->{expires}, $current->o ('ev1')->{expires};
+      is $ev1->{topic_nobj_key}, $current->o ('g1-followed')->{nobj_key};
+      is $ev1->{subscriber_nobj_key}, $current->o ('u1')->{nobj_key};
+      is $ev1->{data}->{abv}, 774;
+    } $current->c, name => 'nevent record';
+    return $current->json (['notification', 'nevent', 'lockqueued.json'], {
+      channel_nobj_key => $current->o ('c1')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $ev1 = $result->{json}->{items}->[0];
+      is $ev1->{nevent_id}, $current->o ('ev1')->{nevent_id};
+      is $ev1->{timestamp}, $current->o ('ev1')->{timestamp};
+      is $ev1->{expires}, $current->o ('ev1')->{expires};
+      is $ev1->{topic_nobj_key}, $current->o ('g1-followed')->{nobj_key};
+      is $ev1->{subscriber_nobj_key}, $current->o ('u1')->{nobj_key};
+      is $ev1->{data}->{abv}, 774;
+      is $ev1->{topic_subscription_data}->{foo}, 54;
+    } $current->c, name => 'nevent_queue record 1';
+    return $current->json (['notification', 'nevent', 'lockqueued.json'], {
+      channel_nobj_key => $current->o ('c2')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 0;
+    } $current->c, name => 'nevent_queue record 2';
+  });
+} n => 20, name => 'topic_fallback_nobj_key_template apploach-any-channel some disabled';
+
 RUN;
 
 =head1 LICENSE
