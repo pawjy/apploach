@@ -929,7 +929,6 @@ sub edit_comment ($$$%) {
     }
     
     # XXX revision if $args{blog}
-    # XXX notifications
   });
 } # edit_comment
 
@@ -1055,11 +1054,14 @@ sub run_comment ($) {
     ##   data, intended for storing private data such as author's IP
     ##   address.
     ##
+    ##   Notifications (|notification_|).
+    ##
     ## Created object response.
     ##
     ##   |comment_id| : ID : The comment's ID.
     ##
     ##   |timestamp| : Timestamp : The comment's data's timestamp.
+    ##
     return Promise->all ([
       $self->new_nobj_list (['thread', 'author']),
       $self->ids (1),
@@ -1079,12 +1081,23 @@ sub run_comment ($) {
         ($self->status_columns),
         timestamp => $time,
       }])->then (sub {
+        return $self->fire_nevent (
+          'notification_',
+          {
+            author_nobj_key => $author->nobj_key,
+            thread_nobj_key => $thread->nobj_key,
+            comment_id => ''.$ids->[0],
+            timestamp => $time,
+          },
+          timestamp => $time,
+          # XXX exclude author from destination
+        );
+      })->then (sub {
         return $self->json ({
           comment_id => ''.$ids->[0],
           timestamp => $time,
         });
       });
-      # XXX kick notifications
     });
   } elsif (@{$self->{path}} == 1 and $self->{path}->[0] eq 'edit.json') {
     ## /{app_id}/comment/edit.json - Edit a comment.
@@ -1702,61 +1715,87 @@ sub run_follow ($) {
     ##
     ##   |value| : Integer : The follow's value.
     ##
+    ##   Notifications (|notification_|).
+    ##
     ## Response.  No additional data.
     ##
     ## The follow's created and timestamp are set to the current
     ## timestamp.
     return Promise->all ([
-        $self->new_nobj_list (['subject', 'object', 'verb']),
-      ])->then (sub {
-        my ($subj, $obj, $verb) = @{$_[0]->[0]};
-        my $time = time;
-        return $self->db->insert ('follow', [{
+      $self->new_nobj_list (['subject', 'object', 'verb']),
+    ])->then (sub {
+      my ($subj, $obj, $verb) = @{$_[0]->[0]};
+      my $time = time;
+      my $value = 0+($self->{app}->bare_param ('value') || 0);
+      return $self->db->insert ('follow', [{
+        ($self->app_id_columns),
+        ($subj->to_columns ('subject')),
+        ($obj->to_columns ('object')),
+        ($verb->to_columns ('verb')),
+        value => $value,
+        created => $time,
+        timestamp => $time,
+      }], duplicate => {
+        value => $self->db->bare_sql_fragment ('VALUES(`value`)'),
+        timestamp => $self->db->bare_sql_fragment ('if(`value`=VALUES(`value`), `timestamp`, VALUES(`timestamp`))'),
+      }, source_name => 'master')->then (sub {
+        my $v = $_[0];
+        return unless $value > 0;
+        return $self->db->select ('follow', {
           ($self->app_id_columns),
           ($subj->to_columns ('subject')),
           ($obj->to_columns ('object')),
           ($verb->to_columns ('verb')),
-          value => $self->{app}->bare_param ('value') || 0,
-          created => $time,
           timestamp => $time,
-        }], duplicate => {
-          value => $self->db->bare_sql_fragment ('VALUES(`value`)'),
-          timestamp => $self->db->bare_sql_fragment ('VALUES(`timestamp`)'),
-        }, source_name => 'master');
-      })->then (sub {
-        return $self->json ({});
+        }, fields => ['timestamp'], source_name => 'master')->then (sub {
+          my $v = $_[0]->first;
+          return unless defined $v;
+          return $self->fire_nevent (
+            'notification_',
+            {
+              subject_nobj_key => $subj->nobj_key,
+              object_nobj_key => $obj->nobj_key,
+              verb_nobj_key => $verb->nobj_key,
+              value => $value,
+              timestamp => $time,
+            },
+            timestamp => $time,
+          );
+        });
       });
-      # XXX notifications
-    } elsif (@{$self->{path}} == 1 and $self->{path}->[0] eq 'list.json') {
-      ## /{app_id}/follow/list.json - Get follows.
-      ##
-      ## Parameters.
-      ##
-      ##   NObj (|subject|) : The follow's subject NObj.
-      ##
-      ##   NObj (|object|) : The follow's object NObj.  Either NObj
-      ##   (|subject|) or NObj (|object|) or both is required.
-      ##
-      ##   NObj (|verb|) : The follow's object NObj.  Optional.
-      ##
-      ##   |antenna| : Boolean : If true, sorted by the follow's
-      ##   |timestamp|.  Otherwise, sorted by the follow's |created|.
-      ##
-      ##   Pages.
-      ##
-      ## List response of follows.
-      ##
-      ##   NObj (|subject|) : The follow's subject NObj.
-      ##
-      ##   NObj (|object|) : The follow's object NObj.
-      ##
-      ##   NObj (|verb|) : The follow's verb NObj.
-      ##
-      ##   |value| : Integer : The follow's value.
-      ##
-      ##   |created| : Timestamp : The follow's created.
-      ##
-      ##   |timestamp| : Timestamp : The follow's timestamp.
+    })->then (sub {
+      return $self->json ({});
+    });
+  } elsif (@{$self->{path}} == 1 and $self->{path}->[0] eq 'list.json') {
+    ## /{app_id}/follow/list.json - Get follows.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|subject|) : The follow's subject NObj.
+    ##
+    ##   NObj (|object|) : The follow's object NObj.  Either NObj
+    ##   (|subject|) or NObj (|object|) or both is required.
+    ##
+    ##   NObj (|verb|) : The follow's object NObj.  Optional.
+    ##
+    ##   |antenna| : Boolean : If true, sorted by the follow's
+    ##   |timestamp|.  Otherwise, sorted by the follow's |created|.
+    ##
+    ##   Pages.
+    ##
+    ## List response of follows.
+    ##
+    ##   NObj (|subject|) : The follow's subject NObj.
+    ##
+    ##   NObj (|object|) : The follow's object NObj.
+    ##
+    ##   NObj (|verb|) : The follow's verb NObj.
+    ##
+    ##   |value| : Integer : The follow's value.
+    ##
+    ##   |created| : Timestamp : The follow's created.
+    ##
+    ##   |timestamp| : Timestamp : The follow's timestamp.
       my $s = $self->{app}->bare_param ('subject_nobj_key');
       my $o = $self->{app}->bare_param ('object_nobj_key');
       my $v = $self->{app}->bare_param ('verb_nobj_key');
@@ -2755,23 +2794,7 @@ sub run_notification ($) {
     ##
     ## Parameters.
     ##
-    ##   NObj (|topic|) : The nevent's topic.  Required.
-    ##
-    ##   NObj (|topic_fallback|) : The fallback topics.  Zero or more
-    ##   parameters can be specified.
-    ##
-    ##   |topic_fallback_nobj_key_template| : The template to generate
-    ##   fallback topics.  Zero or more parameters can be specified.
-    ##   If any applicable topic subscription for NObj (|topic|) and
-    ##   NObj (|topic_fallback|) remains unresolved with the status of
-    ##   4 (inherit), the topic chain is further extended with the
-    ##   NObjs whose keys are replacements of the templates where
-    ##   /{subscriber}/ is replaced with the topic notification's
-    ##   subscriber's NObj key.  If there is an "inherit" topic
-    ##   notification for the |apploach-any-channel| special channel,
-    ##   any channel topic notification (without explicit overridden
-    ##   topic notification) is applied.  Otherwise, only explicitly
-    ##   "inherit"ed topic notifications are applied.
+    ##   Notifications (||).
     ##
     ##   |data| : JSON object : The nevent's data.  Required.
     ##
@@ -2789,139 +2812,13 @@ sub run_notification ($) {
     ##
     ##   |expires| : Timestamp : The nevent's expires.
     ##
-    ## When an nevent is fired, applicable topic notifications are
-    ## looked up by their topics.  First, the notification whose topic
-    ## is equal to the NObj (|topic|) is searched.  If not found, NObj
-    ## (|topic_fallback|) are searched in order.  Any first matched
-    ## topic subscription for each subscriber is used to determine who
-    ## and whether the nevent is routed.
-    my $nevent_id;
-    my $now = time;
-    my $timestamp = 0+($self->{app}->bare_param ('timestamp') || $now);
-    my $expires = 0+($self->{app}->bare_param ('expires') || ($now + 30*24*60*60));
-    my $m = 0;
-    return Promise->all ([
-      $self->new_nobj_list (['topic', \'apploach-any-channel']),
-      $self->nobj_list ('topic_fallback'),
-      $self->ids (1),
-    ])->then (sub {
-      my ($topic, $any_channel) = @{$_[0]->[0]};
-      my $topic_fallbacks = $_[0]->[1];
-      $nevent_id = $_[0]->[2]->[0];
-      my $nevent_key = $self->{app}->bare_param ('nevent_key') // ('id-' . $nevent_id);
-      my $data = $self->json_object_param ('data');
-
-      my $done_subscribers = {};
-      my $undecided_subscribers = {};
-
-      my $write_for_topic = sub {
-        my $current_topic = shift;
-        return if $current_topic->is_error;
-        my $ch_ids = shift; # or undef
-
-        my $n = 0;
-        my $ref;
-        return promised_until {
-          return 'done' if $n++ > 1000;
-          my $where = {
-            ($self->app_id_columns),
-            ($current_topic->to_columns ('topic')),
-          };
-          $where->{updated} = {'>', $ref} if defined $ref;
-          $where->{channel_nobj_id} = {-in => $ch_ids} if defined $ch_ids;
-          return $self->db->select ('topic_subscription', $where, fields => [
-            'subscriber_nobj_id', 'channel_nobj_id',
-            'status', 'data', 'updated',
-          ], source_name => 'master', limit => 10, order => ['updated', 'asc'])->then (sub {
-            my $all = $_[0]->all;
-            return 'done' unless @$all;
-            return ((promised_for {
-              my $v = $_[0];
-
-              if ($done_subscribers->{$v->{subscriber_nobj_id}, $v->{channel_nobj_id}}) {
-                return;
-              } elsif ($v->{status} == 2) { # enabled
-                $done_subscribers->{$v->{subscriber_nobj_id}, $v->{channel_nobj_id}} = 1;
-                #
-              } elsif ($v->{status} == 3) { # disabled
-                $done_subscribers->{$v->{subscriber_nobj_id}, $v->{channel_nobj_id}} = 1;
-                return;
-              } elsif ($v->{status} == 4) { # inherit
-                $undecided_subscribers->{$v->{subscriber_nobj_id}}->{$v->{channel_nobj_id}} = 1;
-                return;
-              } else {
-                return;
-              }
-
-              $m++;
-              return $self->db->insert ('nevent', [{
-                ($self->app_id_columns),
-                ($topic->to_columns ('topic')),
-                subscriber_nobj_id => $v->{subscriber_nobj_id},
-                nevent_id => $nevent_id,
-                unique_nevent_key => sha1_hex ($nevent_key),
-                data => Dongry::Type->serialize ('json', $data),
-                timestamp => $timestamp,
-                expires => $expires,
-              }], duplicate => 'ignore')->then (sub {
-                my $w = $_[0];
-                return $self->db->insert ('nevent_queue', [{
-                  ($self->app_id_columns),
-                  subscriber_nobj_id => $v->{subscriber_nobj_id},
-                  channel_nobj_id => $v->{channel_nobj_id},
-                  nevent_id => $nevent_id,
-                  topic_subscription_data => $v->{data},
-                  result_done => 0,
-                  result_data => '{}',
-                  locked => 0,
-                  timestamp => $timestamp,
-                  expires => $expires,
-                }], duplicate => 'ignore');
-              });
-            } $all)->then (sub {
-              $ref = $all->[-1]->{updated};
-              return not 'done';
-            }));
-          });
-        }; # promised_until
-      }; # $write_for_topic
-      
-      return ((promised_for {
-        return $write_for_topic->($_[0], undef);
-      } [$topic, @$topic_fallbacks])->then (sub {
-        my $templates = $self->{app}->bare_param_list
-            ('topic_fallback_nobj_key_template');
-        return unless @$templates;
-        return unless keys %$undecided_subscribers;
-        return $self->_nobj_list_by_ids ([keys %$undecided_subscribers])->then (sub {
-          my $sub_map = $_[0];
-          return promised_for {
-            my $sub_id = $_[0];
-            my $sub_key = $sub_map->{$sub_id}->nobj_key;
-            my $ch_ids = $undecided_subscribers->{$sub_id}->{$any_channel->nobj_id} ? undef : [grep {
-              not $done_subscribers->{$sub_id, $_};
-            } keys %{$undecided_subscribers->{$sub_id}}];
-            return if defined $ch_ids and not @$ch_ids;
-            my $keys = [map {
-              my $v = $_;
-              $v =~ s/\{subscriber\}/$sub_key/g;
-              $v;
-            } @$templates];
-            return $self->nobj_list_by_values ($keys)->then (sub {
-              return promised_for {
-                return $write_for_topic->($_[0], $ch_ids);
-              } $_[0];
-            });
-          } [keys %$undecided_subscribers];
-        });
-      }));
-    })->then (sub {
-      return $self->json ({
-        nevent_id => '' . $nevent_id,
-        timestamp => $timestamp,
-        expires => $expires,
-        queued_count => $m,
-      });
+    return $self->fire_nevent (
+      '',
+      $self->json_object_param ('data'),
+      timestamp => $self->{app}->bare_param ('timestamp'),
+      expires => $self->{app}->bare_param ('expires'),
+    )->then (sub {
+      return $self->json ($_[0]);
     });
   } elsif (@{$self->{path}} == 2 and
            $self->{path}->[0] eq 'nevent' and
@@ -3282,6 +3179,167 @@ sub run_notification ($) {
 
   return $self->{app}->throw_error (404);
 } # run_notification
+
+## Notifications (/prefix/) parameters.
+##
+##   NObj (|/prefix/topic|) : The nevent's topic.  Required when the
+##   notification feature is used.
+##
+##   NObj (|/prefix/topic_fallback|) : The fallback topics.  Zero or
+##   more parameters can be specified.
+##
+##   |/prefix/topic_fallback_nobj_key_template| : The template to
+##   generate fallback topics.  Zero or more parameters can be
+##   specified.  If any applicable topic subscription for NObj
+##   (|/prefix/topic|) and NObj (|/prefix/topic_fallback|) remains
+##   unresolved with the status of 4 (inherit), the topic chain is
+##   further extended with the NObjs whose keys are replacements of
+##   the templates where /{subscriber}/ is replaced with the topic
+##   notification's subscriber's NObj key.  If there is an "inherit"
+##   topic notification for the |apploach-any-channel| special
+##   channel, any channel topic notification (without explicit
+##   overridden topic notification) is applied.  Otherwise, only
+##   explicitly "inherit"ed topic notifications are applied.
+##
+## When an nevent is fired, applicable topic notifications are looked
+## up by their topics.  First, the notification whose topic is equal
+## to the NObj (|/prefix/topic|) is searched.  If not found, NObj
+## (|/prefix/topic_fallback|) are searched in order.  Any first
+## matched topic subscription for each subscriber is used to determine
+## who and whether the nevent is routed.
+sub fire_nevent ($$$;%) {
+  my ($self, $prefix, $data, %args) = @_;
+  return Promise->resolve if length $prefix and
+      not defined $self->{app}->bare_param ($prefix.'topic_nobj_key');
+  my $nevent_id;
+  my $now = time;
+  my $timestamp = 0+($args{timestamp} || $now);
+  my $expires = 0+($args{expires} || ($now + 30*24*60*60));
+  my $m = 0;
+  return Promise->all ([
+    $self->new_nobj_list ([$prefix.'topic', \'apploach-any-channel']),
+    $self->nobj_list ($prefix.'topic_fallback'),
+    $self->ids (1),
+  ])->then (sub {
+    my ($topic, $any_channel) = @{$_[0]->[0]};
+    my $topic_fallbacks = $_[0]->[1];
+    $nevent_id = $_[0]->[2]->[0];
+    my $nevent_key = $self->{app}->bare_param ($prefix.'nevent_key')
+                   // ('id-' . $nevent_id);
+
+    my $done_subscribers = {};
+    my $undecided_subscribers = {};
+
+    my $write_for_topic = sub {
+      my $current_topic = shift;
+      return if $current_topic->is_error;
+      my $ch_ids = shift; # or undef
+
+        my $n = 0;
+        my $ref;
+        return promised_until {
+          return 'done' if $n++ > 1000;
+          my $where = {
+            ($self->app_id_columns),
+            ($current_topic->to_columns ('topic')),
+          };
+          $where->{updated} = {'>', $ref} if defined $ref;
+          $where->{channel_nobj_id} = {-in => $ch_ids} if defined $ch_ids;
+          return $self->db->select ('topic_subscription', $where, fields => [
+            'subscriber_nobj_id', 'channel_nobj_id',
+            'status', 'data', 'updated',
+          ], source_name => 'master', limit => 10, order => ['updated', 'asc'])->then (sub {
+            my $all = $_[0]->all;
+            return 'done' unless @$all;
+            return ((promised_for {
+              my $v = $_[0];
+
+              if ($done_subscribers->{$v->{subscriber_nobj_id}, $v->{channel_nobj_id}}) {
+                return;
+              } elsif ($v->{status} == 2) { # enabled
+                $done_subscribers->{$v->{subscriber_nobj_id}, $v->{channel_nobj_id}} = 1;
+                #
+              } elsif ($v->{status} == 3) { # disabled
+                $done_subscribers->{$v->{subscriber_nobj_id}, $v->{channel_nobj_id}} = 1;
+                return;
+              } elsif ($v->{status} == 4) { # inherit
+                $undecided_subscribers->{$v->{subscriber_nobj_id}}->{$v->{channel_nobj_id}} = 1;
+                return;
+              } else {
+                return;
+              }
+
+              $m++;
+              return $self->db->insert ('nevent', [{
+                ($self->app_id_columns),
+                ($topic->to_columns ('topic')),
+                subscriber_nobj_id => $v->{subscriber_nobj_id},
+                nevent_id => $nevent_id,
+                unique_nevent_key => sha1_hex ($nevent_key),
+                data => Dongry::Type->serialize ('json', $data),
+                timestamp => $timestamp,
+                expires => $expires,
+              }], duplicate => 'ignore')->then (sub {
+                my $w = $_[0];
+                return $self->db->insert ('nevent_queue', [{
+                  ($self->app_id_columns),
+                  subscriber_nobj_id => $v->{subscriber_nobj_id},
+                  channel_nobj_id => $v->{channel_nobj_id},
+                  nevent_id => $nevent_id,
+                  topic_subscription_data => $v->{data},
+                  result_done => 0,
+                  result_data => '{}',
+                  locked => 0,
+                  timestamp => $timestamp,
+                  expires => $expires,
+                }], duplicate => 'ignore');
+              });
+            } $all)->then (sub {
+              $ref = $all->[-1]->{updated};
+              return not 'done';
+            }));
+          });
+        }; # promised_until
+      }; # $write_for_topic
+      
+      return ((promised_for {
+        return $write_for_topic->($_[0], undef);
+      } [$topic, @$topic_fallbacks])->then (sub {
+        my $templates = $self->{app}->bare_param_list
+            ($prefix.'topic_fallback_nobj_key_template');
+        return unless @$templates;
+        return unless keys %$undecided_subscribers;
+        return $self->_nobj_list_by_ids ([keys %$undecided_subscribers])->then (sub {
+          my $sub_map = $_[0];
+          return promised_for {
+            my $sub_id = $_[0];
+            my $sub_key = $sub_map->{$sub_id}->nobj_key;
+            my $ch_ids = $undecided_subscribers->{$sub_id}->{$any_channel->nobj_id} ? undef : [grep {
+              not $done_subscribers->{$sub_id, $_};
+            } keys %{$undecided_subscribers->{$sub_id}}];
+            return if defined $ch_ids and not @$ch_ids;
+            my $keys = [map {
+              my $v = $_;
+              $v =~ s/\{subscriber\}/$sub_key/g;
+              $v;
+            } @$templates];
+            return $self->nobj_list_by_values ($keys)->then (sub {
+              return promised_for {
+                return $write_for_topic->($_[0], $ch_ids);
+              } $_[0];
+            });
+          } [keys %$undecided_subscribers];
+        });
+      }));
+    })->then (sub {
+      return {
+        nevent_id => '' . $nevent_id,
+        timestamp => $timestamp,
+        expires => $expires,
+        queued_count => $m,
+      };
+    });
+} # fire_nevent
 
 sub run_stats ($) {
   my $self = $_[0];
