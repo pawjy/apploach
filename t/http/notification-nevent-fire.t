@@ -222,7 +222,7 @@ Test {
     }],
     [sub2 => topic_subscription => {
       topic => 't1', channel => 'c1', subscriber => 'u2',
-      status => 2, data => {foo => 12.5},
+      status => 2, data => {foo => 112.5},
     }],
     [sub3 => topic_subscription => {
       topic => 't1', channel => 'c1', subscriber => 'u3',
@@ -302,6 +302,9 @@ Test {
     my $result = $_[0];
     test {
       is 0+@{$result->{json}->{items}}, 2;
+      $result->{json}->{items} = [sort {
+        $a->{data}->{abv} <=> $b->{data}->{abv};
+      } @{$result->{json}->{items}}];
 
       my $ev1 = $result->{json}->{items}->[0];
       is $ev1->{nevent_id}, $current->o ('ev1')->{nevent_id};
@@ -319,7 +322,7 @@ Test {
       is $ev2->{topic_nobj_key}, $current->o ('t1')->{nobj_key};
       is $ev2->{subscriber_nobj_key}, $current->o ('u2')->{nobj_key};
       is $ev2->{data}->{abv}, 774;
-      is $ev2->{topic_subscription_data}->{foo}, 12.5;
+      is $ev2->{topic_subscription_data}->{foo}, 112.5;
     } $current->c, name => 'nevent_queue record';
   });
 } n => 36, name => 'multiple subscriptions';
