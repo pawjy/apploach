@@ -428,9 +428,16 @@ sub create_nobj ($$$) {
 sub _nobj ($$$) {
   my ($self, $prefix, $opts) = @_;
   return ($prefix.'_nobj_key' => (
-    defined $opts->{$prefix} ? $self->o ($opts->{$prefix})->{nobj_key} : $self->generate_key (rand, {})
+    defined $opts->{$prefix.'_nobj_key'} ? $opts->{$prefix.'_nobj_key'} :defined $opts->{$prefix} ? $self->o ($opts->{$prefix})->{nobj_key} : $self->generate_key (rand, {})
   ));
 } # _nobj
+
+sub _nobj_list ($$$) {
+  my ($self, $prefix, $opts) = @_;
+  return ($prefix.'_nobj_key' => [
+    map { $self->o ($_)->{nobj_key} } @{$opts->{$prefix} || []}
+  ]);
+} # _nobj_list
 
 sub create_comment ($$$) {
   my ($self, $name, $opts) = @_;
@@ -503,6 +510,33 @@ sub create_follow ($$$) {
     $self->set_o ($name => $result->{json});
   });
 } # create_follow
+
+sub create_topic_subscription ($$$) {
+  my ($self, $name, $opts) = @_;
+  return $self->json (['notification', 'topic', 'subscribe.json'], {
+    ($self->_nobj ('topic', $opts)),
+    ($self->_nobj ('topic_index', $opts)),
+    ($self->_nobj ('channel', $opts)),
+    ($self->_nobj ('subscriber', $opts)),
+    status => $opts->{status} // 2,
+    data => $opts->{data} // {},
+  }, app => $opts->{app})->then (sub {
+    my $result = $_[0];
+    $self->set_o ($name => $result->{json});
+  });
+} # create_topic_subscription
+
+sub create_nevent ($$$) {
+  my ($self, $name, $opts) = @_;
+  return $self->json (['notification', 'nevent', 'fire.json'], {
+    ($self->_nobj ('topic', $opts)),
+    ($self->_nobj_list ('topic_fallback', $opts)),
+    data => $opts->{data} // {},
+  }, app => $opts->{app})->then (sub {
+    my $result = $_[0];
+    $self->set_o ($name => $result->{json});
+  });
+} # create_nevent
 
 sub create_log ($$$) {
   my ($self, $name, $opts) = @_;

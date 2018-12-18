@@ -88,6 +88,83 @@ Test {
   });
 } n => 14, name => 'set follow relationship';
 
+Test {
+  my $current = shift;
+  return $current->create (
+    [a1 => account => {}],
+    [a2 => account => {}],
+    [t1 => nobj => {}],
+    ['a2-followed' => nobj => {}],
+    ['a2-any' => nobj => {}],
+    [c1 => nobj => {}],
+    [sub1 => topic_subscription => {topic => 'a2-any', subscriber => 'a2'}],
+  )->then (sub {
+    return $current->json (['follow', 'set.json'], { 
+      subject_nobj_key => $current->o ('a1')->{nobj_key},
+      object_nobj_key => $current->o ('a2')->{nobj_key},
+      verb_nobj_key => $current->o ('t1')->{nobj_key},
+      value => 4,
+      notification_topic_nobj_key => $current->o ('a2-followed')->{nobj_key},
+      notification_topic_fallback_nobj_key => [
+        $current->o ('a2-any')->{nobj_key},
+      ],
+    });
+  })->then (sub {
+    return $current->json (['notification', 'nevent', 'list.json'], {
+      subscriber_nobj_key => $current->o ('a2')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $v = $result->{json}->{items}->[0];
+      is $v->{data}->{subject_nobj_key}, $current->o ('a1')->{nobj_key};
+      is $v->{data}->{object_nobj_key}, $current->o ('a2')->{nobj_key};
+      is $v->{data}->{verb_nobj_key}, $current->o ('t1')->{nobj_key};
+      is $v->{data}->{value}, 4;
+      ok $v->{data}->{timestamp};
+    } $current->c;
+    return $current->json (['follow', 'set.json'], { 
+      subject_nobj_key => $current->o ('a1')->{nobj_key},
+      object_nobj_key => $current->o ('a2')->{nobj_key},
+      verb_nobj_key => $current->o ('t1')->{nobj_key},
+      value => 4,
+      notification_topic_nobj_key => $current->o ('a2-followed')->{nobj_key},
+      notification_topic_fallback_nobj_key => [
+        $current->o ('a2-any')->{nobj_key},
+      ],
+    });
+  })->then (sub {
+    return $current->json (['notification', 'nevent', 'list.json'], {
+      subscriber_nobj_key => $current->o ('a2')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+    } $current->c, name => 'unchanged';
+    return $current->json (['follow', 'set.json'], { 
+      subject_nobj_key => $current->o ('a1')->{nobj_key},
+      object_nobj_key => $current->o ('a2')->{nobj_key},
+      verb_nobj_key => $current->o ('t1')->{nobj_key},
+      value => 0,
+      notification_topic_nobj_key => $current->o ('a2-followed')->{nobj_key},
+      notification_topic_fallback_nobj_key => [
+        $current->o ('a2-any')->{nobj_key},
+      ],
+    });
+  })->then (sub {
+    return $current->json (['notification', 'nevent', 'list.json'], {
+      subscriber_nobj_key => $current->o ('a2')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+    } $current->c, name => 'unchanged';
+  });
+} n => 8, name => 'notification';
+
 RUN;
 
 =head1 LICENSE

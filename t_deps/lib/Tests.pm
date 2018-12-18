@@ -13,12 +13,14 @@ use ServerSet;
 use CurrentTest;
 use Test::X1;
 use Test::More;
+use Time::HiRes qw(time);
 
 our @EXPORT = grep { not /^\$/ } (
   @Test::More::EXPORT,
   @Test::X1::EXPORT,
   @JSON::PS::EXPORT,
   @Promised::Flow::EXPORT,
+  'time',
 );
 
 sub import ($;@) {

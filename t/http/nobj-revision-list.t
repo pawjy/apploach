@@ -128,8 +128,11 @@ Test {
     );
   })->then (sub {
     return $current->are_empty (
-      [['nobj', 'revision', 'list.json'], {}],
+      [['nobj', 'revision', 'list.json'], {
+        target_nobj_key => $current->o ('t1')->{nobj_key},
+      }],
       [
+        'app_id',
         {params => {
           target_nobj_key => $current->o ('a1')->{nobj_key},
         }, name => 'not target 1 (found)'},
