@@ -303,7 +303,8 @@ Test {
     test {
       is 0+@{$result->{json}->{items}}, 2;
       $result->{json}->{items} = [sort {
-        $a->{data}->{abv} <=> $b->{data}->{abv};
+        $a->{topic_subscription_data}->{foo} <=>
+        $b->{topic_subscription_data}->{foo};
       } @{$result->{json}->{items}}];
 
       my $ev1 = $result->{json}->{items}->[0];
