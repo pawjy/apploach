@@ -3177,6 +3177,153 @@ sub run_notification ($) {
     });
   }
 
+  ## Hooks.  A hook represents an external URL that should be invoked
+  ## upon relevants events.  It can be used to store end point URLs
+  ## for the Push API, for example.  A hook has subscriber : NObj,
+  ## type : NObj, which represents the application-specific kind of
+  ## the hook, URL : String, status : Integer, which represents the
+  ## application-specific status of the hook, data : Object, which can
+  ## contain application-specific parameters of the hook.  There can
+  ## be at most one hook of same (subscriber, type, URL) tuple.
+
+  if (@{$self->{path}} == 2 and
+      $self->{path}->[0] eq 'hook' and
+      $self->{path}->[1] eq 'subscribe.json') {
+    ## /{app_id}/notification/hook/subscribe.json - Add a hook.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|subscriber|) : The hook's subscriber.  Required.
+    ##
+    ##   NObj (|type|) : The hook's type.  Required.
+    ##
+    ##   |url| : String : The hook's URL.  It must be an absolute URL.
+    ##   Required.
+    ##
+    ##   |status| : Integer : The hook's status.  Required.  If the
+    ##   value is |0|, any existing hook is removed.
+    ##
+    ##   |data| : JSON object : The hook's data.  Required.
+    ##
+    ## Empty response.
+    return Promise->all ([
+      $self->new_nobj_list (['subscriber', 'type']),
+    ])->then (sub {
+      my ($subscriber, $type) = @{$_[0]->[0]};
+
+      my $u = $self->{app}->text_param ('url') // '';
+      return $self->throw ({reason => 'Bad |url|'}) unless length $u;
+      my $url = Web::URL->parse_string ($u);
+      return $self->throw ({reason => 'Bad |url|'}) unless defined $url;
+      $url = Dongry::Type->serialize ('text', $url->stringify);
+      ## Non HTTP(S) URLs are also allowed.
+
+      my $status = $self->{app}->bare_param ('status') // '';
+      return $self->throw ({reason => "Bad |status|"})
+          unless ($status =~ /\A[1-9][0-9]*\z/ and
+                  1 < $status and $status < 255) or $status eq '0';
+      my $data = $self->json_object_param ('data');
+
+      return $self->db->delete ('hook', {
+        ($self->app_id_columns),
+        ($subscriber->to_columns ('subscriber')),
+        ($type->to_columns ('type')),
+        url => $url,
+        url_sha => sha1_hex ($url),
+      }, source_name => 'master') if $status eq '0';
+      
+      my $time = time;
+      return $self->db->insert ('hook', [{
+        ($self->app_id_columns),
+        ($subscriber->to_columns ('subscriber')),
+        ($type->to_columns ('type')),
+        url => $url,
+        url_sha => sha1_hex ($url),
+        status => $status,
+        created => $time,
+        updated => $time,
+        data => Dongry::Type->serialize ('json', $data),
+      }], duplicate => {
+        data => $self->db->bare_sql_fragment ('VALUES(`data`)'),
+        updated => $self->db->bare_sql_fragment ('VALUES(`updated`)'),
+        status => $self->db->bare_sql_fragment ('VALUES(`status`)'),
+      }, source_name => 'master');
+    })->then (sub {
+      return $self->json ({});
+    });
+  } elsif (@{$self->{path}} == 2 and
+           $self->{path}->[0] eq 'hook' and
+           $self->{path}->[1] eq 'list.json') {
+    ## /{app_id}/notification/hook/list.json - Get hooks.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|subscriber|) : The hook's subscriber.  Required.
+    ##
+    ##   NObj (|type|) : The hook's type.  Zero or more parameters can
+    ##   be specified.
+    ##
+    ##   Pages.
+    ##
+    ## List response of:
+    ##
+    ##   NObj (|subscriber|) : The hook's subscriber.
+    ##
+    ##   NObj (|type|) : The hook's type.
+    ##
+    ##   |created| : Timestamp : The hook's created.
+    ##
+    ##   |updated| : Timestamp : The hook's updated.
+    ##
+    ##   |status| : Integer : The hook's status.
+    ##
+    ##   |data| : Object : The hook's data.
+    ##
+    my $page = Pager::this_page ($self, limit => 100, max_limit => 10000);
+    return Promise->all ([
+      $self->nobj_list_set (['type', 'subscriber']),
+    ])->then (sub {
+      my ($types, $subscribers) = @{$_[0]->[0]};
+
+      my $has_types = 0+@$types;
+      $types = [grep { not $_->is_error } @$types];
+      my $subscriber = $subscribers->[0];
+      return $self->throw ({reason => "Bad subscriber"})
+          unless defined $subscriber;
+      
+      return [] if $subscriber->is_error;
+      return [] if $has_types and not @$types;
+
+      my $where = {
+        ($self->app_id_columns),
+        ($subscriber->to_columns ('subscriber')),
+      };
+      $where->{type_nobj_id} = {-in => [map { $_->nobj_id } @$types]}
+          if @$types;
+      $where->{updated} = $page->{value} if defined $page->{value};
+
+      return $self->db->select ('hook', $where, fields => [
+        'subscriber_nobj_id', 'type_nobj_id', 'url',
+        'status', 'data', 'created', 'updated',
+      ], source_name => 'master',
+        offset => $page->{offset}, limit => $page->{limit},
+        order => ['updated', $page->{order_direction}],
+      )->then (sub {
+        return $_[0]->all->to_a;
+      });
+    })->then (sub {
+      return $self->replace_nobj_ids ($_[0], ['subscriber', 'type']);
+    })->then (sub {
+      my $items = $_[0];
+      my $next_page = Pager::next_page $page, $items, 'updated';
+      for (@$items) {
+        $_->{data} = Dongry::Type->parse ('json', $_->{data});
+        $_->{url} = Dongry::Type->parse ('text', $_->{url});
+      }
+      return $self->json ({items => $items, %$next_page});
+    });
+  }
+
   return $self->{app}->throw_error (404);
 } # run_notification
 
@@ -3278,7 +3425,7 @@ sub fire_nevent ($$$;%) {
                 unique_nevent_key => sha1_hex ($nevent_key),
                 data => Dongry::Type->serialize ('json', $data),
                 timestamp => $timestamp,
-                expires => $expires,
+                expires => $expires, # XXX replace
               }], duplicate => 'ignore')->then (sub {
                 my $w = $_[0];
                 return $self->db->insert ('nevent_queue', [{
