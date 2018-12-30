@@ -295,6 +295,22 @@ create table if not exists `nevent_list` (
   key (`last_checked`)
 ) default charset=binary engine=innodb;
 
+create table if not exists `hook` (
+  `app_id` bigint unsigned not null,
+  `subscriber_nobj_id` bigint unsigned not null,
+  `type_nobj_id` bigint unsigned not null,
+  `url_sha` binary(40) not null,
+  `url` varbinary(2047) not null,
+  `created` double not null,
+  `updated` double not null,
+  `status` tinyint unsigned not null,
+  `data` mediumblob not null,
+  primary key (`app_id`, `subscriber_nobj_id`, `type_nobj_id`, `url_sha`),
+  key (`app_id`, `subscriber_nobj_id`, `updated`),
+  key (`created`),
+  key (`updated`)
+) default charset=binary engine=innodb;
+
 create table if not exists `day_stats` (
   `app_id` bigint unsigned not null,
   `item_nobj_id` bigint unsigned not null,

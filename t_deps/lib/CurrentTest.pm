@@ -90,6 +90,11 @@ sub _sn ($) {
   return $s;
 } # _sn
 
+sub generate_url ($$$) {
+  my ($self, $name, $opts) = @_;
+  return $self->set_o ($name => 'https://' . rand . '.test/' . rand);
+} # generate_url
+
 sub generate_text ($$$) {
   my ($self, $name, $opts) = @_;
   my $v = rand;
@@ -537,6 +542,22 @@ sub create_nevent ($$$) {
     $self->set_o ($name => $result->{json});
   });
 } # create_nevent
+
+sub create_hook ($$$) {
+  my ($self, $name, $opts) = @_;
+  my $url = $opts->{url} // $self->generate_url (rand, {});
+  return $self->json (['notification', 'hook', 'subscribe.json'], {
+    ($self->_nobj ('type', $opts)),
+    ($self->_nobj ('subscriber', $opts)),
+    url => $url,
+    status => $opts->{status} // 2,
+    data => $opts->{data} // {},
+  }, app => $opts->{app})->then (sub {
+    my $result = $_[0];
+    $self->set_o ($name => $result->{json});
+    $result->{json}->{url} = $url;
+  });
+} # create_hook
 
 sub create_log ($$$) {
   my ($self, $name, $opts) = @_;
