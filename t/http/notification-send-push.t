@@ -50,6 +50,45 @@ Test {
   });
 } n => 3, name => 'push';
 
+Test {
+  my $current = shift;
+  return $current->create (
+    [t1 => nobj => {}],
+    [t2 => nobj => {}],
+    [c1 => nobj => {}],
+    [u1 => nobj => {}],
+    [sub1 => topic_subscription => {
+      topic => 't1', channel => 'c1', subscriber => 'u1',
+      status => 2, data => {foo => 54},
+    }],
+    [ev1 => nevent => {
+      topic => 't1', data => {abv => 774},
+    }],
+  )->then (sub {
+    return $current->json (['notification', 'nevent', 'lockqueued.json'], {
+      channel_nobj_key => $current->o ('c1')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    return $current->json (['notification', 'send', 'push.json'], {
+      url => [$current->generate_push_url (e1 => {}),
+              $current->generate_url (e2 => {})],
+      nevent_channel_nobj_key => $current->o ('c1')->{nobj_key},
+      nevent_subscriber_nobj_key => $current->o ('u1')->{nobj_key},
+      nevent_id => $result->{json}->{nevent_id},
+    });
+  })->then (sub {
+    return $current->json (['notification', 'nevent', 'lockqueued.json'], {
+      channel_nobj_key => $current->o ('c1')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 0;
+    } $current->c;
+  });
+} n => 1, name => 'push & done';
+
 RUN;
 
 =head1 LICENSE

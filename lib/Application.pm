@@ -3144,7 +3144,6 @@ sub run_notification ($) {
     ##   Required.
     ##
     ## Empty response.
-    ##
     return Promise->all ([
       $self->nobj ('subscriber'),
       $self->nobj ('channel'),
@@ -3152,30 +3151,12 @@ sub run_notification ($) {
       my ($subscriber, $channel) = @{$_[0]};
       my $nevent_id = $self->{app}->bare_param ('nevent_id') // '';
       my $data = $self->json_object_param ('data');
-      return if $subscriber->is_error or $channel->is_error;
-      return unless length $nevent_id;
-      
-      return $self->db->update ('nevent_queue', {
-        result_done => 1,
-        result_data => Dongry::Type->serialize ('json', $data),
-      }, where => {
-        ($self->app_id_columns),
-        ($subscriber->to_columns ('subscriber')),
-        ($channel->to_columns ('channel')),
-        nevent_id => $nevent_id,
-      }, source_name => 'master');
+      return $self->done_queued_nevent
+          ($subscriber, $channel, $nevent_id, $data);
     })->then (sub {
       return $self->json ({});
     })->then (sub {
-      my $now = time;
-      return Promise->all ([
-        $self->db->delete ('nevent', {
-          expires => {'<=', $now},
-        }, source_name => 'master'),
-        $self->db->delete ('nevent_queue', {
-          expires => {'<=', $now},
-        }, source_name => 'master'),
-      ]);
+      return $self->expire_old_nevents;
     });
   }
 
@@ -3334,11 +3315,21 @@ sub run_notification ($) {
     ##
     ## Parameters.
     ##
-    ##   |url| : String : The hook's URL.  It must be an absolute
-    ##   |https:| URL.  Zero or more parameters can be specified.
+    ##   |url| : String : The Push API end point URL.  It must be an
+    ##   absolute |https:| URL.  Zero or more parameters can be
+    ##   specified.
+    ##
+    ##   |nevent_id| : ID : The queued nevent's ID.  If specified, the
+    ##   queued nevent is marked as processed (equivalent to
+    ##   |/notification/nevent/donequeued.json|).
+    ##
+    ##   NObj (|nevent_channel|) : The queued nevent's channel.
+    ##   Required if |nevent_id| is specified.
+    ##
+    ##   NObj (|nevent_subscriber|) : The queued nevent's subscriber.
+    ##   Required if |nevent_id| is specified.
     ##
     ## Empty response.
-
     my $urls = [];
     for my $u (@{$self->{app}->text_param_list ('url')}) {
       my $url = Web::URL->parse_string ($u);
@@ -3348,29 +3339,51 @@ sub run_notification ($) {
       }
       push @$urls, $url;
     }
+
     my $clients = {}; # XXX persistent?
-    return ((promised_for {
-      my $url = shift;
-      my $client = $clients->{$url->get_origin->to_ascii} ||= Web::Transport::BasicClient->new_from_url ($url);
-      return $client->request (
-        url => $url,
-        method => 'POST',
-      )->then (sub {
-        my $res = $_[0];
-        if ($res->status != 200) {
-          warn $res;
-          # XXX logging for app devs
-        }
-      }, sub {
-        my $error = $_[0];
-        warn $error;
-        # XXX logging for app devs
-      });
-    } $urls)->then (sub {
+    my $nevent_id = $self->{app}->bare_param ('nevent_id');
+    return Promise->all (defined $nevent_id ? [
+      $self->nobj ('nevent_channel'), $self->nobj ('nevent_subscriber'),
+    ] : [])->then (sub {
+      my ($nevent_channel, $nevent_subscriber) = @_;
+      my $nevent_done = {apploach_errors => []};
+      
+      return ((promised_for {
+        my $url = shift;
+        my $client = $clients->{$url->get_origin->to_ascii}
+            ||= Web::Transport::BasicClient->new_from_url ($url);
+        return $client->request (
+          url => $url,
+          method => 'POST',
+        )->then (sub {
+          my $res = $_[0];
+          if ($res->status != 200) {
+            warn $res;
+            push @{$nevent_done->{apploach_errors}},
+                {request => {url => $url->stringify,
+                             method => 'POST'},
+                 response => {status => $res->status}};
+          }
+        }, sub {
+          my $error = $_[0];
+          warn $error;
+          push @{$nevent_done->{apploach_errors}},
+              {request => {url => $url->stringify,
+                           method => 'POST'},
+               response => {error_message => '' . $error}};
+        });
+      } $urls)->then (sub {
+        return unless defined $nevent_id;
+        return $self->done_queued_nevent
+            ($nevent_subscriber, $nevent_channel, $nevent_id, $nevent_done);
+      }));
+    })->then (sub {
       return $self->json ({});
     })->finally (sub {
       return Promise->all ([map { $_->close } values %$clients]);
-    }));
+    })->then (sub {
+      return $self->expire_old_nevents;
+    });
   }
 
   return $self->{app}->throw_error (404);
@@ -3536,6 +3549,34 @@ sub fire_nevent ($$$;%) {
       };
     });
 } # fire_nevent
+
+sub expire_old_nevents ($) {
+  my $self = $_[0];
+  my $now = time;
+  return Promise->all ([
+    $self->db->delete ('nevent', {
+      expires => {'<=', $now},
+    }, source_name => 'master'),
+    $self->db->delete ('nevent_queue', {
+      expires => {'<=', $now},
+    }, source_name => 'master'),
+  ]);
+} # expire_old_nevents
+
+sub done_queued_nevent ($$$$$) {
+  my ($self, $subscriber, $channel, $nevent_id, $data) = @_;
+  return if $subscriber->is_error or $channel->is_error;
+  return unless defined $nevent_id and length $nevent_id;
+  return $self->db->update ('nevent_queue', {
+    result_done => 1,
+    result_data => Dongry::Type->serialize ('json', $data),
+  }, where => {
+    ($self->app_id_columns),
+    ($subscriber->to_columns ('subscriber')),
+    ($channel->to_columns ('channel')),
+    nevent_id => $nevent_id,
+  }, source_name => 'master');
+} # done_queued_nevent
 
 sub run_stats ($) {
   my $self = $_[0];
