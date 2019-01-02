@@ -3268,32 +3268,11 @@ sub run_notification ($) {
     ])->then (sub {
       my ($types, $subscribers) = @{$_[0]->[0]};
 
-      my $has_types = 0+@$types;
-      $types = [grep { not $_->is_error } @$types];
       my $subscriber = $subscribers->[0];
       return $self->throw ({reason => "Bad subscriber"})
           unless defined $subscriber;
-      
-      return [] if $subscriber->is_error;
-      return [] if $has_types and not @$types;
 
-      my $where = {
-        ($self->app_id_columns),
-        ($subscriber->to_columns ('subscriber')),
-      };
-      $where->{type_nobj_id} = {-in => [map { $_->nobj_id } @$types]}
-          if @$types;
-      $where->{updated} = $page->{value} if defined $page->{value};
-
-      return $self->db->select ('hook', $where, fields => [
-        'subscriber_nobj_id', 'type_nobj_id', 'url',
-        'status', 'data', 'created', 'updated',
-      ], source_name => 'master',
-        offset => $page->{offset}, limit => $page->{limit},
-        order => ['updated', $page->{order_direction}],
-      )->then (sub {
-        return $_[0]->all->to_a;
-      });
+      return $self->get_hooks ($subscriber, $types, $page);
     })->then (sub {
       return $self->replace_nobj_ids ($_[0], ['subscriber', 'type']);
     })->then (sub {
@@ -3319,14 +3298,17 @@ sub run_notification ($) {
     ##   absolute |https:| URL.  Zero or more parameters can be
     ##   specified.
     ##
+    ##   NObj (|nevent_subscriber|) : The subscriber.  If no |url|
+    ##   parameter is specified, URLs of the hooks whose subscriber is
+    ##   the specified subscriber, type is |apploach-push|, and status
+    ##   is |2|, are used. If |nevent_id| is specified, the subscriber
+    ##   is also used as the queued nevent's subscriber.
+    ##
     ##   |nevent_id| : ID : The queued nevent's ID.  If specified, the
     ##   queued nevent is marked as processed (equivalent to
     ##   |/notification/nevent/donequeued.json|).
     ##
     ##   NObj (|nevent_channel|) : The queued nevent's channel.
-    ##   Required if |nevent_id| is specified.
-    ##
-    ##   NObj (|nevent_subscriber|) : The queued nevent's subscriber.
     ##   Required if |nevent_id| is specified.
     ##
     ## Empty response.
@@ -3342,12 +3324,29 @@ sub run_notification ($) {
 
     my $clients = {}; # XXX persistent?
     my $nevent_id = $self->{app}->bare_param ('nevent_id');
-    return Promise->all (defined $nevent_id ? [
-      $self->nobj ('nevent_channel'), $self->nobj ('nevent_subscriber'),
-    ] : [])->then (sub {
-      my ($nevent_channel, $nevent_subscriber) = @_;
-      my $nevent_done = {apploach_errors => []};
-      
+    my ($nevent_channel, $nevent_subscriber);
+    my $nevent_done = {apploach_errors => []};
+    return Promise->all ([
+      $self->nobj ('nevent_channel'),
+      $self->nobj ('nevent_subscriber'),
+      $self->new_nobj_list ([\'apploach-push']),
+    ])->then (sub {
+      ($nevent_channel, $nevent_subscriber) = @{$_[0]};
+      return [] if @$urls;
+      my ($push) = @{$_[0]->[2]};
+      return $self->get_hooks ($nevent_subscriber, [$push], {
+        order_direction => 'ASC',
+        offset => 0, limit => 100000, # XXX page iterator?
+      });
+    })->then (sub {
+      for (@{$_[0]}) {
+        next unless $_->{status} == 2; # enabled
+        my $url = Web::URL->parse_string (Dongry::Type->parse ('text', $_->{url}));
+        if (defined $url and ($url->scheme eq 'https' or
+                              ($url->scheme eq 'http' and $self->{config}->{is_test_script}))) { # XXX
+          push @$urls, $url;
+        }
+      }
       return ((promised_for {
         my $url = shift;
         my $client = $clients->{$url->get_origin->to_ascii}
@@ -3577,6 +3576,34 @@ sub done_queued_nevent ($$$$$) {
     nevent_id => $nevent_id,
   }, source_name => 'master');
 } # done_queued_nevent
+
+sub get_hooks ($$$$) {
+  my ($self, $subscriber, $types, $page) = @_;
+
+  my $has_types = 0+@$types;
+  $types = [grep { not $_->is_error } @$types];
+
+  return [] if $subscriber->is_error;
+  return [] if $has_types and not @$types;
+
+  my $where = {
+    ($self->app_id_columns),
+    ($subscriber->to_columns ('subscriber')),
+  };
+  $where->{type_nobj_id} = {-in => [map { $_->nobj_id } @$types]}
+      if @$types;
+  $where->{updated} = $page->{value} if defined $page->{value};
+
+  return $self->db->select ('hook', $where, fields => [
+    'subscriber_nobj_id', 'type_nobj_id', 'url',
+    'status', 'data', 'created', 'updated',
+  ], source_name => 'master',
+    offset => $page->{offset}, limit => $page->{limit},
+    order => ['updated', $page->{order_direction}],
+  )->then (sub {
+    return $_[0]->all->to_a;
+  }); # url and data is not decoded!
+} # get_hooks
 
 sub run_stats ($) {
   my $self = $_[0];

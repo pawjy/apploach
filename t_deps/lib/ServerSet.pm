@@ -736,6 +736,7 @@ sub _xs ($%) {
     return Sarze->start (
       hostports => [[$url->host->to_ascii, $url->port]],
       psgi_file_name => $RootPath->child ('t_deps/bin/xs.psgi'),
+      max_worker_count => 1,
       #debug => 2,
     );
   })->then (sub {
