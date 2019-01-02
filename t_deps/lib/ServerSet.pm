@@ -16,6 +16,8 @@ use Dongry::SQL qw(quote);
 use Web::Host;
 use Web::URL;
 use Web::Transport::BasicClient;
+use Sarze;
+
 use DockerStack;
 use Migration;
 
@@ -532,10 +534,11 @@ sub _docker ($%) {
     $args{signal}->manakai_onabort (sub {
       $s_s->($stop->());
     });
+    $args{signal}->manakai_onabort->() if $args{signal}->aborted;
     return [$data, $r_s];
   })->catch (sub {
     my $e = $_[0];
-    warn $out;
+    warn $out . "\n" . $e;
     $args{signal}->manakai_onabort (sub { });
     return $stop->()->then (sub { die $e });
   });
@@ -665,6 +668,7 @@ sub _docker_app ($%) {
     $args{signal}->manakai_onabort (sub {
       $s_s->($stop->());
     });
+    $args{signal}->manakai_onabort->() if $args{signal}->aborted;
     return [$data, $r_s];
   })->catch (sub {
     my $e = $_[0];
@@ -692,7 +696,7 @@ sub _app ($%) {
     $args{receive_docker_data},
   ])->then (sub {
     my ($docker_data) = @{$_[0]};
-    my $config = {};
+    my $config = {is_test_script => 1};
 
     $config->{bearer} = $self->_key ('app_bearer');
     $config->{dsn} = $docker_data->{mysqld}->{local_dsn}->{apploach};
@@ -716,6 +720,7 @@ sub _app ($%) {
         (Web::URL->parse_string ('/robots.txt', $self->_local_url ('app')),
          $ac->signal);
   })->then (sub {
+    $sarze->send_signal ('TERM') if $args{signal}->aborted;
     return [undef, $sarze->wait];
   })->catch (sub {
     my $e = $_[0];
@@ -723,6 +728,33 @@ sub _app ($%) {
     return $sarze->wait->then (sub { die $e });
   });
 } # _app
+
+sub _xs ($%) {
+  my ($self, %args) = @_;
+  return Promise->resolve->then (sub {
+    my $url = $self->_local_url ('xs');
+    return Sarze->start (
+      hostports => [[$url->host->to_ascii, $url->port]],
+      psgi_file_name => $RootPath->child ('t_deps/bin/xs.psgi'),
+      #debug => 2,
+    );
+  })->then (sub {
+    my $sarze = $_[0];
+    return Promise->resolve->then (sub {
+      return wait_for_http
+          (Web::URL->parse_string ('/robots.txt', $self->_local_url ('xs')),
+           $args{signal});
+    })->then (sub {
+      $sarze->stop if $args{signal}->aborted;
+      $args{signal}->manakai_onabort (sub { $sarze->stop });
+      return [undef, $sarze->completed];
+    })->catch (sub {
+      my $e = $_[0];
+      $sarze->stop;
+      return $sarze->wait->then (sub { die $e });
+    });
+  });
+} # _xs
 
 sub run ($%) {
   my ($class, %args) = @_;
@@ -782,6 +814,8 @@ sub run ($%) {
       requires => ['docker'],
       exposed_hostports => [['app', $args{app_host}, $args{app_port}]],
       persistent_keys => [qw(app_bearer)],
+    },
+    xs => {
     },
   }; # $servers
 
@@ -886,7 +920,7 @@ sub run ($%) {
 
 =head1 LICENSE
 
-Copyright 2018 Wakaba <wakaba@suikawiki.org>.
+Copyright 2018-2019 Wakaba <wakaba@suikawiki.org>.
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself.

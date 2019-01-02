@@ -26,6 +26,8 @@ use Pager;
 ## specified to the |APP_CONFIG| environment variable.  The JSON file
 ## must contain an object with following name/value pairs:
 ##
+##   |is_test_script| : Boolean : Whether it is a test script or not.
+##
 ##   |bearer| : Key : The bearer (API key).
 ##
 ##   |dsn| : String : The DSN of the MySQL database.
@@ -3324,6 +3326,53 @@ sub run_notification ($) {
     });
   }
 
+  if (@{$self->{path}} == 2 and
+      $self->{path}->[0] eq 'send' and
+      $self->{path}->[1] eq 'push.json') {
+    ## /{app_id}/notification/send/push.json - Send a Push API
+    ## notification.
+    ##
+    ## Parameters.
+    ##
+    ##   |url| : String : The hook's URL.  It must be an absolute
+    ##   |https:| URL.  Zero or more parameters can be specified.
+    ##
+    ## Empty response.
+
+    my $urls = [];
+    for my $u (@{$self->{app}->text_param_list ('url')}) {
+      my $url = Web::URL->parse_string ($u);
+      unless (defined $url and ($url->scheme eq 'https' or
+                                ($url->scheme eq 'http' and $self->{config}->{is_test_script}))) { # XXX
+        return $self->throw ({reason => 'Bad |url|'});
+      }
+      push @$urls, $url;
+    }
+    my $clients = {}; # XXX persistent?
+    return ((promised_for {
+      my $url = shift;
+      my $client = $clients->{$url->get_origin->to_ascii} ||= Web::Transport::BasicClient->new_from_url ($url);
+      return $client->request (
+        url => $url,
+        method => 'POST',
+      )->then (sub {
+        my $res = $_[0];
+        if ($res->status != 200) {
+          warn $res;
+          # XXX logging for app devs
+        }
+      }, sub {
+        my $error = $_[0];
+        warn $error;
+        # XXX logging for app devs
+      });
+    } $urls)->then (sub {
+      return $self->json ({});
+    })->finally (sub {
+      return Promise->all ([map { $_->close } values %$clients]);
+    }));
+  }
+
   return $self->{app}->throw_error (404);
 } # run_notification
 
@@ -4444,7 +4493,7 @@ sub close ($) {
 
 =head1 LICENSE
 
-Copyright 2018 Wakaba <wakaba@suikawiki.org>.
+Copyright 2018-2019 Wakaba <wakaba@suikawiki.org>.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as
