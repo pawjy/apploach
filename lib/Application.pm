@@ -3183,8 +3183,7 @@ sub run_notification ($) {
     ##   |url| : String : The hook's URL.  It must be an absolute URL.
     ##   Required.
     ##
-    ##   |status| : Integer : The hook's status.  Required.  If the
-    ##   value is |0|, any existing hook is removed.
+    ##   |status| : Integer : The hook's status.  Required.
     ##
     ##   |data| : JSON object : The hook's data.  Required.
     ##
@@ -3204,16 +3203,8 @@ sub run_notification ($) {
       my $status = $self->{app}->bare_param ('status') // '';
       return $self->throw ({reason => "Bad |status|"})
           unless ($status =~ /\A[1-9][0-9]*\z/ and
-                  1 < $status and $status < 255) or $status eq '0';
+                  1 < $status and $status < 255);
       my $data = $self->json_object_param ('data');
-
-      return $self->db->delete ('hook', {
-        ($self->app_id_columns),
-        ($subscriber->to_columns ('subscriber')),
-        ($type->to_columns ('type')),
-        url => $url,
-        url_sha => sha1_hex ($url),
-      }, source_name => 'master') if $status eq '0';
       
       my $time = time;
       return $self->db->insert ('hook', [{
@@ -3230,6 +3221,55 @@ sub run_notification ($) {
         data => $self->db->bare_sql_fragment ('VALUES(`data`)'),
         updated => $self->db->bare_sql_fragment ('VALUES(`updated`)'),
         status => $self->db->bare_sql_fragment ('VALUES(`status`)'),
+      }, source_name => 'master');
+    })->then (sub {
+      return $self->json ({});
+    });
+  } elsif (@{$self->{path}} == 2 and
+           $self->{path}->[0] eq 'hook' and
+           $self->{path}->[1] eq 'delete.json') {
+    ## /{app_id}/notification/hook/delete.json - Delete a hook.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|subscriber|) : The hook's subscriber.  Required.
+    ##
+    ##   NObj (|type|) : The hook's type.  Required.
+    ##
+    ##   |url| : String : The hook's URL.  It must be an absolute URL.
+    ##
+    ##   |url_sha| : String : An opaque string identifying the hook
+    ##   instead of |url|.  Either |url| or |url_sha| is required.
+    ##
+    ## Empty response.
+    return Promise->all ([
+      $self->nobj ('subscriber'),
+      $self->nobj ('type'),
+    ])->then (sub {
+      my ($subscriber, $type) = @{$_[0]};
+      
+      my $u = $self->{app}->text_param ('url');
+      my $hk = $self->{app}->bare_param ('url_sha');
+      return $self->throw ({reason => 'Bad |url|'})
+          unless defined $u or defined $hk;
+      my $url;
+      if (defined $u) {
+        return unless length $u;
+        $url = Web::URL->parse_string ($u);
+        return unless defined $url;
+        $url = Dongry::Type->serialize ('text', $url->stringify);
+      }
+      my $url_sha = $hk // sha1_hex ($url);
+
+      return if $subscriber->is_error;
+      return if $type->is_error;
+      
+      return $self->db->delete ('hook', {
+        ($self->app_id_columns),
+        ($subscriber->to_columns ('subscriber')),
+        ($type->to_columns ('type')),
+        (defined $url ? (url => $url) : ()),
+        url_sha => $url_sha,
       }, source_name => 'master');
     })->then (sub {
       return $self->json ({});
@@ -3253,6 +3293,11 @@ sub run_notification ($) {
     ##   NObj (|subscriber|) : The hook's subscriber.
     ##
     ##   NObj (|type|) : The hook's type.
+    ##
+    ##   |url| : String : The hook's URL.
+    ##
+    ##   |url_sha| : String : An opaque string identifying the hook
+    ##   instead of |url|.
     ##
     ##   |created| : Timestamp : The hook's created.
     ##
@@ -3595,7 +3640,7 @@ sub get_hooks ($$$$) {
   $where->{updated} = $page->{value} if defined $page->{value};
 
   return $self->db->select ('hook', $where, fields => [
-    'subscriber_nobj_id', 'type_nobj_id', 'url',
+    'subscriber_nobj_id', 'type_nobj_id', 'url', 'url_sha',
     'status', 'data', 'created', 'updated',
   ], source_name => 'master',
     offset => $page->{offset}, limit => $page->{limit},
