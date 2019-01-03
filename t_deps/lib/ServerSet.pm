@@ -558,7 +558,7 @@ sub _docker_app ($%) {
           $args{receive_docker_data},
         ])->then (sub {
           my ($docker_data) = @{$_[0]};
-          my $config = {};
+          my $config = {is_test_script => 1};
 
           $config->{bearer} = $self->_key ('app_bearer');
           $config->{dsn} = $docker_data->{mysqld}->{docker_dsn}->{apploach};
