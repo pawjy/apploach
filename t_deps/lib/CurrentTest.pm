@@ -95,6 +95,11 @@ sub generate_url ($$$) {
   return $self->set_o ($name => 'https://' . rand . '.test/' . rand);
 } # generate_url
 
+sub generate_push_url ($$$) {
+  my ($self, $name, $opts) = @_;
+  return $self->set_o ($name => 'http://xs.server.test/push/' . rand);
+} # generate_push_url
+
 sub generate_text ($$$) {
   my ($self, $name, $opts) = @_;
   my $v = rand;
@@ -614,7 +619,7 @@ sub create_tag ($$$) {
 
 =head1 LICENSE
 
-Copyright 2018 Wakaba <wakaba@suikawiki.org>.
+Copyright 2018-2019 Wakaba <wakaba@suikawiki.org>.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as

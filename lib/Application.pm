@@ -26,6 +26,8 @@ use Pager;
 ## specified to the |APP_CONFIG| environment variable.  The JSON file
 ## must contain an object with following name/value pairs:
 ##
+##   |is_test_script| : Boolean : Whether it is a test script or not.
+##
 ##   |bearer| : Key : The bearer (API key).
 ##
 ##   |dsn| : String : The DSN of the MySQL database.
@@ -3142,7 +3144,6 @@ sub run_notification ($) {
     ##   Required.
     ##
     ## Empty response.
-    ##
     return Promise->all ([
       $self->nobj ('subscriber'),
       $self->nobj ('channel'),
@@ -3150,30 +3151,12 @@ sub run_notification ($) {
       my ($subscriber, $channel) = @{$_[0]};
       my $nevent_id = $self->{app}->bare_param ('nevent_id') // '';
       my $data = $self->json_object_param ('data');
-      return if $subscriber->is_error or $channel->is_error;
-      return unless length $nevent_id;
-      
-      return $self->db->update ('nevent_queue', {
-        result_done => 1,
-        result_data => Dongry::Type->serialize ('json', $data),
-      }, where => {
-        ($self->app_id_columns),
-        ($subscriber->to_columns ('subscriber')),
-        ($channel->to_columns ('channel')),
-        nevent_id => $nevent_id,
-      }, source_name => 'master');
+      return $self->done_queued_nevent
+          ($subscriber, $channel, $nevent_id, $data);
     })->then (sub {
       return $self->json ({});
     })->then (sub {
-      my $now = time;
-      return Promise->all ([
-        $self->db->delete ('nevent', {
-          expires => {'<=', $now},
-        }, source_name => 'master'),
-        $self->db->delete ('nevent_queue', {
-          expires => {'<=', $now},
-        }, source_name => 'master'),
-      ]);
+      return $self->expire_old_nevents;
     });
   }
 
@@ -3200,8 +3183,7 @@ sub run_notification ($) {
     ##   |url| : String : The hook's URL.  It must be an absolute URL.
     ##   Required.
     ##
-    ##   |status| : Integer : The hook's status.  Required.  If the
-    ##   value is |0|, any existing hook is removed.
+    ##   |status| : Integer : The hook's status.  Required.
     ##
     ##   |data| : JSON object : The hook's data.  Required.
     ##
@@ -3221,16 +3203,8 @@ sub run_notification ($) {
       my $status = $self->{app}->bare_param ('status') // '';
       return $self->throw ({reason => "Bad |status|"})
           unless ($status =~ /\A[1-9][0-9]*\z/ and
-                  1 < $status and $status < 255) or $status eq '0';
+                  1 < $status and $status < 255);
       my $data = $self->json_object_param ('data');
-
-      return $self->db->delete ('hook', {
-        ($self->app_id_columns),
-        ($subscriber->to_columns ('subscriber')),
-        ($type->to_columns ('type')),
-        url => $url,
-        url_sha => sha1_hex ($url),
-      }, source_name => 'master') if $status eq '0';
       
       my $time = time;
       return $self->db->insert ('hook', [{
@@ -3247,6 +3221,55 @@ sub run_notification ($) {
         data => $self->db->bare_sql_fragment ('VALUES(`data`)'),
         updated => $self->db->bare_sql_fragment ('VALUES(`updated`)'),
         status => $self->db->bare_sql_fragment ('VALUES(`status`)'),
+      }, source_name => 'master');
+    })->then (sub {
+      return $self->json ({});
+    });
+  } elsif (@{$self->{path}} == 2 and
+           $self->{path}->[0] eq 'hook' and
+           $self->{path}->[1] eq 'delete.json') {
+    ## /{app_id}/notification/hook/delete.json - Delete a hook.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|subscriber|) : The hook's subscriber.  Required.
+    ##
+    ##   NObj (|type|) : The hook's type.  Required.
+    ##
+    ##   |url| : String : The hook's URL.  It must be an absolute URL.
+    ##
+    ##   |url_sha| : String : An opaque string identifying the hook
+    ##   instead of |url|.  Either |url| or |url_sha| is required.
+    ##
+    ## Empty response.
+    return Promise->all ([
+      $self->nobj ('subscriber'),
+      $self->nobj ('type'),
+    ])->then (sub {
+      my ($subscriber, $type) = @{$_[0]};
+      
+      my $u = $self->{app}->text_param ('url');
+      my $hk = $self->{app}->bare_param ('url_sha');
+      return $self->throw ({reason => 'Bad |url|'})
+          unless defined $u or defined $hk;
+      my $url;
+      if (defined $u) {
+        return unless length $u;
+        $url = Web::URL->parse_string ($u);
+        return unless defined $url;
+        $url = Dongry::Type->serialize ('text', $url->stringify);
+      }
+      my $url_sha = $hk // sha1_hex ($url);
+
+      return if $subscriber->is_error;
+      return if $type->is_error;
+      
+      return $self->db->delete ('hook', {
+        ($self->app_id_columns),
+        ($subscriber->to_columns ('subscriber')),
+        ($type->to_columns ('type')),
+        (defined $url ? (url => $url) : ()),
+        url_sha => $url_sha,
       }, source_name => 'master');
     })->then (sub {
       return $self->json ({});
@@ -3271,6 +3294,11 @@ sub run_notification ($) {
     ##
     ##   NObj (|type|) : The hook's type.
     ##
+    ##   |url| : String : The hook's URL.
+    ##
+    ##   |url_sha| : String : An opaque string identifying the hook
+    ##   instead of |url|.
+    ##
     ##   |created| : Timestamp : The hook's created.
     ##
     ##   |updated| : Timestamp : The hook's updated.
@@ -3285,32 +3313,11 @@ sub run_notification ($) {
     ])->then (sub {
       my ($types, $subscribers) = @{$_[0]->[0]};
 
-      my $has_types = 0+@$types;
-      $types = [grep { not $_->is_error } @$types];
       my $subscriber = $subscribers->[0];
       return $self->throw ({reason => "Bad subscriber"})
           unless defined $subscriber;
-      
-      return [] if $subscriber->is_error;
-      return [] if $has_types and not @$types;
 
-      my $where = {
-        ($self->app_id_columns),
-        ($subscriber->to_columns ('subscriber')),
-      };
-      $where->{type_nobj_id} = {-in => [map { $_->nobj_id } @$types]}
-          if @$types;
-      $where->{updated} = $page->{value} if defined $page->{value};
-
-      return $self->db->select ('hook', $where, fields => [
-        'subscriber_nobj_id', 'type_nobj_id', 'url',
-        'status', 'data', 'created', 'updated',
-      ], source_name => 'master',
-        offset => $page->{offset}, limit => $page->{limit},
-        order => ['updated', $page->{order_direction}],
-      )->then (sub {
-        return $_[0]->all->to_a;
-      });
+      return $self->get_hooks ($subscriber, $types, $page);
     })->then (sub {
       return $self->replace_nobj_ids ($_[0], ['subscriber', 'type']);
     })->then (sub {
@@ -3321,6 +3328,105 @@ sub run_notification ($) {
         $_->{url} = Dongry::Type->parse ('text', $_->{url});
       }
       return $self->json ({items => $items, %$next_page});
+    });
+  }
+
+  if (@{$self->{path}} == 2 and
+      $self->{path}->[0] eq 'send' and
+      $self->{path}->[1] eq 'push.json') {
+    ## /{app_id}/notification/send/push.json - Send a Push API
+    ## notification.
+    ##
+    ## Parameters.
+    ##
+    ##   |url| : String : The Push API end point URL.  It must be an
+    ##   absolute |https:| URL.  Zero or more parameters can be
+    ##   specified.
+    ##
+    ##   NObj (|nevent_subscriber|) : The subscriber.  If no |url|
+    ##   parameter is specified, URLs of the hooks whose subscriber is
+    ##   the specified subscriber, type is |apploach-push|, and status
+    ##   is |2|, are used. If |nevent_id| is specified, the subscriber
+    ##   is also used as the queued nevent's subscriber.
+    ##
+    ##   |nevent_id| : ID : The queued nevent's ID.  If specified, the
+    ##   queued nevent is marked as processed (equivalent to
+    ##   |/notification/nevent/donequeued.json|).
+    ##
+    ##   NObj (|nevent_channel|) : The queued nevent's channel.
+    ##   Required if |nevent_id| is specified.
+    ##
+    ## Empty response.
+    my $urls = [];
+    for my $u (@{$self->{app}->text_param_list ('url')}) {
+      my $url = Web::URL->parse_string ($u);
+      unless (defined $url and ($url->scheme eq 'https' or
+                                ($url->scheme eq 'http' and $self->{config}->{is_test_script}))) { # XXX
+        return $self->throw ({reason => 'Bad |url|'});
+      }
+      push @$urls, $url;
+    }
+
+    my $clients = {}; # XXX persistent?
+    my $nevent_id = $self->{app}->bare_param ('nevent_id');
+    my ($nevent_channel, $nevent_subscriber);
+    my $nevent_done = {apploach_errors => []};
+    return Promise->all ([
+      $self->nobj ('nevent_channel'),
+      $self->nobj ('nevent_subscriber'),
+      $self->new_nobj_list ([\'apploach-push']),
+    ])->then (sub {
+      ($nevent_channel, $nevent_subscriber) = @{$_[0]};
+      return [] if @$urls;
+      my ($push) = @{$_[0]->[2]};
+      return $self->get_hooks ($nevent_subscriber, [$push], {
+        order_direction => 'ASC',
+        offset => 0, limit => 100000, # XXX page iterator?
+      });
+    })->then (sub {
+      for (@{$_[0]}) {
+        next unless $_->{status} == 2; # enabled
+        my $url = Web::URL->parse_string (Dongry::Type->parse ('text', $_->{url}));
+        if (defined $url and ($url->scheme eq 'https' or
+                              ($url->scheme eq 'http' and $self->{config}->{is_test_script}))) { # XXX
+          push @$urls, $url;
+        }
+      }
+      return ((promised_for {
+        my $url = shift;
+        my $client = $clients->{$url->get_origin->to_ascii}
+            ||= Web::Transport::BasicClient->new_from_url ($url);
+        return $client->request (
+          url => $url,
+          method => 'POST',
+        )->then (sub {
+          my $res = $_[0];
+          if ($res->status != 200) {
+            warn $res;
+            push @{$nevent_done->{apploach_errors}},
+                {request => {url => $url->stringify,
+                             method => 'POST'},
+                 response => {status => $res->status}};
+          }
+        }, sub {
+          my $error = $_[0];
+          warn $error;
+          push @{$nevent_done->{apploach_errors}},
+              {request => {url => $url->stringify,
+                           method => 'POST'},
+               response => {error_message => '' . $error}};
+        });
+      } $urls)->then (sub {
+        return unless defined $nevent_id;
+        return $self->done_queued_nevent
+            ($nevent_subscriber, $nevent_channel, $nevent_id, $nevent_done);
+      }));
+    })->then (sub {
+      return $self->json ({});
+    })->finally (sub {
+      return Promise->all ([map { $_->close } values %$clients]);
+    })->then (sub {
+      return $self->expire_old_nevents;
     });
   }
 
@@ -3487,6 +3593,62 @@ sub fire_nevent ($$$;%) {
       };
     });
 } # fire_nevent
+
+sub expire_old_nevents ($) {
+  my $self = $_[0];
+  my $now = time;
+  return Promise->all ([
+    $self->db->delete ('nevent', {
+      expires => {'<=', $now},
+    }, source_name => 'master'),
+    $self->db->delete ('nevent_queue', {
+      expires => {'<=', $now},
+    }, source_name => 'master'),
+  ]);
+} # expire_old_nevents
+
+sub done_queued_nevent ($$$$$) {
+  my ($self, $subscriber, $channel, $nevent_id, $data) = @_;
+  return if $subscriber->is_error or $channel->is_error;
+  return unless defined $nevent_id and length $nevent_id;
+  return $self->db->update ('nevent_queue', {
+    result_done => 1,
+    result_data => Dongry::Type->serialize ('json', $data),
+  }, where => {
+    ($self->app_id_columns),
+    ($subscriber->to_columns ('subscriber')),
+    ($channel->to_columns ('channel')),
+    nevent_id => $nevent_id,
+  }, source_name => 'master');
+} # done_queued_nevent
+
+sub get_hooks ($$$$) {
+  my ($self, $subscriber, $types, $page) = @_;
+
+  my $has_types = 0+@$types;
+  $types = [grep { not $_->is_error } @$types];
+
+  return [] if $subscriber->is_error;
+  return [] if $has_types and not @$types;
+
+  my $where = {
+    ($self->app_id_columns),
+    ($subscriber->to_columns ('subscriber')),
+  };
+  $where->{type_nobj_id} = {-in => [map { $_->nobj_id } @$types]}
+      if @$types;
+  $where->{updated} = $page->{value} if defined $page->{value};
+
+  return $self->db->select ('hook', $where, fields => [
+    'subscriber_nobj_id', 'type_nobj_id', 'url', 'url_sha',
+    'status', 'data', 'created', 'updated',
+  ], source_name => 'master',
+    offset => $page->{offset}, limit => $page->{limit},
+    order => ['updated', $page->{order_direction}],
+  )->then (sub {
+    return $_[0]->all->to_a;
+  }); # url and data is not decoded!
+} # get_hooks
 
 sub run_stats ($) {
   my $self = $_[0];
@@ -4444,7 +4606,7 @@ sub close ($) {
 
 =head1 LICENSE
 
-Copyright 2018 Wakaba <wakaba@suikawiki.org>.
+Copyright 2018-2019 Wakaba <wakaba@suikawiki.org>.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as
