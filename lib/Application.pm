@@ -10,14 +10,17 @@ use Promise;
 use Promised::Flow;
 use Dongry::Database;
 use Web::DomainName::Punycode;
+use Web::Encoding;
 use Web::Encoding::Normalization;
 use Web::URL;
 use Web::DOM::Document;
 use Web::XML::Parser;
+use Web::Transport::Base64;
 use Web::Transport::AWS;
 use Web::DateTime;
 use Web::DateTime::Clock;
 use Web::Transport::BasicClient;
+use Crypt::Perl::ECDSA::Parse;
 
 use NObj;
 use Pager;
@@ -65,6 +68,18 @@ use Pager;
 ##   |s3_file_url_signed_hostport| : String : The hostport of the
 ##   storage server, used to sign file URLs.  Required when it is
 ##   different from |s3_file_url_prefix|'s hostport.
+##
+##   |push_application_server_key_public| : Array of Uint8 : The
+##   public key of the application server in the context of the Push
+##   API and VAPID.  If |push_application_server_key_public./app_id/|
+##   is specified, its value is used.  Otherwise, fallbacked to
+##   |push_application_server_key_public|.
+##
+##   |push_application_server_key_private| : Array of Uint8 : The
+##   private key of the application server in the context of the Push
+##   API and VAPID.  If |push_application_server_key_private./app_id/|
+##   is specified, its value is used.  Otherwise, fallbacked to
+##   |push_application_server_key_private|.
 ##
 ## There must be a storage server that has AWS S3 compatible Web API,
 ## such as Minio, when storage-server-bound features are used.  The
@@ -2611,6 +2626,33 @@ sub run_tag ($) {
   return $self->{app}->throw_error (404);
 } # run_tag
 
+# XXX
+sub bu ($) {
+  my $b64 = encode_web_base64 $_[0];
+  $b64 =~ tr{+/}{-_};
+  $b64 =~ s/=+\z//;
+  return $b64;
+} # bu
+
+# XXX
+sub _vapid_authorization ($$$) {
+  my ($pub_key, $prv_key, $url) = @_;
+
+  my $k = bu join '', $pub_key;
+
+  my $exp = time + 10*3600;
+  my $z = '{"aud":"'.$url->get_origin->to_ascii # to_unicode according to spec
+        .'","exp":'.$exp.'}';
+  my $x = bu ('{"alg":"ES256","typ":"JWT"}') . '.' . bu (encode_web_utf8 $z);
+
+  my $vkey = Crypt::Perl::ECDSA::Parse::private ($prv_key);
+  my $sig = $vkey->sign_jwa ($x);
+
+  my $t = $x . '.' . bu ($sig);
+  
+  return 'vapid t='.$t.', k='.$k;
+} # _vapid_authorization
+
 sub run_notification ($) {
   my $self = $_[0];
 
@@ -3392,6 +3434,15 @@ sub run_notification ($) {
           push @$urls, $url;
         }
       }
+      my $config = $self->{config};
+      my $pub_key = join '', map { pack 'C', $_ } @{
+        $config->{'push_application_server_key_public.'.$self->{app_id}} ||
+        $config->{push_application_server_key_public}
+      };
+      my $pvt_key = join '', map { pack 'C', $_ } @{
+        $config->{'push_application_server_key_private.'.$self->{app_id}} ||
+        $config->{push_application_server_key_private}
+      };
       return ((promised_for {
         my $url = shift;
         my $client = $clients->{$url->get_origin->to_ascii}
@@ -3399,9 +3450,13 @@ sub run_notification ($) {
         return $client->request (
           url => $url,
           method => 'POST',
+          headers => {
+            authorization => _vapid_authorization ($pub_key, $pvt_key, $url),
+            ttl => 24*60*60, # XXX this should be configurable by app
+          },
         )->then (sub {
           my $res = $_[0];
-          if ($res->status != 200) {
+          if ($res->status != 200 and $res->status != 201) {
             warn $res;
             push @{$nevent_done->{apploach_errors}},
                 {request => {url => $url->stringify,

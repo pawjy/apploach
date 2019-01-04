@@ -69,3 +69,8 @@
 [submodule "modules/ooutils"]
 	path = modules/ooutils
 	url = https://github.com/wakaba/perl-ooutils
+	track = master
+[submodule "modules/Crypt-Perl"]
+	path = modules/Crypt-Perl
+	url = https://github.com/FGasper/p5-Crypt-Perl
+	track = master
