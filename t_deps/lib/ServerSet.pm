@@ -558,7 +558,7 @@ sub _docker_app ($%) {
           $args{receive_docker_data},
         ])->then (sub {
           my ($docker_data) = @{$_[0]};
-          my $config = {is_test_script => 1};
+          my $config = {%{$args{config}}};
 
           $config->{bearer} = $self->_key ('app_bearer');
           $config->{dsn} = $docker_data->{mysqld}->{docker_dsn}->{apploach};
@@ -696,7 +696,7 @@ sub _app ($%) {
     $args{receive_docker_data},
   ])->then (sub {
     my ($docker_data) = @{$_[0]};
-    my $config = {is_test_script => 1};
+    my $config = {%{$args{config}}};
 
     $config->{bearer} = $self->_key ('app_bearer');
     $config->{dsn} = $docker_data->{mysqld}->{local_dsn}->{apploach};
@@ -815,6 +815,11 @@ sub run ($%) {
       requires => ['docker'],
       exposed_hostports => [['app', $args{app_host}, $args{app_port}]],
       persistent_keys => [qw(app_bearer)],
+      config => {
+        is_test_script => 1,
+        push_application_server_key_public => [4,139,253,148,15,96,35,70,175,22,157,160,227,22,97,5,94,170,17,187,27,6,84,30,99,85,158,59,137,178,20,205,160,117,108,54,200,155,23,255,205,18,205,154,3,64,113,152,70,128,197,19,120,126,88,76,147,77,73,9,46,120,36,125,160],
+        push_application_server_key_private => [48,129,135,2,1,0,48,19,6,7,42,134,72,206,61,2,1,6,8,42,134,72,206,61,3,1,7,4,109,48,107,2,1,1,4,32,101,7,245,84,127,136,46,226,238,43,74,113,202,153,71,115,151,98,109,163,101,23,75,23,49,254,128,63,131,3,125,121,161,68,3,66,0,4,139,253,148,15,96,35,70,175,22,157,160,227,22,97,5,94,170,17,187,27,6,84,30,99,85,158,59,137,178,20,205,160,117,108,54,200,155,23,255,205,18,205,154,3,64,113,152,70,128,197,19,120,126,88,76,147,77,73,9,46,120,36,125,160],
+      },
     },
     xs => {
     },

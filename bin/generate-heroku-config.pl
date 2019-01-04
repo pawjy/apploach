@@ -25,6 +25,9 @@ $Config->{s3_bucket} = $ENV{APP_S3_BUCKET};
 $Config->{s3_form_url} = $ENV{APP_S3_FORM_URL};
 $Config->{s3_file_url_prefix} = $ENV{APP_S3_FILE_URL_PREFIX};
 
+$Config->{push_application_server_key_public} = [split /,/, $ENV{APP_PUSH_PUBLIC_KEY}];
+$Config->{push_application_server_key_private} = [split /,/, $ENV{APP_PUSH_PRIVATE_KEY}];
+
 print perl2json_bytes $Config;
 
 ## License: Public Domain.
