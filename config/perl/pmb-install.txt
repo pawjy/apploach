@@ -3,7 +3,7 @@ AnyEvent::Fork~1.31
 Bytes::Random::Secure::Tiny~1.008
 Call::Context~0.03
 Canary::Stability~2012
-Carp::Heavy~1.50
+Carp~1.50
 Class::Accessor::Fast~0.51
 Convert::ASN1~0.27
 Crypt::Format~0.09
@@ -13,7 +13,7 @@ Digest::SHA~6.02
 Encode~2.98
 Exporter::Lite~0.08
 File::Path~2.16
-File::Temp~0.2308
+File::Temp~0.2309
 Filter::Util::Call~1.59
 IO::FDPass~1.2
 IO::Handle~1.39
