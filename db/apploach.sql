@@ -7,10 +7,14 @@ create table if not exists `nobj` (
   `nobj_key_sha` binary(40) not null,
   `timestamp` double not null,
   primary key (`nobj_id`),
-  key (`app_id`, `nobj_key_sha`),
-  key (`app_id`, `timestamp`),
-  key (`timestamp`)
+  key `app_id` (`app_id`, `nobj_key_sha`),
+  key `app_id_2` (`app_id`, `timestamp`),
+  key `timestamp` (`timestamp`)
 ) default charset=binary engine=innodb;
+
+alter table `nobj`
+  drop key `app_id`,
+  add unique key `app_id` (`app_id`, `nobj_key_sha`);
 
 create table if not exists `log` (
   `app_id` bigint unsigned not null,

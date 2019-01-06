@@ -166,11 +166,53 @@ Test {
   });
 } n => 11, name => 'notifications';
 
+Test {
+  my $current = shift;
+  return $current->create (
+    [u1 => account => {}],
+  )->then (sub {
+    return $current->json (['comment', 'post.json'], {
+      thread_nobj_key => $current->o ('u1')->{nobj_key},
+      data => {},
+      internal_data => {},
+      author_nobj_key => $current->o ('u1')->{nobj_key},
+      author_status => 14,
+      owner_status => 2,
+      admin_status => 3,
+    });
+  })->then (sub {
+    my $result = $_[0];
+    $current->set_o (m1 => $result->{json});
+    return $current->json (['comment', 'list.json'], {
+      comment_id => $current->o ('m1')->{comment_id},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $c = $result->{json}->{items}->[0];
+      is $c->{thread_nobj_key}, $current->o ('u1')->{nobj_key};
+      is $c->{author_nobj_key}, $current->o ('u1')->{nobj_key};
+    } $current->c;
+    return $current->json (['comment', 'list.json'], {
+      thread_nobj_key => $current->o ('u1')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $c = $result->{json}->{items}->[0];
+      is $c->{thread_nobj_key}, $current->o ('u1')->{nobj_key};
+      is $c->{author_nobj_key}, $current->o ('u1')->{nobj_key};
+    } $current->c;
+  });
+} n => 6, name => 'same nobjs';
+
 RUN;
 
 =head1 LICENSE
 
-Copyright 2018 Wakaba <wakaba@suikawiki.org>.
+Copyright 2018-2019 Wakaba <wakaba@suikawiki.org>.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as
