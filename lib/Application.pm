@@ -2693,6 +2693,11 @@ sub run_notification ($) {
     ##   |data| : JSON object : The topic subscription's data.
     ##   Required.
     ##
+    ##   |is_default| : Boolean : If true, the topic subscription is
+    ##   only added when there is no topic subscription with same
+    ##   topic, subscriber, and channel.  Otherwise, any existing
+    ##   topic subscription is updated.
+    ##
     ## Empty response.
     return Promise->all ([
       $self->new_nobj_list (['topic', 'topic_index', 'subscriber', 'channel']),
@@ -2704,7 +2709,7 @@ sub run_notification ($) {
           unless $status =~ /\A[1-9][0-9]*\z/ and
                  1 < $status and $status < 255;
       my $data = $self->json_object_param ('data');
-      
+      my $is_default = $self->{app}->bare_param ('is_default');
       my $time = time;
       return $self->db->insert ('topic_subscription', [{
         ($self->app_id_columns),
@@ -2716,11 +2721,11 @@ sub run_notification ($) {
         updated => $time,
         status => 0+$status,
         data => Dongry::Type->serialize ('json', $data),
-      }], duplicate => {
+      }], duplicate => ($is_default ? 'ignore' : {
         status => $self->db->bare_sql_fragment ('VALUES(`status`)'),
         data => $self->db->bare_sql_fragment ('VALUES(`data`)'),
         updated => $self->db->bare_sql_fragment ('VALUES(`updated`)'),
-      }, source_name => 'master');
+      }), source_name => 'master');
     })->then (sub {
       return $self->json ({});
     });

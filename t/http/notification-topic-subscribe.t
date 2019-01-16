@@ -89,6 +89,53 @@ Test {
   });
 } n => 18, name => 'subscribe';
 
+Test {
+  my $current = shift;
+  return $current->create (
+    [t1 => nobj => {}],
+    [t2 => nobj => {}],
+    [c1 => nobj => {}],
+    [u1 => nobj => {}],
+  )->then (sub {
+    return $current->json (['notification', 'topic', 'subscribe.json'], {
+      topic_nobj_key => $current->o ('t1')->{nobj_key},
+      topic_index_nobj_key => $current->o ('t2')->{nobj_key},
+      channel_nobj_key => $current->o ('c1')->{nobj_key},
+      subscriber_nobj_key => $current->o ('u1')->{nobj_key},
+      status => 6,
+      data => {foo => 54},
+      is_default => 1,
+    });
+  })->then (sub {
+    return $current->json (['notification', 'topic', 'subscribe.json'], {
+      topic_nobj_key => $current->o ('t1')->{nobj_key},
+      topic_index_nobj_key => $current->o ('t2')->{nobj_key},
+      channel_nobj_key => $current->o ('c1')->{nobj_key},
+      subscriber_nobj_key => $current->o ('u1')->{nobj_key},
+      status => 4,
+      data => {foo => 1.4},
+      is_default => 1,
+    });
+  })->then (sub {
+    return $current->json (['notification', 'topic', 'list.json'], {
+      subscriber_nobj_key => $current->o ('u1')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $item = $result->{json}->{items}->[0];
+      is $item->{topic_nobj_key}, $current->o ('t1')->{nobj_key};
+      is $item->{channel_nobj_key}, $current->o ('c1')->{nobj_key};
+      is $item->{subscriber_nobj_key}, $current->o ('u1')->{nobj_key};
+      is $item->{data}->{foo}, 54;
+      is $item->{status}, 6;
+      ok $item->{created};
+      ok $item->{updated};
+    } $current->c;
+  });
+} n => 8, name => 'is_default';
+
 RUN;
 
 =head1 LICENSE
