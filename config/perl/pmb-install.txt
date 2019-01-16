@@ -1,6 +1,5 @@
 AnyEvent~7.14
 AnyEvent::Fork~1.31
-AnyEvent::Socket
 Bytes::Random::Secure::Tiny~1.008
 Call::Context~0.03
 Canary::Stability~2012
