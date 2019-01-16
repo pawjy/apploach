@@ -11,6 +11,7 @@ $gen->create_ec_key (curve => 'prime256v1')->then (sub {
   my $private_key = $key->to_pem;
   $private_key = $1 if $private_key =~ /--([^-]+)-+END/;
   $private_key = decode_web_base64 $private_key;
+  warn "Private:\n";
   warn join ',', map { ord $_ } split //, $private_key;
 
   return $gen->create_certificate (ca_ec => $key, ec => $key);
@@ -18,6 +19,7 @@ $gen->create_ec_key (curve => 'prime256v1')->then (sub {
   my $cert = $_[0];
 
   my $pub_key = $cert->{parsed}->{tbsCertificate}->{subjectPublicKeyInfo}->{subjectPublicKey}->[1];
+  warn "Public:\n";
   warn join ',', map { ord $_ } split //, $pub_key;
 
 })->to_cv->recv;

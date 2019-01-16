@@ -854,7 +854,133 @@ Test {
       is $ev3->{topic_subscription_data}->{foo}, 563.1;
     } $current->c, name => 'nevent_queue record';
   });
-} n => 54, name => 'nevent_key';
+} n => 54, name => 'nevent_key (replace=0)';
+
+Test {
+  my $current = shift;
+  my $key = 'entry-'.rand.'-star';
+  return $current->create (
+    ['obj1-starred' => nobj => {}],
+    [c1 => nobj => {}],
+    [u1 => nobj => {}],
+    [u2 => nobj => {}],
+    [sub1 => topic_subscription => {
+      topic => 'obj1-starred', channel => 'c1', subscriber => 'u1',
+      status => 2, data => {foo => 54},
+    }],
+    [sub2 => topic_subscription => {
+      topic => 'obj1-starred', channel => 'c1', subscriber => 'u2',
+      status => 2, data => {foo => 12.5},
+    }],
+  )->then (sub {
+    return $current->json (['notification', 'nevent', 'fire.json'], {
+      topic_nobj_key => $current->o ('obj1-starred')->{nobj_key},
+      data => {abv => 774},
+      nevent_key => $key,
+    });
+  })->then (sub {
+    my $result = $_[0];
+    $current->set_o (ev1 => $result->{json});
+    return $current->json (['notification', 'nevent', 'fire.json'], {
+      topic_nobj_key => $current->o ('obj1-starred')->{nobj_key},
+      data => {abv => 63.1},
+      nevent_key => $key,
+      replace => 1,
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      isnt $result->{json}->{nevent_id}, $current->o ('ev1')->{nevent_id};
+      is $result->{json}->{queued_count}, 2;
+    } $current->c;
+    $current->set_o (ev2 => $result->{json});
+    return $current->json (['notification', 'nevent', 'list.json'], {
+      subscriber_nobj_key => $current->o ('u1')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $ev1 = $result->{json}->{items}->[0];
+      is $ev1->{nevent_id}, $current->o ('ev2')->{nevent_id};
+      is $ev1->{timestamp}, $current->o ('ev2')->{timestamp};
+      is $ev1->{expires}, $current->o ('ev2')->{expires};
+      is $ev1->{topic_nobj_key}, $current->o ('obj1-starred')->{nobj_key};
+      is $ev1->{subscriber_nobj_key}, $current->o ('u1')->{nobj_key};
+      is $ev1->{data}->{abv}, 63.1;
+    } $current->c, name => 'nevent record - u1';
+    return $current->create (
+      [u3 => nobj => {}],
+      [sub3 => topic_subscription => {
+        topic => 'obj1-starred', channel => 'c1', subscriber => 'u3',
+        status => 2, data => {foo => 563.1},
+      }],
+    );
+  })->then (sub {
+    return $current->json (['notification', 'nevent', 'fire.json'], {
+      topic_nobj_key => $current->o ('obj1-starred')->{nobj_key},
+      data => {abv => 7.75},
+      nevent_key => $key,
+      replace => 1,
+    });
+  })->then (sub {
+    my $result = $_[0];
+    $current->set_o (ev3 => $result->{json});
+    return $current->json (['notification', 'nevent', 'list.json'], {
+      subscriber_nobj_key => $current->o ('u1')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $ev1 = $result->{json}->{items}->[0];
+      is $ev1->{nevent_id}, $current->o ('ev3')->{nevent_id};
+      is $ev1->{timestamp}, $current->o ('ev3')->{timestamp};
+      is $ev1->{data}->{abv}, 7.75;
+    } $current->c, name => 'nevent record - u1';
+    return $current->json (['notification', 'nevent', 'list.json'], {
+      subscriber_nobj_key => $current->o ('u3')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $ev1 = $result->{json}->{items}->[0];
+      is $ev1->{nevent_id}, $current->o ('ev3')->{nevent_id};
+      is $ev1->{timestamp}, $current->o ('ev3')->{timestamp};
+      is $ev1->{data}->{abv}, 7.75;
+    } $current->c, name => 'nevent record - u3';
+    return $current->json (['notification', 'nevent', 'lockqueued.json'], {
+      channel_nobj_key => $current->o ('c1')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 3;
+      
+      my $ev1 = $result->{json}->{items}->[0];
+      is $ev1->{timestamp}, $current->o ('ev3')->{timestamp};
+      is $ev1->{expires}, $current->o ('ev3')->{expires};
+      is $ev1->{nevent_id}, $current->o ('ev3')->{nevent_id};
+      is $ev1->{data}->{abv}, 7.75;
+      is $ev1->{topic_subscription_data}->{foo}, 54;
+      
+      my $ev2 = $result->{json}->{items}->[1];
+      is $ev2->{timestamp}, $current->o ('ev3')->{timestamp};
+      is $ev2->{expires}, $current->o ('ev3')->{expires};
+      is $ev2->{nevent_id}, $current->o ('ev3')->{nevent_id};
+      is $ev2->{data}->{abv}, 7.75;
+      is $ev2->{topic_subscription_data}->{foo}, 12.5;
+      
+      my $ev3 = $result->{json}->{items}->[2];
+      is $ev3->{timestamp}, $current->o ('ev3')->{timestamp};
+      is $ev3->{expires}, $current->o ('ev3')->{expires};
+      is $ev3->{nevent_id}, $current->o ('ev3')->{nevent_id};
+      is $ev3->{data}->{abv}, 7.75;
+      is $ev3->{topic_subscription_data}->{foo}, 563.1;
+    } $current->c, name => 'nevent_queue record';
+  });
+} n => 33, name => 'nevent_key (replace=1)';
 
 Test {
   my $current = shift;
