@@ -2816,9 +2816,12 @@ sub run_notification ($) {
   }
 
   ## NEvents.  An nevent is an event in the notification system.  An
-  ## nevent has topic : NObj, data : object, which is an
-  ## application-specific detail of the nevent, timestamp : Timestamp,
-  ## expires : Timestamp, after which the nevent is discarded.
+  ## nevent has ID : ID, which identifies the nevent uniquely, key :
+  ## Key, which is a short string that is unique within an
+  ## application-specific realm, topic : NObj, data : object, which is
+  ## an application-specific detail of the nevent, timestamp :
+  ## Timestamp, expires : Timestamp, after which the nevent is
+  ## discarded.
   ##
   ## When an nevent is fired, it is queued to notification channels
   ## according to the applicable topic subscriptions.  A queued nevent
@@ -3496,9 +3499,9 @@ sub run_notification ($) {
 ##   NObj (|/prefix/topic_fallback|) : The fallback topics.  Zero or
 ##   more parameters can be specified.
 ##
-##   |/prefix/topic_fallback_nobj_key_template| : The template to
-##   generate fallback topics.  Zero or more parameters can be
-##   specified.  If any applicable topic subscription for NObj
+##   |/prefix/topic_fallback_nobj_key_template| : String : The
+##   template to generate fallback topics.  Zero or more parameters
+##   can be specified.  If any applicable topic subscription for NObj
 ##   (|/prefix/topic|) and NObj (|/prefix/topic_fallback|) remains
 ##   unresolved with the status of 4 (inherit), the topic chain is
 ##   further extended with the NObjs whose keys are replacements of
@@ -3508,6 +3511,14 @@ sub run_notification ($) {
 ##   channel, any channel topic notification (without explicit
 ##   overridden topic notification) is applied.  Otherwise, only
 ##   explicitly "inherit"ed topic notifications are applied.
+##
+##   |/prefix/nevent_key| : Key : The nevent's key.  If omitted, a new
+##   random string is assigned.
+##
+##   |/prefix/replace| : Boolean : If false and there is another
+##   nevent with same key, the new nevent is discarded.  If true and
+##   there is another nevent with same key, the new event replaces the
+##   old one.
 ##
 ## When an nevent is fired, applicable topic notifications are looked
 ## up by their topics.  First, the notification whose topic is equal
@@ -3534,7 +3545,8 @@ sub fire_nevent ($$$;%) {
     $nevent_id = $_[0]->[2]->[0];
     my $nevent_key = $self->{app}->bare_param ($prefix.'nevent_key')
                    // ('id-' . $nevent_id);
-
+    my $replace = $self->{app}->bare_param ($prefix.'replace');
+    
     my $done_subscribers = {};
     my $undecided_subscribers = {};
 
@@ -3586,9 +3598,20 @@ sub fire_nevent ($$$;%) {
                 unique_nevent_key => sha1_hex ($nevent_key),
                 data => Dongry::Type->serialize ('json', $data),
                 timestamp => $timestamp,
-                expires => $expires, # XXX replace
-              }], duplicate => 'ignore')->then (sub {
+                expires => $expires,
+              }], duplicate => ($replace ? 'replace' : 'ignore'))->then (sub {
                 my $w = $_[0];
+                unless ($replace) {
+                  return $self->db->select ('nevent', {
+                    ($self->app_id_columns),
+                    nevent_id => $nevent_id,
+                  }, fields => ['timestamp'], source_name => 'master')->then (sub {
+                    return $_[0]->first ? 1 : 0;
+                  });
+                }
+                return 1;
+              })->then (sub {
+                return unless $_[0];
                 return $self->db->insert ('nevent_queue', [{
                   ($self->app_id_columns),
                   subscriber_nobj_id => $v->{subscriber_nobj_id},
@@ -3600,7 +3623,7 @@ sub fire_nevent ($$$;%) {
                   locked => 0,
                   timestamp => $timestamp,
                   expires => $expires,
-                }], duplicate => 'ignore');
+                }], duplicate => ($replace ? 'replace' : 'ignore'));
               });
             } $all)->then (sub {
               $ref = $all->[-1]->{updated};

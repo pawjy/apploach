@@ -258,6 +258,9 @@ create table if not exists `topic_subscription` (
   key (`updated`)
 ) default charset=binary engine=innodb;
 
+alter table `topic_subscription`
+  add key (`app_id`, `topic_index_nobj_id`);
+
 create table if not exists `nevent` (
   `app_id` bigint unsigned not null,
   `nevent_id` bigint unsigned not null,
