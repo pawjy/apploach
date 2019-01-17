@@ -169,6 +169,116 @@ Test {
 Test {
   my $current = shift;
   return $current->create (
+    [thread1 => nobj => {}],
+    [u1 => account => {}],
+    [u2 => account => {}],
+    [u3 => account => {}],
+    [u4 => account => {}],
+    ['thread1-posted' => nobj => {}],
+    ['thread1-members' => nobj => {}],
+  )->then (sub {
+    return $current->create (
+      [sub01 => topic_subscription => {
+        topic => 'thread1-members',
+        subscriber => 'u1',
+        status => 4, # inherit
+        channel_nobj_key => 'apploach-any-channel',
+      }],
+      [sub02 => topic_subscription => {
+        topic => 'thread1-members',
+        subscriber => 'u2',
+        status => 4, # inherit
+        channel_nobj_key => 'apploach-any-channel',
+      }],
+      [sub03 => topic_subscription => {
+        topic => 'thread1-members',
+        subscriber => 'u3',
+        status => 4, # inherit
+        channel_nobj_key => 'apploach-any-channel',
+      }],
+      [sub04 => topic_subscription => {
+        topic => 'thread1-members',
+        subscriber => 'u4',
+        status => 4, # inherit
+        channel_nobj_key => 'apploach-any-channel',
+      }],
+      [sub1 => topic_subscription => {
+        topic_nobj_key => $current->o ('u1')->{nobj_key} . '-any',
+        subscriber => 'u1',
+      }],
+      [sub2 => topic_subscription => {
+        topic_nobj_key => $current->o ('u2')->{nobj_key} . '-any',
+        subscriber => 'u2',
+      }],
+      [sub3 => topic_subscription => {
+        topic_nobj_key => $current->o ('u3')->{nobj_key} . '-any',
+        subscriber => 'u3',
+      }],
+      [sub4 => topic_subscription => {
+        topic_nobj_key => $current->o ('u3')->{nobj_key} . '-any',
+        subscriber => 'u4',
+        status => 3, # disabled
+      }],
+    );
+  })->then (sub {
+    return $current->json (['comment', 'post.json'], {
+      thread_nobj_key => $current->o ('thread1')->{nobj_key},
+      data => '{"a":5}',
+      internal_data => '{"c":6}',
+      author_nobj_key => $current->o ('u1')->{nobj_key},
+      author_status => 14,
+      owner_status => 2,
+      admin_status => 3,
+      notification_topic_nobj_key => $current->o ('thread1-posted')->{nobj_key},
+      notification_topic_fallback_nobj_key => [
+        $current->o ('thread1-members')->{nobj_key},
+      ],
+      notification_topic_fallback_nobj_key_template => [
+        '{subscriber}-any',
+      ],
+      notification_excluded_subscriber_nobj_key => $current->o ('u1')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    $current->set_o (m1 => $result->{json});
+    return $current->json (['notification', 'nevent', 'list.json'], {
+      subscriber_nobj_key => $current->o ('u1')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 0;
+    } $current->c, name => 'excluded';
+    return $current->json (['notification', 'nevent', 'list.json'], {
+      subscriber_nobj_key => $current->o ('u2')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+    } $current->c;
+    return $current->json (['notification', 'nevent', 'list.json'], {
+      subscriber_nobj_key => $current->o ('u3')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+    } $current->c;
+    return $current->json (['notification', 'nevent', 'list.json'], {
+      subscriber_nobj_key => $current->o ('u4')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 0;
+    } $current->c;
+  });
+} n => 4, name => 'notifications excluded';
+
+Test {
+  my $current = shift;
+  return $current->create (
     [u1 => account => {}],
   )->then (sub {
     return $current->json (['comment', 'post.json'], {

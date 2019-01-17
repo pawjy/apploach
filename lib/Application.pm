@@ -3517,6 +3517,11 @@ sub run_notification ($) {
 ##   overridden topic notification) is applied.  Otherwise, only
 ##   explicitly "inherit"ed topic notifications are applied.
 ##
+##   NObj (|/prefix/excluded_subscriber|) : The subscribers that
+##   should be excluded to distribution of the nevent, even when there
+##   are topic subscriotions whose subscriber are them.  Zero or more
+##   parameters can be specified.  No exclusion by default.
+##
 ##   |/prefix/nevent_key| : Key : The nevent's key.  If omitted, a new
 ##   random string is assigned.
 ##
@@ -3542,11 +3547,11 @@ sub fire_nevent ($$$;%) {
   my $m = 0;
   return Promise->all ([
     $self->new_nobj_list ([$prefix.'topic', \'apploach-any-channel']),
-    $self->nobj_list ($prefix.'topic_fallback'),
+    $self->nobj_list_set ([$prefix.'topic_fallback', $prefix.'excluded_subscriber']),
     $self->ids (1),
   ])->then (sub {
     my ($topic, $any_channel) = @{$_[0]->[0]};
-    my $topic_fallbacks = $_[0]->[1];
+    my ($topic_fallbacks, $excluded_subscribers) = @{$_[0]->[1]};
     $nevent_id = $_[0]->[2]->[0];
     my $nevent_key = $self->{app}->bare_param ($prefix.'nevent_key')
                    // ('id-' . $nevent_id);
@@ -3554,6 +3559,10 @@ sub fire_nevent ($$$;%) {
     
     my $done_subscribers = {};
     my $undecided_subscribers = {};
+
+    my $excluded_ids = [map {
+      $_->is_error ? () : ($_->nobj_id);
+    } @$excluded_subscribers];
 
     my $write_for_topic = sub {
       my $current_topic = shift;
@@ -3570,6 +3579,8 @@ sub fire_nevent ($$$;%) {
           };
           $where->{updated} = {'>', $ref} if defined $ref;
           $where->{channel_nobj_id} = {-in => $ch_ids} if defined $ch_ids;
+          $where->{subscriber_nobj_id} = {-not_in => $excluded_ids}
+              if @$excluded_ids;
           return $self->db->select ('topic_subscription', $where, fields => [
             'subscriber_nobj_id', 'channel_nobj_id',
             'status', 'data', 'updated',
