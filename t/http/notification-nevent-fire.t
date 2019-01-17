@@ -1255,11 +1255,160 @@ Test {
   });
 } n => 20, name => 'topic_fallback_nobj_key_template apploach-any-channel some disabled';
 
+Test {
+  my $current = shift;
+  return $current->create (
+    [t1 => nobj => {}],
+    [t2 => nobj => {}],
+    [c1 => nobj => {}],
+    [u1 => nobj => {}],
+    [u2 => nobj => {}],
+    [u3 => nobj => {}],
+    [u4 => nobj => {}],
+    [sub1 => topic_subscription => {
+      topic => 't1', channel => 'c1', subscriber => 'u1',
+      status => 2, data => {foo => 54},
+    }],
+    [sub2 => topic_subscription => {
+      topic => 't1', channel => 'c1', subscriber => 'u2',
+      status => 2, data => {foo => 112.5},
+    }],
+    [sub3 => topic_subscription => {
+      topic => 't1', channel => 'c1', subscriber => 'u3',
+      status => 3, # disabled
+      data => {foo => 412.5},
+    }],
+    [sub4 => topic_subscription => {
+      topic => 't1', channel => 'c1', subscriber => 'u4',
+      status => 4, # inherit (disabled)
+      data => {foo => 4},
+    }],
+  )->then (sub {
+    return $current->json (['notification', 'nevent', 'fire.json'], {
+      topic_nobj_key => $current->o ('t1')->{nobj_key},
+      data => {abv => 774},
+      excluded_subscriber_nobj_key => [$current->o ('u2')->{nobj_key},
+                                       $current->o ('u4')->{nobj_key}],
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      ok $result->{json}->{nevent_id};
+      is $result->{json}->{queued_count}, 1;
+    } $current->c;
+    $current->set_o (ev1 => $result->{json});
+    return $current->json (['notification', 'nevent', 'list.json'], {
+      subscriber_nobj_key => $current->o ('u1')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $ev1 = $result->{json}->{items}->[0];
+      is $ev1->{nevent_id}, $current->o ('ev1')->{nevent_id};
+    } $current->c, name => 'nevent record - u1';
+    return $current->json (['notification', 'nevent', 'list.json'], {
+      subscriber_nobj_key => $current->o ('u2')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 0;
+    } $current->c, name => 'nevent record - u2';
+    return $current->json (['notification', 'nevent', 'list.json'], {
+      subscriber_nobj_key => $current->o ('u3')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 0;
+    } $current->c, name => 'nevent record - u3';
+    return $current->json (['notification', 'nevent', 'list.json'], {
+      subscriber_nobj_key => $current->o ('u4')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 0;
+    } $current->c, name => 'nevent record - u4';
+    return $current->json (['notification', 'nevent', 'lockqueued.json'], {
+      channel_nobj_key => $current->o ('c1')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $ev1 = $result->{json}->{items}->[0];
+      is $ev1->{nevent_id}, $current->o ('ev1')->{nevent_id};
+    } $current->c, name => 'nevent_queue record';
+  });
+} n => 9, name => 'excluded_subscriber';
+
+Test {
+  my $current = shift;
+  return $current->create (
+    [t1 => nobj => {}],
+    [t2 => nobj => {}],
+    [c1 => nobj => {}],
+    [u1 => nobj => {}],
+    [u2 => nobj => {}],
+    [sub1 => topic_subscription => {
+      topic => 't1', channel => 'c1', subscriber => 'u1',
+      status => 2, data => {foo => 54},
+    }],
+    [sub2 => topic_subscription => {
+      topic => 't1', channel => 'c1', subscriber => 'u2',
+      status => 2, data => {foo => 112.5},
+    }],
+  )->then (sub {
+    return $current->json (['notification', 'nevent', 'fire.json'], {
+      topic_nobj_key => $current->o ('t1')->{nobj_key},
+      data => {abv => 774},
+      excluded_subscriber_nobj_key => [rand],
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      ok $result->{json}->{nevent_id};
+      is $result->{json}->{queued_count}, 2;
+    } $current->c;
+    $current->set_o (ev1 => $result->{json});
+    return $current->json (['notification', 'nevent', 'list.json'], {
+      subscriber_nobj_key => $current->o ('u1')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $ev1 = $result->{json}->{items}->[0];
+      is $ev1->{nevent_id}, $current->o ('ev1')->{nevent_id};
+    } $current->c, name => 'nevent record - u1';
+    return $current->json (['notification', 'nevent', 'list.json'], {
+      subscriber_nobj_key => $current->o ('u2')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+    } $current->c, name => 'nevent record - u2';
+    return $current->json (['notification', 'nevent', 'lockqueued.json'], {
+      channel_nobj_key => $current->o ('c1')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 2;
+      my $ev1 = $result->{json}->{items}->[0];
+      is $ev1->{nevent_id}, $current->o ('ev1')->{nevent_id};
+    } $current->c, name => 'nevent_queue record';
+  });
+} n => 7, name => 'excluded_subscriber no exclusion';
+
 RUN;
 
 =head1 LICENSE
 
-Copyright 2018 Wakaba <wakaba@suikawiki.org>.
+Copyright 2018-2019 Wakaba <wakaba@suikawiki.org>.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as
