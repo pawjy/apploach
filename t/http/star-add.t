@@ -126,11 +126,64 @@ Test {
   });
 } n => 4, name => 'add.json decreased';
 
+Test {
+  my $current = shift;
+  return $current->create (
+    [u1 => account => {}],
+    [u2 => account => {}],
+    [u3 => account => {}],
+    [t1 => nobj => {}],
+  )->then (sub {
+    return $current->create (
+      [sub3 => topic_subscription => {
+        topic => 't1',
+        subscriber => 'u3',
+        status => 2, # enabled
+        channel_nobj_key => $current->generate_key (c1 => {}),
+      }],
+    );
+  })->then (sub {
+    return $current->json (['star', 'add.json'], {
+      starred_nobj_key => $current->generate_key ('key1' => {}),
+      starred_author_nobj_key => $current->o ('u2')->{nobj_key},
+      starred_index_nobj_key => $current->generate_key ('id3' => {}),
+      item_nobj_key => $current->generate_key ('type1' => {}),
+      author_nobj_key => $current->o ('u1')->{nobj_key},
+      delta => 4,
+      notification_topic_nobj_key => $current->o ('t1')->{nobj_key},
+    });
+  })->then (sub {
+    return $current->json (['star', 'add.json'], {
+      starred_nobj_key => $current->generate_key ('key2' => {}),
+      starred_author_nobj_key => $current->o ('u1')->{nobj_key},
+      starred_index_nobj_key => $current->generate_key ('id4' => {}),
+      item_nobj_key => $current->generate_key ('type2' => {}),
+      author_nobj_key => $current->o ('u2')->{nobj_key},
+      delta => -3,
+      notification_topic_nobj_key => $current->o ('t1')->{nobj_key},
+    });
+  })->then (sub {
+    return $current->json (['notification', 'nevent', 'list.json'], {
+      subscriber_nobj_key => $current->o ('u3')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $v = $result->{json}->{items}->[0];
+      is $v->{data}->{author_nobj_key}, $current->o ('u1')->{nobj_key};
+      is $v->{data}->{starred_nobj_key}, $current->o ('key1');
+      is $v->{data}->{starred_author_nobj_key}, $current->o ('u2')->{nobj_key};
+      ok $v->{data}->{timestamp};
+    } $current->c;
+  });
+} n => 5, name => 'notifications';
+
 RUN;
 
 =head1 LICENSE
 
-Copyright 2018 Wakaba <wakaba@suikawiki.org>.
+Copyright 2018-2019 Wakaba <wakaba@suikawiki.org>.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as
