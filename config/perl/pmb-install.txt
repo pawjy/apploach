@@ -4,14 +4,14 @@ AnyEvent::IO
 Bytes::Random::Secure::Tiny~1.008
 Call::Context~0.03
 Canary::Stability~2012
-Carp~1.50
+Carp::Heavy~1.50
 Class::Accessor::Fast~0.51
 Convert::ASN1~0.27
 Crypt::Format~0.09
 Cwd~3.75
 Data::Dumper~2.173
 Digest::SHA~6.02
-Encode~2.98
+Encode~2.99
 Exporter::Lite~0.08
 File::Path~2.16
 File::Temp~0.2309
@@ -31,7 +31,7 @@ Scalar::Util~1.50
 Socket~2.027
 Symbol::Get~0.10
 Term::ANSIColor~4.06
-Test::Builder~1.302160
+Test::More~1.302160
 Time::HiRes~1.9758
 Time::Local~1.28
 Try::Tiny~0.30
