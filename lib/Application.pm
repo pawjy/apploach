@@ -1107,7 +1107,6 @@ sub run_comment ($) {
             timestamp => $time,
           },
           timestamp => $time,
-          # XXX exclude author from destination
         );
       })->then (sub {
         return $self->json ({
@@ -1548,73 +1547,86 @@ sub run_star ($) {
   ## starred NObj : NObj, author : NObj, item : NObj, count : Integer.
 
   if (@{$self->{path}} == 1 and $self->{path}->[0] eq 'add.json') {
-      ## /{app_id}/star/add.json - Add a star.
-      ##
-      ## Parameters.
-      ##
-      ##   NObj (|starred| with author and index) : The star's starred
-      ##   NObj.  For example, a blog entry.
-      ##
-      ##   NObj (|author|) : The star's author.
-      ##
-      ##   NObj (|item|) : The star's item.  It represents the type of
-      ##   the star.
-      ##
-      ##   |delta| : Integer : The difference of the new and the
-      ##   current numbers of the star's count.
-      ##
-      ## Response.  No additional data.
-      return Promise->all ([
-        $self->new_nobj_list (['item', 'author',
-                               'starred', 'starred_author', 'starred_index']),
-      ])->then (sub {
-        my ($item, $author,
-            $starred, $starred_author, $starred_index) = @{$_[0]->[0]};
-        
-        my $delta = 0+($self->{app}->bare_param ('delta') || 0); # can be negative
-        return unless $delta;
+    ## /{app_id}/star/add.json - Add a star.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|starred| with author and index) : The star's starred
+    ##   NObj.  For example, a blog entry.
+    ##
+    ##   NObj (|author|) : The star's author.
+    ##
+    ##   NObj (|item|) : The star's item.  It represents the type of
+    ##   the star.
+    ##
+    ##   |delta| : Integer : The difference of the new and the current
+    ##   numbers of the star's count.
+    ##
+    ##   Notifications (|notification_|).
+    ##
+    ## Response.  No additional data.
+    return Promise->all ([
+      $self->new_nobj_list (['item', 'author',
+                             'starred', 'starred_author', 'starred_index']),
+    ])->then (sub {
+      my ($item, $author,
+          $starred, $starred_author, $starred_index) = @{$_[0]->[0]};
+      
+      my $delta = 0+($self->{app}->bare_param ('delta') || 0); # can be negative
+      return unless $delta;
 
-        my $time = time;
-        return $self->db->insert ('star', [{
-          ($self->app_id_columns),
-          ($starred->to_columns ('starred')),
-          ($starred_author->to_columns ('starred_author')),
-          ($starred_index->to_columns ('starred_index')),
-          ($author->to_columns ('author')),
-          count => $delta > 0 ? $delta : 0,
-          ($item->to_columns ('item')),
-          created => $time,
-          updated => $time,
-        }], duplicate => {
-          count => $self->db->bare_sql_fragment (sprintf 'greatest(cast(`count` as signed) + %d, 0)', $delta),
-          updated => $self->db->bare_sql_fragment ('VALUES(updated)'),
-        }, source_name => 'master');
-      })->then (sub {
-        return $self->json ({});
+      my $time = time;
+      return $self->db->insert ('star', [{
+        ($self->app_id_columns),
+        ($starred->to_columns ('starred')),
+        ($starred_author->to_columns ('starred_author')),
+        ($starred_index->to_columns ('starred_index')),
+        ($author->to_columns ('author')),
+        count => $delta > 0 ? $delta : 0,
+        ($item->to_columns ('item')),
+        created => $time,
+        updated => $time,
+      }], duplicate => {
+        count => $self->db->bare_sql_fragment (sprintf 'greatest(cast(`count` as signed) + %d, 0)', $delta),
+        updated => $self->db->bare_sql_fragment ('VALUES(updated)'),
+      }, source_name => 'master')->then (sub {
+        return unless $delta > 0;
+        return $self->fire_nevent (
+          'notification_',
+          {
+            author_nobj_key => $author->nobj_key,
+            starred_nobj_key => $starred->nobj_key,
+            starred_author_nobj_key => $starred_author->nobj_key,
+            timestamp => $time,
+          },
+          timestamp => $time,
+        );
       });
-      # XXX notification hook
-    } elsif (@{$self->{path}} == 1 and $self->{path}->[0] eq 'get.json') {
-      ## /{app_id}/star/get.json - Get stars for rendering.
-      ##
-      ## Parameters.
-      ##
-      ##   NObj list (|starred|).  List of starred NObj to get.
-      ##
-      ## Response.
-      ##
-      ##   |stars| : Object.
-      ##
-      ##     {NObj (|starred|) : The star's starred NObj} : Array of stars.
-      ##
-      ##       NObj (|author|) : The star's author.
-      ##
-      ##       NObj (|item|) : The star's item.
-      ##
-      ##       |count| : Integer : The star's count.
-      return Promise->all ([
-        $self->nobj_list ('starred'),
-      ])->then (sub {
-        my $starreds = $_[0]->[0];
+    })->then (sub {
+      return $self->json ({});
+    });
+  } elsif (@{$self->{path}} == 1 and $self->{path}->[0] eq 'get.json') {
+    ## /{app_id}/star/get.json - Get stars for rendering.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj list (|starred|).  List of starred NObj to get.
+    ##
+    ## Response.
+    ##
+    ##   |stars| : Object.
+    ##
+    ##     {NObj (|starred|) : The star's starred NObj} : Array of stars.
+    ##
+    ##       NObj (|author|) : The star's author.
+    ##
+    ##       NObj (|item|) : The star's item.
+    ##
+    ##       |count| : Integer : The star's count.
+    return Promise->all ([
+      $self->nobj_list ('starred'),
+    ])->then (sub {
+      my $starreds = $_[0]->[0];
 
         my @nobj_id;
         for (@$starreds) {
