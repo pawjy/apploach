@@ -134,6 +134,7 @@ Test {
       is $item2->{status}, 6;
       ok $item2->{created};
       ok $item2->{updated};
+      ok $item2->{expires} > 10*365*24*60*60+time, $item2->{expires};
     } $current->c;
     return $current->json (['notification', 'hook', 'subscribe.json'], {
       type_nobj_key => $current->o ('c1')->{nobj_key},
@@ -160,7 +161,62 @@ Test {
       is $item2->{status}, 4;
     } $current->c, name => 'changed';
   });
-} n => 22, name => 'multiple subscribe';
+} n => 23, name => 'multiple subscribe';
+
+Test {
+  my $current = shift;
+  return $current->create (
+    [c1 => nobj => {}],
+    [u1 => nobj => {}],
+  )->then (sub {
+    return $current->json (['notification', 'hook', 'subscribe.json'], {
+      type_nobj_key => $current->o ('c1')->{nobj_key},
+      subscriber_nobj_key => $current->o ('u1')->{nobj_key},
+      url => $current->generate_url ('e1' => {}),
+      status => 6,
+      data => {foo => 54, apploach_subscription => {
+        expirationTime => "2299-12-31T00:12:44Z",
+      }},
+    });
+  })->then (sub {
+    return $current->json (['notification', 'hook', 'list.json'], {
+      subscriber_nobj_key => $current->o ('u1')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $item = $result->{json}->{items}->[0];
+      is $item->{type_nobj_key}, $current->o ('c1')->{nobj_key};
+      is $item->{subscriber_nobj_key}, $current->o ('u1')->{nobj_key};
+      is $item->{url}, $current->o ('e1');
+      is $item->{data}->{foo}, 54;
+      is $item->{status}, 6;
+      ok $item->{created};
+      ok $item->{updated};
+      is $item->{expires}, 10413706364;
+    } $current->c, name => 'new subscription';
+    $current->set_o (sub1 => $result->{json}->{items}->[0]);
+    return $current->json (['notification', 'hook', 'subscribe.json'], {
+      type_nobj_key => $current->o ('c1')->{nobj_key},
+      subscriber_nobj_key => $current->o ('u1')->{nobj_key},
+      url => $current->o ('e1'),
+      status => 12,
+      data => {bar => 1.54, apploach_subscription => {
+        expirationTime => '1990-12-12T00:12Z',
+      }},
+    });
+  })->then (sub {
+    return $current->json (['notification', 'hook', 'list.json'], {
+      subscriber_nobj_key => $current->o ('u1')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 0;
+    } $current->c, name => 'updated by expired time';
+  });
+} n => 10, name => 'subscribe with expirationTime';
 
 RUN;
 

@@ -318,6 +318,10 @@ create table if not exists `hook` (
   key (`updated`)
 ) default charset=binary engine=innodb;
 
+alter table `hook`
+  add column `expires` double not null,
+  add key (`expires`);
+
 create table if not exists `day_stats` (
   `app_id` bigint unsigned not null,
   `item_nobj_id` bigint unsigned not null,

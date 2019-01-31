@@ -19,6 +19,7 @@ use Web::Transport::Base64;
 use Web::Transport::AWS;
 use Web::DateTime;
 use Web::DateTime::Clock;
+use Web::DateTime::Parser;
 use Web::Transport::BasicClient;
 use Crypt::Perl::ECDSA::Parse;
 
@@ -3228,7 +3229,8 @@ sub run_notification ($) {
   ## type : NObj, which represents the application-specific kind of
   ## the hook, URL : String, status : Integer, which represents the
   ## application-specific status of the hook, data : Object, which can
-  ## contain application-specific parameters of the hook.  There can
+  ## contain application-specific parameters of the hook, created :
+  ## Timestamp, updated : Timestamp, expires : Timestamp.  There can
   ## be at most one hook of same (subscriber, type, URL) tuple.
 
   if (@{$self->{path}} == 2 and
@@ -3247,7 +3249,11 @@ sub run_notification ($) {
     ##
     ##   |status| : Integer : The hook's status.  Required.
     ##
-    ##   |data| : JSON object : The hook's data.  Required.
+    ##   |data| : JSON object : The hook's data.  Required.  If it
+    ##   contains a name |apploach_subscription| whose value is an
+    ##   object with a name |expirationTime|, the hook's expires is
+    ##   set to its value, interpreted as a JavaScript date and time
+    ##   string.
     ##
     ## Empty response.
     return Promise->all ([
@@ -3269,6 +3275,16 @@ sub run_notification ($) {
       my $data = $self->json_object_param ('data');
       
       my $time = time;
+      my $expires = time + 100*365*24*60*60;
+      if (defined $data->{apploach_subscription} and
+          ref $data->{apploach_subscription} eq 'HASH' and
+          defined $data->{apploach_subscription}->{expirationTime}) {
+        my $parser = Web::DateTime::Parser->new;
+        $parser->onerror (sub { });
+        my $dt = $parser->parse_js_date_time_string
+            ($data->{apploach_subscription}->{expirationTime});
+        $expires = $dt->to_unix_number if defined $dt;
+      }
       return $self->db->insert ('hook', [{
         ($self->app_id_columns),
         ($subscriber->to_columns ('subscriber')),
@@ -3278,11 +3294,13 @@ sub run_notification ($) {
         status => $status,
         created => $time,
         updated => $time,
+        expires => $expires,
         data => Dongry::Type->serialize ('json', $data),
       }], duplicate => {
         data => $self->db->bare_sql_fragment ('VALUES(`data`)'),
         updated => $self->db->bare_sql_fragment ('VALUES(`updated`)'),
         status => $self->db->bare_sql_fragment ('VALUES(`status`)'),
+        expires => $self->db->bare_sql_fragment ('VALUES(`expires`)'),
       }, source_name => 'master');
     })->then (sub {
       return $self->json ({});
@@ -3364,6 +3382,8 @@ sub run_notification ($) {
     ##   |created| : Timestamp : The hook's created.
     ##
     ##   |updated| : Timestamp : The hook's updated.
+    ##
+    ##   |expires| : Timestamp : The hook's expires.
     ##
     ##   |status| : Integer : The hook's status.
     ##
@@ -3710,6 +3730,9 @@ sub expire_old_nevents ($) {
     $self->db->delete ('nevent_queue', {
       expires => {'<=', $now},
     }, source_name => 'master'),
+    $self->db->delete ('hook', {
+      expires => {'<=', $now},
+    }, source_name => 'master'),
   ]);
 } # expire_old_nevents
 
@@ -3740,6 +3763,7 @@ sub get_hooks ($$$$) {
   my $where = {
     ($self->app_id_columns),
     ($subscriber->to_columns ('subscriber')),
+    expires => {'>', time},
   };
   $where->{type_nobj_id} = {-in => [map { $_->nobj_id } @$types]}
       if @$types;
@@ -3747,7 +3771,7 @@ sub get_hooks ($$$$) {
 
   return $self->db->select ('hook', $where, fields => [
     'subscriber_nobj_id', 'type_nobj_id', 'url', 'url_sha',
-    'status', 'data', 'created', 'updated',
+    'status', 'data', 'created', 'updated', 'expires',
   ], source_name => 'master',
     offset => $page->{offset}, limit => $page->{limit},
     order => ['updated', $page->{order_direction}],
