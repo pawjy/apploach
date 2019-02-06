@@ -3051,7 +3051,8 @@ sub run_notification ($) {
               if @$topic_excludeds;
         }
         
-        $where->{timestamp} = {'>', $last_checked};
+        $where->{timestamp} = {'>', $last_checked,
+                               '<=', time};
         return $self->db->select ('nevent', $where, fields => [
           {-count => undef, as => 'count'},
         ], source_name => 'master')->then (sub {
