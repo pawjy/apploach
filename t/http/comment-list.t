@@ -138,6 +138,152 @@ Test {
   my $current = shift;
   return $current->create (
     [t1 => nobj => {}],
+    [c1 => comment => {thread => 't1'}],
+    [c2 => comment => {thread => 't1'}],
+    [c3 => comment => {thread => 't1'}],
+  )->then (sub {
+    return $current->json (['comment', 'list.json'], {
+      thread_nobj_key => $current->o ('t1')->{nobj_key},
+      limit => 2,
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 2;
+      is $result->{json}->{items}->[0]->{comment_id}, $current->o ('c3')->{comment_id};
+      is $result->{json}->{items}->[1]->{comment_id}, $current->o ('c2')->{comment_id};
+      ok ! $result->{json}->{has_prev}, 'unknown';
+      is $result->{json}->{prev_ref}, '+' . $current->o ('c3')->{timestamp} . ',1';
+    } $current->c;
+    $current->set_o (r1 => $result->{json});
+    return $current->json (['comment', 'list.json'], {
+      thread_nobj_key => $current->o ('t1')->{nobj_key},
+      limit => 2,
+      ref => $current->o ('r1')->{prev_ref},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 0;
+      ok $result->{json}->{has_prev};
+      is $result->{json}->{prev_ref}, '-' . $current->o ('c3')->{timestamp} . ',0';
+    } $current->c;
+    return $current->json (['comment', 'list.json'], {
+      thread_nobj_key => $current->o ('t1')->{nobj_key},
+      limit => 2,
+      ref => $current->o ('r1')->{next_ref},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      is $result->{json}->{items}->[0]->{comment_id}, $current->o ('c1')->{comment_id};
+      ok $result->{json}->{has_prev};
+      is $result->{json}->{prev_ref}, '+' . $current->o ('c1')->{timestamp} . ',1';
+    } $current->c;
+    $current->set_o (r2 => $result->{json});
+    return $current->json (['comment', 'list.json'], {
+      thread_nobj_key => $current->o ('t1')->{nobj_key},
+      limit => 2,
+      ref => $current->o ('r2')->{prev_ref},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 2;
+      is $result->{json}->{items}->[0]->{comment_id}, $current->o ('c2')->{comment_id};
+      is $result->{json}->{items}->[1]->{comment_id}, $current->o ('c3')->{comment_id};
+      ok $result->{json}->{has_prev};
+      is $result->{json}->{prev_ref}, '-' . $current->o ('c2')->{timestamp} . ',1';
+    } $current->c;
+    return $current->json (['comment', 'list.json'], {
+      thread_nobj_key => $current->o ('t1')->{nobj_key},
+      limit => 2,
+      ref => $current->o ('r2')->{next_ref},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 0;
+      ok $result->{json}->{has_prev};
+      is $result->{json}->{prev_ref}, '+' . $current->o ('c1')->{timestamp} . ',0';
+    } $current->c;
+    return $current->json (['comment', 'list.json'], {
+      thread_nobj_key => $current->o ('t1')->{nobj_key},
+      limit => 2,
+      ref => $result->{json}->{prev_ref},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 2;
+      is $result->{json}->{items}->[0]->{comment_id}, $current->o ('c1')->{comment_id};
+      is $result->{json}->{items}->[1]->{comment_id}, $current->o ('c2')->{comment_id};
+      ok ! $result->{json}->{has_prev}, 'unknown';
+      is $result->{json}->{prev_ref}, '-' . $current->o ('c1')->{timestamp} . ',1';
+    } $current->c;
+    return $current->create (
+      [c4 => comment => {thread => 't1'}],
+    );
+  })->then (sub {
+    return $current->json (['comment', 'list.json'], {
+      thread_nobj_key => $current->o ('t1')->{nobj_key},
+      limit => 2,
+      ref => $current->o ('r1')->{prev_ref},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      is $result->{json}->{items}->[0]->{comment_id}, $current->o ('c4')->{comment_id};
+      ok $result->{json}->{has_prev};
+      is $result->{json}->{prev_ref}, '-' . $current->o ('c4')->{timestamp} . ',1';
+    } $current->c;
+  });
+} n => 29, name => 'pager prev';
+
+Test {
+  my $current = shift;
+  return $current->create (
+    [c1 => comment => {}],
+  )->then (sub {
+    return $current->json (['comment', 'list.json'], {
+      comment_id => $current->o ('c1')->{comment_id},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is !!$result->{json}->{has_next}, !!0;
+      is $result->{json}->{next_ref}, '-' . $current->o ('c1')->{timestamp} . ',1';
+      is !!$result->{json}->{has_prev}, !!0;
+      is $result->{json}->{prev_ref}, '+' . $current->o ('c1')->{timestamp} . ',1';
+    } $current->c;
+  });
+} n => 4, name => 'pager comment_id';
+
+Test {
+  my $current = shift;
+  return $current->create (
+    [t1 => nobj => {}],
+  )->then (sub {
+    return $current->json (['comment', 'list.json'], {
+      thread_nobj_key => $current->o ('t1')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is !!$result->{json}->{has_next}, !!0;
+      is $result->{json}->{next_ref}, undef;
+      is !!$result->{json}->{has_prev}, !!0;
+      like $result->{json}->{prev_ref}, qr{^\+[0-9.]+,0$};
+    } $current->c;
+  });
+} n => 4, name => 'pager empty';
+
+Test {
+  my $current = shift;
+  return $current->create (
+    [t1 => nobj => {}],
     [c1 => comment => {
       thread => 't1',
       author_status => 10, owner_status => 2, admin_status => 3,
@@ -263,7 +409,7 @@ RUN;
 
 =head1 LICENSE
 
-Copyright 2018 Wakaba <wakaba@suikawiki.org>.
+Copyright 2018-2019 Wakaba <wakaba@suikawiki.org>.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as

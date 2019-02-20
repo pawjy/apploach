@@ -1,6 +1,7 @@
 package Pager;
 use strict;
 use warnings;
+use Time::HiRes qw(time);
 
 sub this_page ($%) {
   my ($self, %args) = @_;
@@ -9,6 +10,7 @@ sub this_page ($%) {
     limit => 0+($self->{app}->bare_param ('limit') // $args{limit} // 30),
     offset => 0,
     value => undef,
+    now => time,
   };
   my $max_limit = $args{max_limit} // 100;
   return $self->throw ({reason => "Bad |limit|"})
@@ -30,6 +32,7 @@ sub this_page ($%) {
   return $page;
 } # this_page
 
+## By design, |has_prev| and |prev_ref| are not reliable.
 sub next_page ($$$) {
   my ($this_page, $items, $value_key) = @_;
   my $next_page = {};
@@ -39,39 +42,44 @@ sub next_page ($$$) {
       if defined $this_page->{exact_value};
   if (ref $items eq 'ARRAY') {
     if (@$items) {
-      my $last_value = $items->[0]->{$value_key};
+      my $first_value = my $last_value = $items->[0]->{$value_key};
       for (@$items) {
         $values->{$_->{$value_key}}++;
         if ($sign eq '+') {
           $last_value = $_->{$value_key} if $last_value < $_->{$value_key};
+          $first_value = $_->{$value_key} if $first_value > $_->{$value_key};
         } else {
           $last_value = $_->{$value_key} if $last_value > $_->{$value_key};
+          $first_value = $_->{$value_key} if $first_value < $_->{$value_key};
         }
       }
-      $next_page->{next_ref} = $sign . $last_value . ',' . $values->{$last_value};
       $next_page->{has_next} = @$items == $this_page->{limit};
-    } else {
-      $next_page->{next_ref} = $this_page->{ref};
-      $next_page->{has_next} = 0;
+      
+      $next_page->{next_ref} = $sign . $last_value . ',' . $values->{$last_value};
+      $next_page->{prev_ref} = ($sign eq '+' ? '-' : '+') . $first_value . ',' . $values->{$first_value};
     }
   } else { # HASH
     if (keys %$items) {
-      my $last_value = $items->{each %$items}->{$value_key};
+      my $first_value = my $last_value = $items->{each %$items}->{$value_key};
       for (values %$items) {
         $values->{$_->{$value_key}}++;
         if ($sign eq '+') {
           $last_value = $_->{$value_key} if $last_value < $_->{$value_key};
+          $first_value = $_->{$value_key} if $first_value > $_->{$value_key};
         } else {
           $last_value = $_->{$value_key} if $last_value > $_->{$value_key};
+          $first_value = $_->{$value_key} if $first_value < $_->{$value_key};
         }
       }
-      $next_page->{next_ref} = $sign . $last_value . ',' . $values->{$last_value};
       $next_page->{has_next} = (keys %$items) == $this_page->{limit};
-    } else {
-      $next_page->{next_ref} = $this_page->{ref};
-      $next_page->{has_next} = 0;
+      
+      $next_page->{next_ref} = $sign . $last_value . ',' . $values->{$last_value};
+      $next_page->{prev_ref} = ($sign eq '+' ? '-' : '+') . $first_value . ',' . $values->{$first_value};
     }
   }
+  $next_page->{next_ref} //= $this_page->{ref};
+  $next_page->{has_prev} = 1 if $this_page->{offset} > 0; # otherwise unknown
+  $next_page->{prev_ref} //= ($sign eq '+' ? '-' : '+') . ($this_page->{exact_value} // $this_page->{now}) . ',0';
   return $next_page;
 } # next_page
 
@@ -79,7 +87,7 @@ sub next_page ($$$) {
 
 =head1 LICENSE
 
-Copyright 2018 Wakaba <wakaba@suikawiki.org>.
+Copyright 2018-2019 Wakaba <wakaba@suikawiki.org>.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as
