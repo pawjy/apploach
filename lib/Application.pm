@@ -125,8 +125,16 @@ use Pager;
 ##
 ##   |has_next| : Boolean : Whether there is the next page or not.
 ##
-##   |next_ref| : Ref ? : The |ref| string that can be used to obtain
-##   the next page.
+##   |next_ref| : Ref ? : The |ref| string of the Pages parameter set
+##   that can be used to obtain the next page.
+##
+##   |has_prev| : Boolean : Whether there is the previous page or not.
+##   Note that this flag might not be reliable.
+##
+##   |prev_ref| : Ref ? : The |ref| string of the Pages parameter set
+##   that can be used to obtain the previous page.  Note that this
+##   value can be wrong when there are items with same timestamps
+##   across the page boundary.
 ##
 ## Pages.  End points with list response accepts page parameters.
 ##
