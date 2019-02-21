@@ -80,6 +80,7 @@ sub next_page ($$$) {
   $next_page->{next_ref} //= $this_page->{ref};
   $next_page->{has_prev} = 1 if $this_page->{offset} > 0; # otherwise unknown
   $next_page->{prev_ref} //= ($sign eq '+' ? '-' : '+') . ($this_page->{exact_value} // $this_page->{now}) . ',0';
+  $next_page->{reversed} = $this_page->{order_direction} eq 'ASC';
   return $next_page;
 } # next_page
 

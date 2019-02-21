@@ -123,6 +123,11 @@ use Pager;
 ##
 ##   |items| : JSON array : Objects.
 ##
+##   |reversed| : Boolean : Whether the |items| are in reverse order
+##   or not.  The |items| are in reversed order if the order is
+##   different from the order that would be returned in case no
+##   special parameter is given.
+##
 ##   |has_next| : Boolean : Whether there is the next page or not.
 ##
 ##   |next_ref| : Ref ? : The |ref| string of the Pages parameter set
