@@ -260,9 +260,9 @@ Test {
   })->then (sub {
     my $result = $_[0];
     test {
-      is !!$result->{json}->{has_next}, !!0;
+      ok $result->{json}->{has_next};
       is $result->{json}->{next_ref}, '-' . $current->o ('c1')->{timestamp} . ',1';
-      is !!$result->{json}->{has_prev}, !!0;
+      ok $result->{json}->{has_prev};
       is $result->{json}->{prev_ref}, '+' . $current->o ('c1')->{timestamp} . ',1';
     } $current->c;
   });

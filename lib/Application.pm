@@ -1025,6 +1025,7 @@ sub run_comment ($) {
       my $comment_id = $self->{app}->bare_param ('comment_id');
       if (defined $comment_id) {
         $where->{comment_id} = $comment_id;
+        $page->{only_item} = 1;
       } else {
         return $self->throw
             ({reason => 'Either thread or |comment_id| is required'})
@@ -1380,6 +1381,7 @@ sub run_blog ($) {
       my $id_list = $self->{app}->bare_param_list ('blog_entry_id');
       if (@$id_list) {
         $where->{blog_entry_id} = {-in => $id_list};
+        $page->{only_item} = 1;
       } else {
         return $self->throw
             ({reason => 'Either blog or |blog_entry_id| is required'})
@@ -4133,6 +4135,7 @@ sub run_nobj ($) {
         my $id = $self->{app}->bare_param ('log_id');
         if (defined $id) {
           $where->{log_id} = $id;
+          $page->{only_item} = 1;
         }
         $where->{timestamp} = $page->{value} if defined $page->{value};
 
@@ -4289,6 +4292,7 @@ sub run_nobj ($) {
       my $revision_id = $self->{app}->bare_param ('revision_id');
       if (defined $revision_id) {
         $where->{revision_id} = $revision_id;
+        $page->{only_item} = 1;
       } else {
         return $self->throw
             ({reason => 'Either target or |revision_id| is required'})
