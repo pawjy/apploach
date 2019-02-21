@@ -154,6 +154,7 @@ Test {
       is $result->{json}->{items}->[1]->{comment_id}, $current->o ('c2')->{comment_id};
       ok ! $result->{json}->{has_prev}, 'unknown';
       is $result->{json}->{prev_ref}, '+' . $current->o ('c3')->{timestamp} . ',1';
+      ok ! $result->{json}->{reversed};
     } $current->c;
     $current->set_o (r1 => $result->{json});
     return $current->json (['comment', 'list.json'], {
@@ -167,6 +168,7 @@ Test {
       is 0+@{$result->{json}->{items}}, 0;
       ok $result->{json}->{has_prev};
       is $result->{json}->{prev_ref}, '-' . $current->o ('c3')->{timestamp} . ',0';
+      ok $result->{json}->{reversed};
     } $current->c;
     return $current->json (['comment', 'list.json'], {
       thread_nobj_key => $current->o ('t1')->{nobj_key},
@@ -180,6 +182,7 @@ Test {
       is $result->{json}->{items}->[0]->{comment_id}, $current->o ('c1')->{comment_id};
       ok $result->{json}->{has_prev};
       is $result->{json}->{prev_ref}, '+' . $current->o ('c1')->{timestamp} . ',1';
+      ok ! $result->{json}->{reversed};
     } $current->c;
     $current->set_o (r2 => $result->{json});
     return $current->json (['comment', 'list.json'], {
@@ -195,6 +198,7 @@ Test {
       is $result->{json}->{items}->[1]->{comment_id}, $current->o ('c3')->{comment_id};
       ok $result->{json}->{has_prev};
       is $result->{json}->{prev_ref}, '-' . $current->o ('c2')->{timestamp} . ',1';
+      ok $result->{json}->{reversed};
     } $current->c;
     return $current->json (['comment', 'list.json'], {
       thread_nobj_key => $current->o ('t1')->{nobj_key},
@@ -207,6 +211,7 @@ Test {
       is 0+@{$result->{json}->{items}}, 0;
       ok $result->{json}->{has_prev};
       is $result->{json}->{prev_ref}, '+' . $current->o ('c1')->{timestamp} . ',0';
+      ok ! $result->{json}->{reversed};
     } $current->c;
     return $current->json (['comment', 'list.json'], {
       thread_nobj_key => $current->o ('t1')->{nobj_key},
@@ -221,6 +226,7 @@ Test {
       is $result->{json}->{items}->[1]->{comment_id}, $current->o ('c2')->{comment_id};
       ok ! $result->{json}->{has_prev}, 'unknown';
       is $result->{json}->{prev_ref}, '-' . $current->o ('c1')->{timestamp} . ',1';
+      ok $result->{json}->{reversed};
     } $current->c;
     return $current->create (
       [c4 => comment => {thread => 't1'}],
@@ -238,9 +244,10 @@ Test {
       is $result->{json}->{items}->[0]->{comment_id}, $current->o ('c4')->{comment_id};
       ok $result->{json}->{has_prev};
       is $result->{json}->{prev_ref}, '-' . $current->o ('c4')->{timestamp} . ',1';
+      ok $result->{json}->{reversed};
     } $current->c;
   });
-} n => 29, name => 'pager prev';
+} n => 36, name => 'pager prev';
 
 Test {
   my $current = shift;
