@@ -27,10 +27,10 @@ Path::Class~0.37
 Path::Tiny~0.108
 Proc::FastSpawn~1.2
 Scalar::Util~1.50
-Socket~2.027
+Socket~2.029
 Symbol::Get~0.10
 Term::ANSIColor~4.06
-Test::More~1.302162
+Test::Builder~1.302162
 Time::HiRes~1.9760
 Time::Local~1.28
 Try::Tiny~0.30
