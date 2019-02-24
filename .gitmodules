@@ -74,3 +74,7 @@
 	path = modules/Crypt-Perl
 	url = https://github.com/FGasper/p5-Crypt-Perl
 	track = master
+[submodule "t_deps/modules/serverset"]
+	path = t_deps/modules/serverset
+	url = https://github.com/wakaba/serverset
+	track = master

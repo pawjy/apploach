@@ -18,8 +18,8 @@ use Web::URL;
 use Web::Transport::BasicClient;
 use Sarze;
 
-use DockerStack;
-use Migration;
+use ServerSet::DockerStack;
+use ServerSet::Migration;
 
 my $RootPath = path (__FILE__)->parent->parent->parent->absolute;
 my $dockerhost = Web::Host->parse_string
@@ -354,8 +354,9 @@ sub _docker ($%) {
           return promised_for {
             my $name = shift;
             return Promised::File->new_from_path ($args{mysqld_database_schema_path}->child ("$name.sql"))->read_byte_string->then (sub {
-              return Migration->run ($_[0] => $data->{local_dsn}->{$name}, dump => 1);
+              return ServerSet::Migration->run ($_[0] => $data->{local_dsn}->{$name}, dump => 1);
             })->then (sub {
+              #warn $_[0];
               return $self->_write_file ("mysqld-$name.sql" => $_[0]);
             });
           } $args{mysqld_database_names};
@@ -492,7 +493,7 @@ sub _docker ($%) {
       });
     } keys %$servers,
   ])->then (sub {
-    $stack = DockerStack->new ({
+    $stack = ServerSet::DockerStack->new ({
       services => $services,
     });
     $stack->propagate_signal (1);
@@ -620,7 +621,7 @@ sub _docker_app ($%) {
       });
     } keys %$servers,
   ])->then (sub {
-    $stack = DockerStack->new ({
+    $stack = ServerSet::DockerStack->new ({
       services => $services,
     });
     $stack->propagate_signal (1);
