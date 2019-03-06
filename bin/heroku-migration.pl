@@ -7,7 +7,7 @@ use JSON::PS;
 use Promise;
 use Promised::Flow;
 use Promised::File;
-use Migration;
+use ServerSet::Migration;
 
 my $mysqld_db_names = [qw(apploach)];
 my $mysqld_database_schema_path = path (__FILE__)->parent->parent->child ('db');
@@ -21,7 +21,7 @@ Promise->resolve->then (sub {
   return promised_for {
     my $name = shift;
     return Promised::File->new_from_path ($mysqld_database_schema_path->child ("$name.sql"))->read_byte_string->then (sub {
-      return Migration->run ($_[0] => $get_dsn->($name));
+      return ServerSet::Migration->run ($_[0] => $get_dsn->($name));
     });
   } $mysqld_db_names;
 })->to_cv->recv;
