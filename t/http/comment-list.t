@@ -412,6 +412,48 @@ Test {
   });
 } n => 24, name => 'status filters';
 
+Test {
+  my $current = shift;
+  return $current->create (
+    [c1 => comment => {}],
+    [c2 => comment => {}],
+    [c3 => comment => {}],
+  )->then (sub {
+    return $current->json (['comment', 'list.json'], {
+      comment_id => [$current->o ('c1')->{comment_id},
+                     $current->o ('c3')->{comment_id},
+                     rand,
+                     $current->o ('c2')->{comment_id},
+                     ''],
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 3;
+      is $result->{json}->{items}->[0]->{comment_id}, $current->o ('c3')->{comment_id};
+      is $result->{json}->{items}->[1]->{comment_id}, $current->o ('c2')->{comment_id};
+      is $result->{json}->{items}->[2]->{comment_id}, $current->o ('c1')->{comment_id};
+    } $current->c;
+  });
+} n => 4, name => 'Multiple comment_id';
+
+Test {
+  my $current = shift;
+  return $current->create (
+  )->then (sub {
+    return $current->json (['comment', 'list.json'], {
+      comment_id => [rand,
+                     rand,
+                     ''],
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 0;
+    } $current->c;
+  });
+} n => 1, name => 'Multiple comment_id but empty';
+
 RUN;
 
 =head1 LICENSE

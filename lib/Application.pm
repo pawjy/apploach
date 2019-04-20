@@ -978,11 +978,12 @@ sub run_comment ($) {
     ##
     ##   NObj (|thread|) : The comment's thread.
     ##
-    ##   |comment_id| : ID : The comment's ID.  Either the thread or
-    ##   the ID, or both, is required.  If the thread is specified,
-    ##   returned comments are limited to those for the thread.  If
-    ##   |comment_id| is specified, it is further limited to one
-    ##   with that |comment_id|.
+    ##   |comment_id| : ID : The comment's ID.  If the thread is
+    ##   specified, returned comments are limited to those for the
+    ##   thread.  If |comment_id| is specified, it is further limited
+    ##   to one with that |comment_id|.  Zero or more parameters can
+    ##   be specified, but either the thread or the ID, or both, is
+    ##   required.
     ##
     ##   |with_internal_data| : Boolean : Whether |internal_data|
     ##   should be returned or not.
@@ -1022,9 +1023,9 @@ sub run_comment ($) {
       };
       $where->{timestamp} = $page->{value} if defined $page->{value};
       
-      my $comment_id = $self->{app}->bare_param ('comment_id');
-      if (defined $comment_id) {
-        $where->{comment_id} = $comment_id;
+      my $comment_ids = $self->{app}->bare_param_list ('comment_id');
+      if (@$comment_ids) {
+        $where->{comment_id} = {-in => $comment_ids->to_a};
         $page->{only_item} = 1;
       } else {
         return $self->throw
