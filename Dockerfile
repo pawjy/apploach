@@ -12,7 +12,8 @@ ADD modules/ /app/modules/
 RUN cd /app && \
     make deps-docker PMBP_OPTIONS="--execute-system-package-installer --dump-info-file-before-die" && \
     echo '#!/bin/bash' > /server && \
-    echo 'cd /app && ./perl bin/sarze.pl 0 8080' >> /server && \
+    echo 'port=${PORT:-80}' >> /server && \
+    echo 'cd /app && ./perl bin/sarze.pl 0 ${port}' >> /server && \
     chmod u+x /server && \
     echo '#!/bin/bash' > /showrev && \
     echo 'cat /app/rev' >> /showrev && \
