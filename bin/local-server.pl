@@ -12,20 +12,18 @@ BEGIN {
   $ENV{PROMISED_COMMAND_DEBUG} //= 0;
 }
 
-use Promised::Flow;
 use Web::Host;
-use ServerSet;
+use ApploachSS;
 
 my $RootPath = path (__FILE__)->parent->parent->absolute;
 my $LocalPath = $RootPath->child ('local/local-server');
 
-my ($r_dw, $s_dw) = promised_cv;
-
-ServerSet->run (
+ApploachSS->run (
   data_root_path => $LocalPath,
   app_host => Web::Host->parse_string ('0'),
   app_port => 6315,
   mysqld_database_name_suffix => '_local',
+  dont_run_xs => 1,
 )->then (sub {
   my $v = $_[0];
   warn sprintf "\n\nURL: <%s>\n\n",
@@ -36,7 +34,7 @@ ServerSet->run (
 
 =head1 LICENSE
 
-Copyright 2018 Wakaba <wakaba@suikawiki.org>.
+Copyright 2018-2019 Wakaba <wakaba@suikawiki.org>.
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself.

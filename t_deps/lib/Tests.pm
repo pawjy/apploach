@@ -9,7 +9,7 @@ use JSON::PS;
 use AbortController;
 use Promise;
 use Promised::Flow;
-use ServerSet;
+use ApploachSS;
 use CurrentTest;
 use Test::X1;
 use Test::More;
@@ -39,7 +39,7 @@ push @EXPORT, qw(RUN);
 sub RUN () {
   note "Servers...";
   my $ac = AbortController->new;
-  my $v = ServerSet->run (
+  my $v = ApploachSS->run (
     signal => $ac->signal,
     mysqld_database_name_suffix => '_test',
   )->to_cv->recv;
