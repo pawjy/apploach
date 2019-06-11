@@ -189,10 +189,13 @@ sub run ($%) {
       storage => {
         docker_net_host => $args->{docker_net_host},
         no_set_uid => $args->{no_set_uid},
+        public_prefixes => [
+          '/public',
+        ],
       },
       app_config => {
         app_config_path => $RootPath->child ('t_deps/app_config.json'),
-        app_docker_image => $app_docker_image,
+        app_docker_image => $app_docker_image || undef,
       },
       app => {
         disabled => !! $app_docker_image,
