@@ -188,6 +188,7 @@ sub run ($%) {
       },
       storage => {
         docker_net_host => $args->{docker_net_host},
+        no_set_uid => $args->{no_set_uid},
       },
       app_config => {
         app_config_path => $RootPath->child ('t_deps/app_config.json'),

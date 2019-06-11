@@ -13,6 +13,7 @@ ApploachSS->run (
   app_docker_image => $ENV{TEST_APP_DOCKER_IMAGE},
   mysqld_database_name_suffix => '_test',
   docker_net_host => 1,
+  no_set_uid => 1,
   write_ss_env => 1,
   signal => $ac->signal,
 )->then (sub {
