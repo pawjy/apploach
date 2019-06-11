@@ -194,7 +194,7 @@ sub run ($%) {
         ],
       },
       app_config => {
-        app_config_path => $RootPath->child ('t_deps/app_config.json'),
+        app_config_path => $RootPath->child ('t_deps/app-config.json'),
         app_docker_image => $app_docker_image || undef,
       },
       app => {
