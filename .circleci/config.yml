@@ -47,28 +47,28 @@
             },
             {
                "run" : {
-                  "command" : "rm -fr $CIRCLE_ARTIFACTS/pid"
+                  "command" : "rm -fr $CIRCLE_ARTIFACTS/ss.pid"
                }
             },
             {
                "run" : {
                   "background" : true,
-                  "command" : "./perl t_deps/bin/env-for-circleci.pl > $CIRCLE_ARTIFACTS/servers-http-$CIRCLE_NODE_INDEX.txt.dat 2>&1"
+                  "command" : "TEST_APP_DOCKER_IMAGE=quay.io/wakaba/apploach ./perl t_deps/bin/env-for-circleci.pl > $CIRCLE_ARTIFACTS/servers-http-$CIRCLE_NODE_INDEX.txt.dat 2>&1"
                }
             },
             {
                "run" : {
-                  "command" : "while [ ! -e $CIRCLE_ARTIFACTS/pid ]; do sleep 1; done"
+                  "command" : "while [ ! -e $CIRCLE_ARTIFACTS/ss.pid ]; do sleep 1; done"
                }
             },
             {
                "run" : {
-                  "command" : "if [ ! -e $CIRCLE_ARTIFACTS/pid ]; then cat $CIRCLE_ARTIFACTS/env.pl; fi; cat $CIRCLE_ARTIFACTS/pid"
+                  "command" : "if [ ! -e $CIRCLE_ARTIFACTS/ss.pid ]; then cat $CIRCLE_ARTIFACTS/ss.env; fi; cat $CIRCLE_ARTIFACTS/ss.pid"
                }
             },
             {
                "run" : {
-                  "command" : "SS_ENV_FILE=$CIRCLE_ARTIFACTS/env.pl make test"
+                  "command" : "SS_ENV_FILE=$CIRCLE_ARTIFACTS/ss.env make test"
                }
             },
             {
