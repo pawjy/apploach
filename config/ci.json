@@ -15,13 +15,13 @@
       "make deps-circleci"
     ],
     "tests": [
-      "rm -fr $CIRCLE_ARTIFACTS/pid",
-      {"./perl t_deps/bin/env-for-circleci.pl > $CIRCLE_ARTIFACTS/servers-http-$CIRCLE_NODE_INDEX.txt.dat 2>&1": {
+      "rm -fr $CIRCLE_ARTIFACTS/ss.pid",
+      {"TEST_APP_DOCKER_IMAGE=quay.io/wakaba/apploach ./perl t_deps/bin/env-for-circleci.pl > $CIRCLE_ARTIFACTS/servers-http-$CIRCLE_NODE_INDEX.txt.dat 2>&1": {
         "background": true}},
-      "while [ ! -e $CIRCLE_ARTIFACTS/pid ]; do sleep 1; done",
-      "if [ ! -e $CIRCLE_ARTIFACTS/pid ]; then cat $CIRCLE_ARTIFACTS/env.pl; fi; cat $CIRCLE_ARTIFACTS/pid",
+      "while [ ! -e $CIRCLE_ARTIFACTS/ss.pid ]; do sleep 1; done",
+      "if [ ! -e $CIRCLE_ARTIFACTS/ss.pid ]; then cat $CIRCLE_ARTIFACTS/ss.env; fi; cat $CIRCLE_ARTIFACTS/ss.pid",
       
-      "SS_ENV_FILE=$CIRCLE_ARTIFACTS/env.pl make test"
+      "SS_ENV_FILE=$CIRCLE_ARTIFACTS/ss.env make test"
     ]
   }
 }

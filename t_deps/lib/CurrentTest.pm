@@ -11,6 +11,7 @@ use Web::Transport::ENVProxyManager;
 use Web::Transport::BasicClient;
 use Test::More;
 use Test::X1;
+use ServerSet::ReverseProxyProxyManager;
 
 use TestError;
 
@@ -37,7 +38,7 @@ sub client ($) {
 sub client_for ($$) {
   my ($self, $url) = @_;
   $self->{clients}->{$url->get_origin->to_ascii} ||= Web::Transport::BasicClient->new_from_url ($url, {
-    proxy_manager => Web::Transport::ENVProxyManager->new_from_envs ($self->{server_data}->{local_envs}),
+    proxy_manager => ServerSet::ReverseProxyProxyManager->new_from_envs ($self->{server_data}->{local_envs}),
   });
 } # client_for
 
