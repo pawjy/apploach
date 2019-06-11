@@ -53,7 +53,7 @@
             {
                "run" : {
                   "background" : true,
-                  "command" : "SS_DEBUG=1 SS_DEBUG_SERVERS=storage TEST_APP_DOCKER_IMAGE=quay.io/wakaba/apploach ./perl t_deps/bin/env-for-circleci.pl > $CIRCLE_ARTIFACTS/servers-http-$CIRCLE_NODE_INDEX.txt.dat 2>&1"
+                  "command" : "PROMISED_COMMAND_DEBUG=1 SS_DEBUG=1 SS_DEBUG_SERVERS=storage TEST_APP_DOCKER_IMAGE=quay.io/wakaba/apploach ./perl t_deps/bin/env-for-circleci.pl > $CIRCLE_ARTIFACTS/servers-http-$CIRCLE_NODE_INDEX.txt.dat 2>&1"
                }
             },
             {
