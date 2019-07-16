@@ -4457,9 +4457,12 @@ sub run_nobj ($) {
     ##
     ## Parameters.
     ##
-    ##   NObj (|target|) - The NObj.
+    ##   NObj (|target|) : The NObj.  Zero or more parameters can be
+    ##   specified.
     ##
     ## Response.  No additional data.
+    ##
+    ## The timestamp is updated to the current time.
     return Promise->all ([
       $self->nobj_list ('target'),
     ])->then (sub {
@@ -4478,6 +4481,39 @@ sub run_nobj ($) {
           ($self->app_id_columns),
           item_nobj_id => {-in => [map { $_->nobj_id } @$targets]},
         });
+      });
+    })->then (sub {
+      return $self->json ({});
+    });
+  } elsif (@{$self->{path}} == 1 and $self->{path}->[0] eq 'setscore.json') {
+    ## /{app_id}/nobj/setscore.json - Update score of an NObj.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|target|) : The NObj.
+    ##
+    ##   NObj (|tag_context|) : The tag's context NObj.  Zero or more
+    ##   parameters can be specified.
+    ##
+    ##   score : Integer : The score.
+    ##
+    ## Response.  No additional data.
+    return Promise->all ([
+      $self->nobj ('target'),
+      $self->nobj_list ('tag_context'),
+    ])->then (sub {
+      my ($target) = ($_[0]->[0]);
+      return if $target->is_error;
+      my ($tag_contexts) = ($_[0]->[1]);
+      $tag_contexts = [grep { not $_->is_error } @$tag_contexts];
+      my $score = 0+($self->{app}->bare_param ('score') || 0);
+      return unless @$tag_contexts;
+      return $self->db->update ('tag_item', {
+        score => $score,
+      }, where => {
+        ($self->app_id_columns),
+        context_nobj_id => {-in => [map { $_->nobj_id } @$tag_contexts]},
+        item_nobj_id => $target->nobj_id,
       });
     })->then (sub {
       return $self->json ({});
