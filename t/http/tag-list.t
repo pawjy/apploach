@@ -433,11 +433,25 @@ Test {
   });
 } n => 9, name => 'lang redirect';
 
+Test {
+  my $current = shift;
+  return $current->json (['tag', 'list.json'], {
+    context_nobj_key => rand,
+    tag_name => $current->generate_text (t1 => {}),
+    sd => [$current->generate_text (t2 => {})],
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is $result->{json}->{tags}->{$current->o ('t1')}->{data}->{$current->o ('t2')}, undef;
+    } $current->c;
+  });
+} n => 1, name => 'new context with string data';
+
 RUN;
 
 =head1 LICENSE
 
-Copyright 2018 Wakaba <wakaba@suikawiki.org>.
+Copyright 2018-2019 Wakaba <wakaba@suikawiki.org>.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as
