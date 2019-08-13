@@ -2106,7 +2106,8 @@ sub run_tag ($) {
         }->[0]->{tag_name};
         $result->{tags}->{$name}->{localized_tag_names} = {};
       }
-      
+
+      return if $context->is_error;
       my $string_data_names = $self->{app}->text_param_list ('sd');
       return unless keys %$all_name_shas and @$string_data_names;
       return $self->db->select ('tag_string_data', {
