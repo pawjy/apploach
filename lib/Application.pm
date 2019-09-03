@@ -1324,6 +1324,11 @@ sub run_blog ($) {
     ##   |with_internal_data| : Boolean : Whether |internal_data|
     ##   should be returned or not.
     ##
+    ##   |with_neighbors| : Boolean : Whether |prev_item| and
+    ##   |next_item| should be returned or not.  Only applicable when
+    ##   NObj (|blog|) is specified and exactly one |blog_entry_id| is
+    ##   specified.
+    ##
     ##   Status filters.
     ##
     ##   Pages.
@@ -1344,18 +1349,40 @@ sub run_blog ($) {
     ##   data.  Only when |with_internal_data| is true.
     ##
     ##   Statuses.
+    ##
+    ## In addition to list response name/value pairs:
+    ##
+    ##   |prev_item| : JSON object? : The blog entry's previous blog
+    ##   entry sorted by their |timestamp| values, if any.  Only when
+    ##   |with_neighbors| is specified.
+    ##
+    ##   |next_item| : JSON object? : The blog entry's next blog
+    ##   entry sorted by their |timestamp| values, if any.  Only when
+    ##   |with_neighbors| is specified.
+    ##
+    ## The values of the |prev_item| and |next_item| name/value pairs,
+    ## if non-null, are JSON objects with following name/value pairs:
+    ##
+    ##   |blog_entry_id| : ID : The blog entry's ID.
+    ##
+    ##   |data| : JSON object with following name/value pair:
+    ##
+    ##     |title| : String? : The blog entry's data's |title|.
+    ##                           Only when |with_title| is specified.
+    my $result = {};
     my $page = Pager::this_page ($self, limit => 10, max_limit => 10000);
     return Promise->all ([
       $self->nobj ('blog'),
     ])->then (sub {
       my $thread = $_[0]->[0];
-      return [] if $thread->not_found;
+      return $result->{items} = [] if $thread->not_found;
 
-      my $where = {
+      my $where_base = {
         ($self->app_id_columns),
         ($thread->missing ? () : ($thread->to_columns ('blog'))),
         ($self->status_filter_columns),
       };
+      my $where = {%$where_base};
       $where->{timestamp} = $page->{value} if defined $page->{value};
       for (
         ['timestamp_le', '<='],
@@ -1401,32 +1428,107 @@ sub run_blog ($) {
         'timestamp',
       ], source_name => 'master',
         offset => $page->{offset}, limit => $page->{limit},
-        order => ['timestamp', $page->{order_direction}],
+        order => ['timestamp', $page->{order_direction}, 'blog_entry_id', $page->{order_direction}],
       )->then (sub {
-        return $_[0]->all->to_a;
+        my $items = $result->{items} = $_[0]->all->to_a;
+        for my $item (@$items) {
+          $item->{blog_entry_id} .= '';
+          if (defined $item->{data}) {
+            $item->{data} = Dongry::Type->parse ('json', $item->{data});
+          } elsif (defined $item->{title}) {
+            $item->{data} = {
+              title => Dongry::Type->parse ('text', delete $item->{title}),
+              timestamp => $item->{timestamp},
+            };
+          }
+          $item->{summary_data} = Dongry::Type->parse ('json', $item->{summary_data})
+              if defined $item->{summary_data};
+          $item->{internal_data} = Dongry::Type->parse ('json', $item->{internal_data})
+              if defined $item->{internal_data};
+        }
+        if (@$items == 1 and $self->{app}->bare_param ('with_neighbors') and
+            not $thread->missing and $page->{only_item}) {
+          my $prev;
+          my $next;
+          return Promise->all ([
+            $self->db->select ('blog_entry', {
+              %$where_base,
+              timestamp => {'<', $items->[0]->{timestamp}},
+            }, fields => [
+              'blog_entry_id',
+              ($self->{app}->bare_param ('with_title') ? ('title') : ()),
+            ], source_name => 'master', order => ['timestamp', 'desc'], limit => 1)->then (sub { return $_[0]->first }),
+            $self->db->select ('blog_entry', {
+              %$where_base,
+              timestamp => {'>', $items->[0]->{timestamp}},
+            }, fields => [
+              'blog_entry_id',
+              ($self->{app}->bare_param ('with_title') ? ('title') : ()),
+            ], source_name => 'master', order => ['timestamp', 'asc'], limit => 1)->then (sub { return $_[0]->first }),
+            $self->db->select ('blog_entry', {
+              %$where_base,
+              timestamp => $items->[0]->{timestamp},
+            }, fields => [
+              'blog_entry_id',
+            ], source_name => 'master', order => ['timestamp', 'asc', 'blog_entry_id', 'asc'], limit => 1000)->then (sub { return [map { $_->{blog_entry_id} } @{$_[0]->all}] }),
+          ])->then (sub {
+            $prev = $_[0]->[0]; # or undef
+            $next = $_[0]->[1]; # or undef
+            my @eid = @{$_[0]->[2]};
+            if (@eid > 1) {
+              my $prev_eid;
+              my $next_eid;
+              my $found;
+              for (@eid) {
+                if ($_ == $items->[0]->{blog_entry_id}) {
+                  $found = 1;
+                } elsif ($found) {
+                  $next_eid = $_;
+                  last;
+                } else {
+                  $prev_eid = $_;
+                }
+              }
+              my $eids = [];
+              push @$eids, $prev_eid if defined $prev_eid;
+              push @$eids, $next_eid if defined $next_eid;
+              return unless @$eids;
+              return $self->db->select ('blog_entry', {
+                %$where_base,
+                blog_entry_id => {-in => $eids},
+              }, fields => [
+                'blog_entry_id',
+                ($self->{app}->bare_param ('with_title') ? ('title') : ()),
+              ], source_name => 'master')->then (sub {
+                for (@{$_[0]->all}) {
+                  if ($_->{blog_entry_id} == $prev_eid) {
+                    $prev = $_;
+                  } elsif ($_->{blog_entry_id} == $next_eid) {
+                    $next = $_;
+                  }
+                }
+              });
+            }
+          })->then (sub {
+            if (defined $prev) {
+              $result->{prev_item}->{blog_entry_id} = ''.$prev->{blog_entry_id};
+              $result->{prev_item}->{data}->{title} = Dongry::Type->parse ('text', $prev->{title})
+                  if defined $prev->{title};
+            }
+            if (defined $next) {
+              $result->{next_item}->{blog_entry_id} = ''.$next->{blog_entry_id};
+              $result->{next_item}->{data}->{title} = Dongry::Type->parse ('text', $next->{title})
+                  if defined $next->{title};
+            }
+          });
+        }
       });
     })->then (sub {
-      my $items = $_[0];
-      for my $item (@$items) {
-        $item->{blog_entry_id} .= '';
-        if (defined $item->{data}) {
-          $item->{data} = Dongry::Type->parse ('json', $item->{data});
-        } elsif (defined $item->{title}) {
-          $item->{data} = {
-            title => Dongry::Type->parse ('text', delete $item->{title}),
-            timestamp => $item->{timestamp},
-          };
-        }
-        $item->{summary_data} = Dongry::Type->parse ('json', $item->{summary_data})
-            if defined $item->{summary_data};
-        $item->{internal_data} = Dongry::Type->parse ('json', $item->{internal_data})
-            if defined $item->{internal_data};
-      }
-      return $self->replace_nobj_ids ($items, ['blog'])->then (sub {
-        my $next_page = Pager::next_page $page, $items, 'timestamp';
-        delete $_->{timestamp} for @$items;
-        return $self->json ({items => $items, %$next_page});
-      });
+      return $self->replace_nobj_ids ($result->{items}, ['blog']);
+    })->then (sub {
+      my $next_page = Pager::next_page $page, $result->{items}, 'timestamp';
+      delete $_->{timestamp} for @{$result->{items}};
+      return $self->json ({%$result, %$next_page});
     });
   } elsif (@{$self->{path}} == 1 and $self->{path}->[0] eq 'createentry.json') {
     ## /{app_id}/blog/createentry.json - Add a new blog entry.

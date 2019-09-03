@@ -463,11 +463,189 @@ Test {
   });
 } n => 6, name => 'with_summary_data';
 
+Test {
+  my $current = shift;
+  return Promise->resolve->then (sub {
+    return $current->create (
+      [b1 => nobj => {}],
+      [e1 => blog_entry => {blog => 'b1', data => {timestamp => 533,
+                            title => $current->generate_text (t1 => {})}}],
+      [e2 => blog_entry => {blog => 'b1', data => {timestamp => 534,
+                            title => $current->generate_text (t2 => {})}}],
+      [e3 => blog_entry => {blog => 'b1', data => {timestamp => 534,
+                            title => $current->generate_text (t3 => {})}}],
+      [e4 => blog_entry => {blog => 'b1', data => {timestamp => 534,
+                            title => $current->generate_text (t4 => {})}}],
+      [e5 => blog_entry => {blog => 'b1', data => {timestamp => 535,
+                            title => $current->generate_text (t5 => {})}}],
+      [e6 => blog_entry => {blog => 'b1', data => {timestamp => 536,
+                            title => $current->generate_text (t6 => {})}}],
+      [e7 => blog_entry => {blog => 'b1', data => {timestamp => 537,
+                            title => $current->generate_text (t7 => {})}}],
+    );
+  })->then (sub {
+    my $entries = [undef, sort {
+      my $x = $current->o ('e'.$a);
+      my $y = $current->o ('e'.$b);
+      $x->{timestamp} <=> $y->{timestamp} ||
+      $x->{blog_entry_id} <=> $y->{blog_entry_id};
+    } 1..7];
+    return promised_for {
+      my ($id, $pid, $nid) = @{$_[0]};
+      $id = $entries->[$id];
+      $pid = $entries->[$pid] if defined $pid;
+      $nid = $entries->[$nid] if defined $nid;
+      return $current->json (['blog', 'list.json'], {
+        blog_nobj_key => $current->o ('b1')->{nobj_key},
+        blog_entry_id => $current->o ('e'.$id)->{blog_entry_id},
+        with_neighbors => 1,
+        with_title => 1,
+      })->then (sub {
+        my $result = $_[0];
+        test {
+          my $json = $result->{json};
+          if (defined $pid) {
+            is $json->{prev_item}->{blog_entry_id},
+               $current->o ('e'.$pid)->{blog_entry_id};
+            is $json->{prev_item}->{data}->{title}, $current->o ('t'.$pid);
+          } else {
+            is $json->{prev_item}, undef;
+            ok 1;
+          }
+          if (defined $nid) {
+            is $json->{next_item}->{blog_entry_id},
+               $current->o ('e'.$nid)->{blog_entry_id};
+            is $json->{next_item}->{data}->{title}, $current->o ('t'.$nid);
+          } else {
+            is $json->{next_item}, undef;
+            ok 1;
+          }
+        } $current->c;
+        return $current->json (['blog', 'list.json'], {
+          blog_nobj_key => $current->o ('b1')->{nobj_key},
+          blog_entry_id => $current->o ('e'.$id)->{blog_entry_id},
+          with_neighbors => 1,
+        });
+      })->then (sub {
+        my $result = $_[0];
+        test {
+          my $json = $result->{json};
+          if (defined $pid) {
+            is $json->{prev_item}->{blog_entry_id},
+               $current->o ('e'.$pid)->{blog_entry_id};
+            is $json->{prev_item}->{data}->{title}, undef;
+          } else {
+            is $json->{prev_item}, undef;
+            ok 1;
+          }
+          if (defined $nid) {
+            is $json->{next_item}->{blog_entry_id},
+               $current->o ('e'.$nid)->{blog_entry_id};
+            is $json->{next_item}->{data}->{title}, undef;
+          } else {
+            is $json->{next_item}, undef;
+            ok 1;
+          }
+        } $current->c;
+        return $current->json (['blog', 'list.json'], {
+          #blog_nobj_key => $current->o ('b1')->{nobj_key},
+          blog_entry_id => $current->o ('e'.$id)->{blog_entry_id},
+          with_neighbors => 1,
+        });
+      })->then (sub {
+        my $result = $_[0];
+        test {
+          is $result->{json}->{prev_item}, undef;
+          is $result->{json}->{next_item}, undef;
+        } $current->c;
+      });
+    } [
+      [1, undef, 2],
+      [2, 1, 3],
+      [3, 2, 4],
+      [4, 3, 5],
+      [5, 4, 6],
+      [6, 5, 7],
+      [7, 6, undef],
+    ];
+  });
+} n => 10*7, name => 'with_neighbors';
+
+Test {
+  my $current = shift;
+  return Promise->resolve->then (sub {
+    return $current->create (
+      [b1 => nobj => {}],
+      [e1 => blog_entry => {blog => 'b1', data => {timestamp => 533,
+                            title => $current->generate_text (t1 => {}),
+                            owner_status => 2}}],
+      [e2 => blog_entry => {blog => 'b1', data => {timestamp => 534,
+                            title => $current->generate_text (t2 => {})},
+                            owner_status => 5}],
+      [e3 => blog_entry => {blog => 'b1', data => {timestamp => 534,
+                            title => $current->generate_text (t3 => {})},
+                            owner_status => 4}],
+      [e4 => blog_entry => {blog => 'b1', data => {timestamp => 534,
+                            title => $current->generate_text (t4 => {})},
+                            owner_status => 5}],
+      [e5 => blog_entry => {blog => 'b1', data => {timestamp => 535,
+                            title => $current->generate_text (t5 => {})},
+                            owner_status => 3}],
+      [e6 => blog_entry => {blog => 'b1', data => {timestamp => 536,
+                            title => $current->generate_text (t6 => {})},
+                            owner_status => 5}],
+      [e7 => blog_entry => {blog => 'b1', data => {timestamp => 537,
+                            title => $current->generate_text (t7 => {})},
+                            owner_status => 4}],
+    );
+  })->then (sub {
+    my $entries = [undef, sort {
+      my $x = $current->o ('e'.$a);
+      my $y = $current->o ('e'.$b);
+      $x->{timestamp} <=> $y->{timestamp} ||
+      $x->{blog_entry_id} <=> $y->{blog_entry_id};
+    } 1..7];
+    return promised_for {
+      my ($id, $pid, $nid) = @{$_[0]};
+      $id = $entries->[$id];
+      $pid = $entries->[$pid] if defined $pid;
+      $nid = $entries->[$nid] if defined $nid;
+      return $current->json (['blog', 'list.json'], {
+        blog_nobj_key => $current->o ('b1')->{nobj_key},
+        blog_entry_id => $current->o ('e'.$id)->{blog_entry_id},
+        with_neighbors => 1,
+        owner_status => [3, 4],
+      })->then (sub {
+        my $result = $_[0];
+        test {
+          my $json = $result->{json};
+          if (defined $pid) {
+            is $json->{prev_item}->{blog_entry_id},
+               $current->o ('e'.$pid)->{blog_entry_id};
+          } else {
+            is $json->{prev_item}, undef;
+          }
+          if (defined $nid) {
+            is $json->{next_item}->{blog_entry_id},
+               $current->o ('e'.$nid)->{blog_entry_id};
+          } else {
+            is $json->{next_item}, undef;
+          }
+        } $current->c;
+      });
+    } [
+      [3, undef, 5],
+      [5, 3, 7],
+      [7, 5, undef],
+    ];
+  });
+} n => 2*3, name => 'with_neighbors status';
+
 RUN;
 
 =head1 LICENSE
 
-Copyright 2018 Wakaba <wakaba@suikawiki.org>.
+Copyright 2018-2019 Wakaba <wakaba@suikawiki.org>.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as
