@@ -1326,8 +1326,7 @@ sub run_blog ($) {
     ##
     ##   |with_neighbors| : Boolean : Whether |prev_item| and
     ##   |next_item| should be returned or not.  Only applicable when
-    ##   NObj (|blog|) is specified and exactly one |blog_entry_id| is
-    ##   specified.
+    ##   exactly one |blog_entry_id| is specified.
     ##
     ##   Status filters.
     ##
@@ -1353,12 +1352,13 @@ sub run_blog ($) {
     ## In addition to list response name/value pairs:
     ##
     ##   |prev_item| : JSON object? : The blog entry's previous blog
-    ##   entry sorted by their |timestamp| values, if any.  Only when
-    ##   |with_neighbors| is specified.
+    ##   entry sorted by their |timestamp| values, if any, within the
+    ##   same blog entry's blog.  Only when |with_neighbors| is
+    ##   specified.
     ##
-    ##   |next_item| : JSON object? : The blog entry's next blog
-    ##   entry sorted by their |timestamp| values, if any.  Only when
-    ##   |with_neighbors| is specified.
+    ##   |next_item| : JSON object? : The blog entry's next blog entry
+    ##   sorted by their |timestamp| values, if any, within the same
+    ##   blog entry's blog.  Only when |with_neighbors| is specified.
     ##
     ## The values of the |prev_item| and |next_item| name/value pairs,
     ## if non-null, are JSON objects with following name/value pairs:
@@ -1447,9 +1447,10 @@ sub run_blog ($) {
               if defined $item->{internal_data};
         }
         if (@$items == 1 and $self->{app}->bare_param ('with_neighbors') and
-            not $thread->missing and $page->{only_item}) {
+            $page->{only_item}) {
           my $prev;
           my $next;
+          $where_base->{blog_nobj_id} = $items->[0]->{blog_nobj_id};
           return Promise->all ([
             $self->db->select ('blog_entry', {
               %$where_base,
