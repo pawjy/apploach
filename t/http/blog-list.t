@@ -468,6 +468,7 @@ Test {
   return Promise->resolve->then (sub {
     return $current->create (
       [b1 => nobj => {}],
+      [b2 => nobj => {}],
       [e1 => blog_entry => {blog => 'b1', data => {timestamp => 533,
                             title => $current->generate_text (t1 => {})}}],
       [e2 => blog_entry => {blog => 'b1', data => {timestamp => 534,
@@ -480,8 +481,12 @@ Test {
                             title => $current->generate_text (t5 => {})}}],
       [e6 => blog_entry => {blog => 'b1', data => {timestamp => 536,
                             title => $current->generate_text (t6 => {})}}],
+      [e62 => blog_entry => {blog => 'b2', data => {timestamp => 536.5,
+                            title => $current->generate_text (t62 => {})}}],
       [e7 => blog_entry => {blog => 'b1', data => {timestamp => 537,
                             title => $current->generate_text (t7 => {})}}],
+      [e72 => blog_entry => {blog => 'b2', data => {timestamp => 537.5,
+                            title => $current->generate_text (t72 => {})}}],
     );
   })->then (sub {
     my $entries = [undef, sort {
@@ -555,8 +560,23 @@ Test {
       })->then (sub {
         my $result = $_[0];
         test {
-          is $result->{json}->{prev_item}, undef;
-          is $result->{json}->{next_item}, undef;
+          my $json = $result->{json};
+          if (defined $pid) {
+            is $json->{prev_item}->{blog_entry_id},
+               $current->o ('e'.$pid)->{blog_entry_id};
+            is $json->{prev_item}->{data}->{title}, undef;
+          } else {
+            is $json->{prev_item}, undef;
+            ok 1;
+          }
+          if (defined $nid) {
+            is $json->{next_item}->{blog_entry_id},
+               $current->o ('e'.$nid)->{blog_entry_id};
+            is $json->{next_item}->{data}->{title}, undef;
+          } else {
+            is $json->{next_item}, undef;
+            ok 1;
+          }
         } $current->c;
       });
     } [
@@ -569,7 +589,7 @@ Test {
       [7, 6, undef],
     ];
   });
-} n => 10*7, name => 'with_neighbors';
+} n => 12*7, name => 'with_neighbors';
 
 Test {
   my $current = shift;
