@@ -2607,6 +2607,7 @@ sub run_tag ($) {
     ##
     ##   |score| : Integer : The tag item's score.
     my $page = Pager::this_page ($self, limit => 10, max_limit => 10000);
+    my $by_score = $self->{app}->bare_param ('score');
     return Promise->all ([
       $self->nobj ('context'),
     ])->then (sub {
@@ -2644,11 +2645,13 @@ sub run_tag ($) {
           tag_name_sha => {-in => [keys %$shas]},
         };
         $where->{timestamp} = $page->{value} if defined $page->{value};
+        my $order = ['timestamp', $page->{order_direction}];
+        unshift @$order, 'score', 'desc' if $by_score;
         return $self->db->select ('tag_item', $where, source_name => 'master',
           fields => ['item_nobj_id', 'score', 'timestamp'],
           distinct => 1,
           offset => $page->{offset}, limit => $page->{limit},
-          order => (defined $self->{app}->bare_param ('score') ? ['score', 'desc'] : ['timestamp', $page->{order_direction}]),
+          order => $order,
         );
       })->then (sub {
         return $_[0]->all->to_a;
@@ -2656,7 +2659,7 @@ sub run_tag ($) {
     })->then (sub {
       my $items = $_[0];
       return $self->replace_nobj_ids ($items, ['item'])->then (sub {
-        my $next_page = Pager::next_page $page, $items, 'timestamp';
+        my $next_page = $by_score ? {} : Pager::next_page $page, $items, 'timestamp';
         return $self->json ({items => $items, %$next_page});
       });
     });
