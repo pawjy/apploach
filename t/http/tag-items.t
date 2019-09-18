@@ -186,9 +186,13 @@ Test {
       is $item4->{item_nobj_key}, $current->o ('i4')->{nobj_key};
       my $item5 = $result->{json}->{items}->[4];
       is $item5->{item_nobj_key}, $current->o ('i1')->{nobj_key};
+      ok ! $result->{json}->{has_next};
+      is $result->{json}->{next_ref}, undef;
+      ok ! $result->{json}->{has_prev};
+      is $result->{json}->{prev_ref}, undef;
     } $current->c;
   });
-} n => 6, name => 'score';
+} n => 10, name => 'score';
 
 Test {
   my $current = shift;
