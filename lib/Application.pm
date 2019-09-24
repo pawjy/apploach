@@ -1349,6 +1349,10 @@ sub run_blog ($) {
     ##
     ##   Statuses.
     ##
+    ##   Statuses with |with_neighbors_| prefixes.  If specified,
+    ##   preferably used in place of unprefixed statuses for
+    ##   generating |prev_item| and |next_item| objects.
+    ##
     ## In addition to list response name/value pairs:
     ##
     ##   |prev_item| : JSON object? : The blog entry's previous blog
@@ -1451,6 +1455,12 @@ sub run_blog ($) {
           my $prev;
           my $next;
           $where_base->{blog_nobj_id} = $items->[0]->{blog_nobj_id};
+          # $self->status_filter_columns with "with_neighbors_" prefix.
+          for (qw(author_status owner_status admin_status)) {
+            my $v = $self->{app}->bare_param_list ('with_neighbors_'.$_);
+            next unless @$v;
+            $where_base->{$_} = {-in => $v};
+          }
           return Promise->all ([
             $self->db->select ('blog_entry', {
               %$where_base,

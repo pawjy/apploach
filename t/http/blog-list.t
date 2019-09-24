@@ -652,6 +652,29 @@ Test {
             is $json->{next_item}, undef;
           }
         } $current->c;
+        return $current->json (['blog', 'list.json'], {
+          blog_nobj_key => $current->o ('b1')->{nobj_key},
+          blog_entry_id => $current->o ('e'.$id)->{blog_entry_id},
+          with_neighbors => 1,
+          with_neighbors_owner_status => [3, 4],
+        });
+      })->then (sub {
+        my $result = $_[0];
+        test {
+          my $json = $result->{json};
+          if (defined $pid) {
+            is $json->{prev_item}->{blog_entry_id},
+               $current->o ('e'.$pid)->{blog_entry_id};
+          } else {
+            is $json->{prev_item}, undef;
+          }
+          if (defined $nid) {
+            is $json->{next_item}->{blog_entry_id},
+               $current->o ('e'.$nid)->{blog_entry_id};
+          } else {
+            is $json->{next_item}, undef;
+          }
+        } $current->c;
       });
     } [
       [3, undef, 5],
@@ -659,7 +682,7 @@ Test {
       [7, 5, undef],
     ];
   });
-} n => 2*3, name => 'with_neighbors status';
+} n => 4*3, name => 'with_neighbors status';
 
 RUN;
 
