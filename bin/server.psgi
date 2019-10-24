@@ -11,6 +11,7 @@ use Web::URL;
 use Web::Transport::BasicClient;
 
 use Application;
+use WorkerState;
 
 $ENV{LANG} = 'C';
 $ENV{TZ} = 'UTC';

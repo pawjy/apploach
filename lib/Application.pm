@@ -274,7 +274,7 @@ sub sha ($) {
 
 sub db ($) {
   my $self = $_[0];
-  return $self->{db} ||= Dongry::Database->new (
+  return $self->{app}->http->server_state->data->{dbs}->{main} ||= Dongry::Database->new (
     sources => {
       master => {
         dsn => Dongry::Type->serialize ('text', $self->{config}->{dsn}),

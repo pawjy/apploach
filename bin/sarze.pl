@@ -11,6 +11,7 @@ Sarze->run (
     [$host, $port],
   ],
   psgi_file_name => path (__FILE__)->parent->child ('server.psgi'),
+  worker_state_class => 'WorkerState',
 )->to_cv->recv;
 
 =head1 LICENSE
