@@ -4899,9 +4899,7 @@ sub run ($) {
 
 sub close ($) {
   my $self = $_[0];
-  return Promise->all ([
-    defined $self->{db} ? $self->{db}->disconnect : undef,
-  ]);
+  return Promise->resolve;
 } # close
 
 1;
