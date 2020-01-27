@@ -1,6 +1,7 @@
 AnyEvent~7.17
 AnyEvent::FileLock~0.06
 AnyEvent::Fork~1.31
+AnyEvent::Util
 Bytes::Random::Secure::Tiny~1.008
 Call::Context~0.03
 Canary::Stability~2013
@@ -34,6 +35,6 @@ Symbol::Get~0.10
 Term::ANSIColor~5.01
 Test::Builder~1.302171
 Time::HiRes~1.9760
-Time::Local~1.28
+Time::Local~1.30
 Try::Tiny~0.30
 common::sense~3.74
