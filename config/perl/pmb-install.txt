@@ -4,7 +4,7 @@ AnyEvent::Fork~1.31
 Bytes::Random::Secure::Tiny~1.008
 Call::Context~0.03
 Canary::Stability~2013
-Carp~1.50
+Carp::Heavy~1.50
 Class::Accessor::Fast~0.51
 Convert::ASN1~0.27
 Crypt::Format~0.10
@@ -23,10 +23,10 @@ Math::BigInt~1.999818
 Math::ProvablePrime~0.045
 Math::Utils~1.13
 Method::WeakCallback~0.04
-Module::Build~0.4229
+Module::Build~0.4231
 Net::SSLeay~1.88
 Path::Class~0.37
-Path::Tiny~0.110
+Path::Tiny~0.112
 Proc::FastSpawn~1.2
 Scalar::Util~1.53
 Socket~2.029
