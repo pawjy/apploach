@@ -3583,6 +3583,8 @@ sub run_notification ($) {
       push @$urls, $url;
     }
 
+    my $n = 0;
+    my $m = 0;
     my $clients = {}; # XXX persistent?
     my $nevent_id = $self->{app}->bare_param ('nevent_id');
     my ($nevent_channel, $nevent_subscriber);
@@ -3636,6 +3638,9 @@ sub run_notification ($) {
                 {request => {url => $url->stringify,
                              method => 'POST'},
                  response => {status => $res->status}};
+            $m++;
+          } else {
+            $n++;
           }
         }, sub {
           my $error = $_[0];
@@ -3644,6 +3649,7 @@ sub run_notification ($) {
               {request => {url => $url->stringify,
                            method => 'POST'},
                response => {error_message => '' . $error}};
+          $m++;
         });
       } $urls)->then (sub {
         return unless defined $nevent_id;
@@ -3651,7 +3657,13 @@ sub run_notification ($) {
             ($nevent_subscriber, $nevent_channel, $nevent_id, $nevent_done);
       }));
     })->then (sub {
-      return $self->json ({});
+      return $self->json ({
+        ## For debugging (applications should not rely on them):
+        _counts => {
+          success => $n,
+          failed => $m,
+        },
+      });
     })->finally (sub {
       return Promise->all ([map { $_->close } values %$clients]);
     })->then (sub {
