@@ -90,6 +90,24 @@ use Pager;
 ## |s3_file_url_prefix| are public (i.e. readable by the world).  We
 ## don't use |x-aws-acl:| header as it is not supported by Minio.
 
+sub error_log ($$$$) {
+  my ($class, $config, $important, $message) = @_;
+  warn $message;
+  return undef unless defined $config->{ikachan_url_prefix};
+  my $url = Web::URL->parse_string ($config->{ikachan_url_prefix});
+  my $con = Web::Transport::BasicClient->new_from_url ($url);
+  $con->request (
+    path => [$important ? 'privmsg' : 'notice'],
+    method => 'POST', params => {
+      channel => $config->{ikachan_channel},
+      message => (sprintf "%s%s", $config->{ikachan_message_prefix}, $message),
+    },
+  )->finally (sub {
+    return $con->close;
+  });
+  return undef;
+} # error_log
+
 ## HTTP requests.
 ##
 ##   Request method.  You can use both |GET| and |POST|.  It's a good
