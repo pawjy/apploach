@@ -957,20 +957,23 @@ Test {
     my $result = $_[0];
     test {
       is 0+@{$result->{json}->{items}}, 3;
+      $result->{json}->{items} = [sort {
+        $a->{topic_subscription_data}->{foo} <=> $b->{topic_subscription_data}->{foo};
+      } @{$result->{json}->{items}}];
       
-      my $ev1 = $result->{json}->{items}->[0];
-      is $ev1->{timestamp}, $current->o ('ev3')->{timestamp};
-      is $ev1->{expires}, $current->o ('ev3')->{expires};
-      is $ev1->{nevent_id}, $current->o ('ev3')->{nevent_id};
-      is $ev1->{data}->{abv}, 7.75;
-      is $ev1->{topic_subscription_data}->{foo}, 54;
-      
-      my $ev2 = $result->{json}->{items}->[1];
+      my $ev2 = $result->{json}->{items}->[0];
       is $ev2->{timestamp}, $current->o ('ev3')->{timestamp};
       is $ev2->{expires}, $current->o ('ev3')->{expires};
       is $ev2->{nevent_id}, $current->o ('ev3')->{nevent_id};
       is $ev2->{data}->{abv}, 7.75;
       is $ev2->{topic_subscription_data}->{foo}, 12.5;
+      
+      my $ev1 = $result->{json}->{items}->[1];
+      is $ev1->{timestamp}, $current->o ('ev3')->{timestamp};
+      is $ev1->{expires}, $current->o ('ev3')->{expires};
+      is $ev1->{nevent_id}, $current->o ('ev3')->{nevent_id};
+      is $ev1->{data}->{abv}, 7.75;
+      is $ev1->{topic_subscription_data}->{foo}, 54;
       
       my $ev3 = $result->{json}->{items}->[2];
       is $ev3->{timestamp}, $current->o ('ev3')->{timestamp};
