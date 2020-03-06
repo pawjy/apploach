@@ -3655,7 +3655,7 @@ sub run_notification ($) {
                 {request => {url => $url->stringify,
                              method => 'POST'},
                  response => {status => $res->status}};
-            $self->error_log ($config, not 'important',
+            $self->error_log ($config, (not 'important'),
                               'push error: ' . $self->{app_id} . ': ' . $url->stringify . ' ' . $res);
             $m++;
           } else {
@@ -3667,7 +3667,7 @@ sub run_notification ($) {
               {request => {url => $url->stringify,
                            method => 'POST'},
                response => {error_message => '' . $error}};
-          $self->error_log ($config, not 'important',
+          $self->error_log ($config, (not 'important'),
                             'push error: ' . $self->{app_id} . ': ' . $url->stringify . ' ' . $error);
           $m++;
         });
