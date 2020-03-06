@@ -3651,22 +3651,24 @@ sub run_notification ($) {
         )->then (sub {
           my $res = $_[0];
           if ($res->status != 200 and $res->status != 201) {
-            warn $res;
             push @{$nevent_done->{apploach_errors}},
                 {request => {url => $url->stringify,
                              method => 'POST'},
                  response => {status => $res->status}};
+            $self->error_log ($config, not 'important',
+                              'push error: ' . $self->{app_id} . ': ' . $url->stringify . ' ' . $res);
             $m++;
           } else {
             $n++;
           }
         }, sub {
           my $error = $_[0];
-          warn $error;
           push @{$nevent_done->{apploach_errors}},
               {request => {url => $url->stringify,
                            method => 'POST'},
                response => {error_message => '' . $error}};
+          $self->error_log ($config, not 'important',
+                            'push error: ' . $self->{app_id} . ': ' . $url->stringify . ' ' . $error);
           $m++;
         });
       } $urls)->then (sub {
