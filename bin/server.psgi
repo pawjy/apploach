@@ -7,8 +7,6 @@ use Warabe::App;
 use Promise;
 use Promised::Flow;
 use JSON::PS;
-use Web::URL;
-use Web::Transport::BasicClient;
 
 use Application;
 use WorkerState;
@@ -20,24 +18,6 @@ my $config_path = path ($ENV{APP_CONFIG} // die "No |APP_CONFIG|");
 my $Config = json_bytes2perl $config_path->slurp;
 my $RootPath = path (__FILE__)->parent->parent;
 my $Rev = $RootPath->child ('rev')->slurp;
-
-sub error_log ($$) {
-  my ($important, $message) = @_;
-  warn $message;
-  return undef unless defined $Config->{ikachan_url_prefix};
-  my $url = Web::URL->parse_string ($Config->{ikachan_url_prefix});
-  my $con = Web::Transport::BasicClient->new_from_url ($url);
-  $con->request (
-    path => [$important ? 'privmsg' : 'notice'],
-    method => 'POST', params => {
-      channel => $Config->{ikachan_channel},
-      message => (sprintf "%s%s", $Config->{ikachan_message_prefix}, $message),
-    },
-  )->finally (sub {
-    return $con->close;
-  });
-  return undef;
-} # error_log
 
 sub main ($$) {
   my ($class, $app) = @_;
@@ -93,7 +73,7 @@ return sub {
       if (UNIVERSAL::isa ($e, 'Web::Transport::Response')) {
         $e = $e . "\n" . substr $e->body_bytes, 0, 1024;
       }
-      error_log 'important', $e;
+      Application->error_log ($Config, 'important', $e);
       return $app->send_error (500);
     });
   });
@@ -101,7 +81,7 @@ return sub {
 
 =head1 LICENSE
 
-Copyright 2018 Wakaba <wakaba@suikawiki.org>.
+Copyright 2018-2020 Wakaba <wakaba@suikawiki.org>.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as

@@ -90,6 +90,24 @@ use Pager;
 ## |s3_file_url_prefix| are public (i.e. readable by the world).  We
 ## don't use |x-aws-acl:| header as it is not supported by Minio.
 
+sub error_log ($$$$) {
+  my ($class, $config, $important, $message) = @_;
+  warn $message;
+  return undef unless defined $config->{ikachan_url_prefix};
+  my $url = Web::URL->parse_string ($config->{ikachan_url_prefix});
+  my $con = Web::Transport::BasicClient->new_from_url ($url);
+  $con->request (
+    path => [$important ? 'privmsg' : 'notice'],
+    method => 'POST', params => {
+      channel => $config->{ikachan_channel},
+      message => (sprintf "%s%s", $config->{ikachan_message_prefix}, $message),
+    },
+  )->finally (sub {
+    return $con->close;
+  });
+  return undef;
+} # error_log
+
 ## HTTP requests.
 ##
 ##   Request method.  You can use both |GET| and |POST|.  It's a good
@@ -3633,22 +3651,24 @@ sub run_notification ($) {
         )->then (sub {
           my $res = $_[0];
           if ($res->status != 200 and $res->status != 201) {
-            warn $res;
             push @{$nevent_done->{apploach_errors}},
                 {request => {url => $url->stringify,
                              method => 'POST'},
                  response => {status => $res->status}};
+            $self->error_log ($config, not 'important',
+                              'push error: ' . $self->{app_id} . ': ' . $url->stringify . ' ' . $res);
             $m++;
           } else {
             $n++;
           }
         }, sub {
           my $error = $_[0];
-          warn $error;
           push @{$nevent_done->{apploach_errors}},
               {request => {url => $url->stringify,
                            method => 'POST'},
                response => {error_message => '' . $error}};
+          $self->error_log ($config, not 'important',
+                            'push error: ' . $self->{app_id} . ': ' . $url->stringify . ' ' . $error);
           $m++;
         });
       } $urls)->then (sub {
