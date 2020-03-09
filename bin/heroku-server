@@ -1,5 +1,7 @@
 #!/bin/sh
 
+curl -f $PEM_URL > local/cert.pem
+
 ./perl bin/generate-heroku-config.pl > heroku-config.json
 export APP_CONFIG=heroku-config.json
 
