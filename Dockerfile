@@ -12,6 +12,8 @@ ADD modules/ /app/modules/
 RUN cd /app && \
     make deps-docker PMBP_OPTIONS="--execute-system-package-installer --dump-info-file-before-die" && \
     echo '#!/bin/bash' > /server && \
+    echo 'export LANG=C' >> /server && \
+    echo 'export TZ=UTC' >> /server && \
     echo 'port=${PORT:-8080}' >> /server && \
     echo 'cd /app && ./perl bin/sarze.pl 0 ${port}' >> /server && \
     chmod u+x /server && \

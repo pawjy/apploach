@@ -1,4 +1,6 @@
 #!/bin/sh
+export LANG=C
+export TZ=UTC
 
 curl -f $PEM_URL > local/cert.pem
 

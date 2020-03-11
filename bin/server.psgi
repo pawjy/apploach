@@ -6,16 +6,10 @@ use Wanage::HTTP;
 use Warabe::App;
 use Promise;
 use Promised::Flow;
-use JSON::PS;
 
 use Application;
 use WorkerState;
 
-$ENV{LANG} = 'C';
-$ENV{TZ} = 'UTC';
-
-my $config_path = path ($ENV{APP_CONFIG} // die "No |APP_CONFIG|");
-my $Config = json_bytes2perl $config_path->slurp;
 my $RootPath = path (__FILE__)->parent->parent;
 my $Rev = $RootPath->child ('rev')->slurp;
 
@@ -23,7 +17,7 @@ sub main ($$) {
   my ($class, $app) = @_;
 
   my $path = $app->path_segments;
-
+  
   if (@$path == 1 and $path->[0] eq 'robots.txt') {
     # /robots.txt
     $app->http->set_response_header ('x-rev', $Rev);
@@ -31,9 +25,10 @@ sub main ($$) {
   }
 
   if (@$path > 2 and $path->[0] =~ /\A[1-9][0-9]*\z/) {
+    my $config = $app->http->server_state->data->{config};
     my $auth = $app->http->get_request_header ('authorization') // '';
-    unless (defined $Config->{bearer} and
-            $auth eq 'Bearer ' . $Config->{bearer}) {
+    unless (defined $config->{bearer} and
+            $auth eq 'Bearer ' . $config->{bearer}) {
       $app->http->set_response_header ('www-authenticate', 'Bearer');
       return $app->throw_error (401);
     }
@@ -41,7 +36,7 @@ sub main ($$) {
     my $app_id = 0+shift @$path;
     my $type = shift @$path;
     my $application = Application->new (
-      config => $Config,
+      config => $config,
       app => $app,
       path => $path,
       app_id => $app_id,
@@ -73,7 +68,7 @@ return sub {
       if (UNIVERSAL::isa ($e, 'Web::Transport::Response')) {
         $e = $e . "\n" . substr $e->body_bytes, 0, 1024;
       }
-      Application->error_log ($Config, 'important', $e);
+      Application->error_log ($http->server_state->data->{config}, 'important', $e);
       return $app->send_error (500);
     });
   });
