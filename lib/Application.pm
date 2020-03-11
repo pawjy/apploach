@@ -8,7 +8,6 @@ use Dongry::Type;
 use Dongry::Type::JSONPS;
 use Promise;
 use Promised::Flow;
-use Dongry::Database;
 use Web::DomainName::Punycode;
 use Web::Encoding;
 use Web::Encoding::Normalization;
@@ -292,14 +291,7 @@ sub sha ($) {
 
 sub db ($) {
   my $self = $_[0];
-  return $self->{app}->http->server_state->data->{dbs}->{main} ||= Dongry::Database->new (
-    sources => {
-      master => {
-        dsn => Dongry::Type->serialize ('text', $self->{config}->{dsn}),
-        writable => 1, anyevent => 1,
-      },
-    },
-  );
+  return $self->{app}->http->server_state->data->{dbs}->{main};
 } # db
 
 sub ids ($$) {

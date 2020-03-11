@@ -6,6 +6,8 @@ use AbortController;
 use Promise;
 use Promised::Flow;
 use JSON::PS;
+use Dongry::Type;
+use Dongry::Database;
 
 my $config_path = path ($ENV{APP_CONFIG} // die "No |APP_CONFIG|");
 my $Config = json_bytes2perl $config_path->slurp;
@@ -13,7 +15,17 @@ my $Config = json_bytes2perl $config_path->slurp;
 sub start ($%) {
   my ($class, %args) = @_;
   my ($r, $s) = promised_cv;
+
   my $obj = {config => $Config, clients => {}, dbs => {}};
+  $obj->{dbs}->{main} ||= Dongry::Database->new (
+    sources => {
+      master => {
+        dsn => Dongry::Type->serialize ('text', $obj->{config}->{dsn}),
+        writable => 1, anyevent => 1,
+      },
+    },
+  );
+  
   my $ac = new AbortController;
   my $t = $class->run_jobs ($obj, signal => $ac->signal)->catch (sub { });
   $args{signal}->manakai_onabort (sub {
