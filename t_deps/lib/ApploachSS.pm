@@ -86,6 +86,8 @@ sub run ($%) {
             envs => {
               %{$config_data->{envs}},
               APP_CONFIG => $config_data->{config_path},
+              LANG => 'C',
+              TZ => 'UTC',
             },
             command => [
               $RootPath->child ('perl'),
@@ -118,6 +120,8 @@ sub run ($%) {
               %{$config_data->{envs}},
               PORT => $port,
               APP_CONFIG => '/app-config.json',
+              LANG => 'C',
+              TZ => 'UTC',
             },
             command => ['/server'],
           };

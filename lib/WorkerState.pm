@@ -1,21 +1,49 @@
 package WorkerState;
 use strict;
 use warnings;
+use Path::Tiny;
+use AbortController;
 use Promise;
 use Promised::Flow;
+use JSON::PS;
+
+my $config_path = path ($ENV{APP_CONFIG} // die "No |APP_CONFIG|");
+my $Config = json_bytes2perl $config_path->slurp;
 
 sub start ($%) {
   my ($class, %args) = @_;
   my ($r, $s) = promised_cv;
-  my $obj = {clients => {}, dbs => {}};
+  my $obj = {config => $Config, clients => {}, dbs => {}};
+  my $ac = new AbortController;
+  my $t = $class->run_jobs ($obj, signal => $ac->signal)->catch (sub { });
   $args{signal}->manakai_onabort (sub {
-    return Promise->all ([
-      (map { $_->close } values %{$obj->{clients}}),
-      (map { $_->disconnect } values %{$obj->{dbs}}),
-    ])->finally ($s);
+    $ac->abort;
+    return $t->then (sub {
+      return Promise->all ([
+        (map { $_->close } values %{$obj->{clients}}),
+        (map { $_->disconnect } values %{$obj->{dbs}}),
+      ]);
+    })->finally ($s);
   });
   return [$obj, $r];
 } # start
+
+sub run_jobs ($$%) {
+  my ($class, $obj, %args) = @_;
+  return promised_wait_until {
+    return $class->run_a_job ($obj)->catch (sub {
+      warn $_[0];
+      my $e = $_[0];
+      #Application->error_log ($http->server_state->data->{config}, 'important', $e);
+    });
+  } signal => $args{signal};
+} # run_jobs
+
+sub run_a_job ($$) {
+  my ($class, $obj) = @_;
+  
+  return Promise->resolve;
+} # run_a_job
 
 1;
 
