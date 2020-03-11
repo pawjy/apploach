@@ -3637,6 +3637,9 @@ sub run_notification ($) {
         $config->{'push_application_server_key_private.'.$self->{app_id}} ||
         $config->{push_application_server_key_private}
       };
+      $self->{app}->http->set_response_header
+          ('content-type', 'application/json;charset=utf-8');
+      $self->{app}->http->send_response_body_as_ref (\""); # send headers
       return ((promised_for {
         my $url = shift;
         my $client = $clients->{$url->get_origin->to_ascii}
@@ -3679,13 +3682,15 @@ sub run_notification ($) {
             ($nevent_subscriber, $nevent_channel, $nevent_id, $nevent_done);
       }));
     })->then (sub {
-      return $self->json ({
+      my $data = {
         ## For debugging (applications should not rely on them):
         _counts => {
           success => $n,
           failed => $m,
         },
-      });
+      };
+      $self->{app}->http->send_response_body_as_ref (\perl2json_bytes $data);
+      $self->{app}->http->close_response_body;
     })->finally (sub {
       return Promise->all ([map { $_->close } values %$clients]);
     })->then (sub {
