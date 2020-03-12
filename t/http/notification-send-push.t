@@ -25,13 +25,10 @@ Test {
     });
   })->then (sub {
     my $url = Web::URL->parse_string ($current->o ('e1'));
-    return $current->client_for ($url)->request (url => $url);
+    return $current->wait_for_count ($url, 1);
   })->then (sub {
-    my $res = $_[0];
-    die $res unless $res->status == 200;
     test {
-      my $json = json_bytes2perl $res->body_bytes;
-      is $json->{count}, 1;
+      ok 1;
     } $current->c;
     return $current->json (['notification', 'send', 'push.json'], {
       url => [$current->generate_push_url ('e2' => {}),
@@ -39,13 +36,10 @@ Test {
     });
   })->then (sub {
     my $url = Web::URL->parse_string ($current->o ('e1'));
-    return $current->client_for ($url)->request (url => $url);
+    return $current->wait_for_count ($url, 2);
   })->then (sub {
-    my $res = $_[0];
-    die $res unless $res->status == 200;
     test {
-      my $json = json_bytes2perl $res->body_bytes;
-      is $json->{count}, 2;
+      ok 1;
     } $current->c;
   });
 } n => 3, name => 'push';
@@ -117,22 +111,16 @@ Test {
     });
   })->then (sub {
     my $url = Web::URL->parse_string ($current->o ('e1'));
-    return $current->client_for ($url)->request (url => $url);
+    return $current->wait_for_count ($url, 1);
   })->then (sub {
-    my $res = $_[0];
-    die $res unless $res->status == 200;
     test {
-      my $json = json_bytes2perl $res->body_bytes;
-      is $json->{count}, 1;
+      ok 1;
     } $current->c;
     my $url = Web::URL->parse_string ($current->o ('e2'));
-    return $current->client_for ($url)->request (url => $url);
+    return $current->wait_for_count ($url, 1);
   })->then (sub {
-    my $res = $_[0];
-    die $res unless $res->status == 200;
     test {
-      my $json = json_bytes2perl $res->body_bytes;
-      is $json->{count}, 1;
+      ok 1;
     } $current->c;
     my $url = Web::URL->parse_string ($current->o ('e3'));
     return $current->client_for ($url)->request (url => $url);
@@ -187,13 +175,10 @@ Test {
       is 0+@{$result->{json}->{items}}, 0;
     } $current->c;
     my $url = Web::URL->parse_string ($current->o ('e1'));
-    return $current->client_for ($url)->request (url => $url);
+    return $current->wait_for_count ($url, 1);
   })->then (sub {
-    my $res = $_[0];
-    die $res unless $res->status == 200;
     test {
-      my $json = json_bytes2perl $res->body_bytes;
-      is $json->{count}, 1;
+      ok 1;
     } $current->c;
   });
 } n => 2, name => 'push to hook & done';
@@ -224,13 +209,10 @@ Test {
       is $json->{count}, 0;
     } $current->c, name => 'not sent to subscriber';
     my $url = Web::URL->parse_string ($current->o ('e2'));
-    return $current->client_for ($url)->request (url => $url);
+    return $current->wait_for_count ($url, 1);
   })->then (sub {
-    my $res = $_[0];
-    die $res unless $res->status == 200;
     test {
-      my $json = json_bytes2perl $res->body_bytes;
-      is $json->{count}, 1;
+      ok 1;
     } $current->c, name => 'sent to url';
   });
 } n => 2, name => 'push to url and not subscriber';
@@ -239,7 +221,7 @@ RUN;
 
 =head1 LICENSE
 
-Copyright 2019 Wakaba <wakaba@suikawiki.org>.
+Copyright 2019-2020 Wakaba <wakaba@suikawiki.org>.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as

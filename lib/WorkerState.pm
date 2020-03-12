@@ -2,12 +2,15 @@ package WorkerState;
 use strict;
 use warnings;
 use Path::Tiny;
+use Time::HiRes qw(time);
 use AbortController;
 use Promise;
 use Promised::Flow;
 use JSON::PS;
 use Dongry::Type;
 use Dongry::Database;
+
+use Application;
 
 my $config_path = path ($ENV{APP_CONFIG} // die "No |APP_CONFIG|");
 my $Config = json_bytes2perl $config_path->slurp;
@@ -42,26 +45,83 @@ sub start ($%) {
 
 sub run_jobs ($$%) {
   my ($class, $obj, %args) = @_;
+  my $ac1 = new AbortController;
+  my $ac2 = new AbortController;
+  $args{signal}->manakai_onabort (sub {
+    $ac1->abort;
+    $ac2->abort;
+  });
   return promised_wait_until {
-    return $class->run_a_job ($obj)->catch (sub {
-      warn $_[0];
+    return $class->run_a_job ($obj)->then (sub {
+      my $job_found = shift;
+      return not 'done' if $job_found;
+      return $obj->{dbs}->{main}->delete ('fetch_job', {
+        expires => {'<', time},
+      })->then (sub {
+        return promised_sleep (20, signal => $ac1->signal)->then (sub { return not 'done' });
+      });
+    }, sub {
       my $e = $_[0];
-      #Application->error_log ($http->server_state->data->{config}, 'important', $e);
+      Application->error_log ($obj->{config}, 'important', $e);
+      return not 'done';
     });
-  } signal => $args{signal};
+  } signal => $ac2->signal;
 } # run_jobs
 
+my $FetchJobTimeout = 60*5;
 sub run_a_job ($$) {
   my ($class, $obj) = @_;
-  
-  return Promise->resolve;
+  my $db = $obj->{dbs}->{main};
+
+  my $now = time;
+  return $db->update ('fetch_job', {
+    running_since => $now,
+  }, where => {
+    run_after => {'<=' => $now},
+    running_since => {'<', $now - $FetchJobTimeout},
+  }, limit => 1, order => [
+    'run_after', 'asc', 'running_since', 'asc', 'inserted', 'asc',
+  ])->then (sub {
+    return $db->select ('fetch_job', {
+      running_since => $now,
+    }, fields => ['origin'], source_name => 'master');
+  })->then (sub {
+    my $v = $_[0]->first;
+    return not 'job found' unless defined $v;
+    return $db->update ('fetch_job', {
+      running_since => $now,
+    }, where => {
+      run_after => {'<=' => $now},
+      running_since => {'<', $now - $FetchJobTimeout},
+      origin => $v->{origin},
+    }, limit => 10, order => [
+      'run_after', 'asc', 'running_since', 'asc', 'inserted', 'asc',
+    ])->then (sub {
+      return $db->select ('fetch_job', {
+        running_since => $now,
+      }, fields => ['job_id', 'options'], source_name => 'master');
+    })->then (sub {
+      my $jobs = $_[0]->all;
+      return promised_for {
+        my $job = shift;
+        $job->{options} = Dongry::Type->parse ('json', $job->{options});
+        return Application->run_fetch_job ($obj, $job)->then (sub {
+          return $db->delete ('fetch_job', {
+            job_id => $job->{job_id},
+          });
+        });
+      } $jobs;
+    })->then (sub {
+      return 'job found';
+    });
+  });
 } # run_a_job
 
 1;
 
 =head1 LICENSE
 
-Copyright 2019 Wakaba <wakaba@suikawiki.org>.
+Copyright 2019-2020 Wakaba <wakaba@suikawiki.org>.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as

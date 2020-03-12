@@ -2794,14 +2794,14 @@ sub bu ($) {
 sub _vapid_authorization ($$$) {
   my ($pub_key, $prv_key, $url) = @_;
 
-  my $k = bu join '', $pub_key;
+  my $k = bu join '', map { pack 'C', $_ } @$pub_key;
 
   my $exp = time + 10*3600;
   my $z = '{"aud":"'.$url->get_origin->to_ascii # to_unicode according to spec
         .'","exp":'.$exp.'}';
   my $x = bu ('{"alg":"ES256","typ":"JWT"}') . '.' . bu (encode_web_utf8 $z);
 
-  my $vkey = Crypt::Perl::ECDSA::Parse::private ($prv_key);
+  my $vkey = Crypt::Perl::ECDSA::Parse::private (join '', map { pack 'C', $_ } @$prv_key);
   my $sig = $vkey->sign_jwa ($x);
 
   my $t = $x . '.' . bu ($sig);
@@ -3593,9 +3593,6 @@ sub run_notification ($) {
       push @$urls, $url;
     }
 
-    my $n = 0;
-    my $m = 0;
-    my $clients = {}; # XXX persistent?
     my $nevent_id = $self->{app}->bare_param ('nevent_id');
     my ($nevent_channel, $nevent_subscriber);
     my $nevent_done = {apploach_errors => []};
@@ -3621,70 +3618,67 @@ sub run_notification ($) {
         }
       }
       my $config = $self->{config};
-      my $pub_key = join '', map { pack 'C', $_ } @{
+      my $pub_key = [@{
         $config->{'push_application_server_key_public.'.$self->{app_id}} ||
         $config->{push_application_server_key_public}
-      };
-      my $pvt_key = join '', map { pack 'C', $_ } @{
+      }];
+      my $pvt_key = [@{
         $config->{'push_application_server_key_private.'.$self->{app_id}} ||
         $config->{push_application_server_key_private}
-      };
+      }];
       $self->{app}->http->set_response_header
           ('content-type', 'application/json;charset=utf-8');
       $self->{app}->http->send_response_body_as_ref (\""); # send headers
+      my @job;
       return ((promised_for {
         my $url = shift;
-        my $client = $clients->{$url->get_origin->to_ascii}
-            ||= Web::Transport::BasicClient->new_from_url ($url);
-        return $client->request (
-          url => $url,
+        my $options = {
+          name => 'push: ' . $self->{app_id},
           method => 'POST',
+          vapid_public_key => $pub_key,
+          vapid_private_key => $pvt_key,
           headers => {
-            authorization => _vapid_authorization ($pub_key, $pvt_key, $url),
             ttl => 24*60*60, # XXX this should be configurable by app
           },
-        )->then (sub {
-          my $res = $_[0];
-          if ($res->status != 200 and $res->status != 201) {
-            push @{$nevent_done->{apploach_errors}},
-                {request => {url => $url->stringify,
-                             method => 'POST'},
-                 response => {status => $res->status}};
-            unless ($res->status == 403 or $res->status == 410) {
-              $self->error_log ($config, (not 'important'),
-                                'push error: ' . $self->{app_id} . ': ' . $url->stringify . ' ' . $res);
-            }
-            $m++;
-          } else {
-            $n++;
-          }
-        }, sub {
-          my $error = $_[0];
-          push @{$nevent_done->{apploach_errors}},
-              {request => {url => $url->stringify,
-                           method => 'POST'},
-               response => {error_message => '' . $error}};
-          $self->error_log ($config, (not 'important'),
-                            'push error: ' . $self->{app_id} . ': ' . $url->stringify . ' ' . $error);
-          $m++;
-        });
+        };
+        if (1) {
+          $options->{url} = $url->stringify;
+          $options->{_origin} = $url->get_origin->to_ascii;
+          push @job, $options;
+        } else {
+          return $self->run_fetch_job ($self->{app}->http->server_state->data, {
+            url => $url,
+            options => $options,
+          });
+        }
       } $urls)->then (sub {
+        return unless @job;
+        my $now = time;
+        my $expires = $now + 60*60*10; # XXX configurable
+        return $self->db->uuid_short (0+@job)->then (sub {
+          my $ids = shift;
+          return $self->db->insert ('fetch_job', [map {
+            +{
+              job_id => shift @$ids,
+              origin => Dongry::Type->serialize ('text', delete $_->{_origin}),
+              options => Dongry::Type->serialize ('json', $_),
+              running_since => 0,
+              run_after => $now,
+              inserted => $now,
+              expires => $expires,
+            };
+          } @job]);
+        });
+      })->then (sub {
         return unless defined $nevent_id;
         return $self->done_queued_nevent
             ($nevent_subscriber, $nevent_channel, $nevent_id, $nevent_done);
       }));
     })->then (sub {
       my $data = {
-        ## For debugging (applications should not rely on them):
-        _counts => {
-          success => $n,
-          failed => $m,
-        },
       };
       $self->{app}->http->send_response_body_as_ref (\perl2json_bytes $data);
       $self->{app}->http->close_response_body;
-    })->finally (sub {
-      return Promise->all ([map { $_->close } values %$clients]);
     })->then (sub {
       return $self->expire_old_nevents;
     });
@@ -3692,6 +3686,52 @@ sub run_notification ($) {
 
   return $self->{app}->throw_error (404);
 } # run_notification
+
+sub run_fetch_job ($$$) {
+  my ($class, $obj, $job) = @_;
+
+  my $url = $job->{url} || Web::URL->parse_string ($job->{options}->{url});
+  my $client = $obj->{clients}->{$url->get_origin->to_ascii}
+      ||= Web::Transport::BasicClient->new_from_url ($url);
+
+  my $headers = {%{$job->{options}->{headers} or {}}};
+  if (defined $job->{options}->{vapid_private_key}) {
+    $headers->{authorization} = _vapid_authorization
+        ($job->{options}->{vapid_public_key},
+         $job->{options}->{vapid_private_key}, $url);
+  }
+  
+  return $client->request (
+    url => $url,
+    method => $job->{options}->{method},
+    headers => $headers,
+  )->then (sub {
+    my $res = $_[0];
+    if ($res->status != 200 and $res->status != 201) {
+      #push @{$nevent_done->{apploach_errors}},
+      #          {request => {url => $url->stringify,
+      #                       method => 'POST'},
+      #           response => {status => $res->status}};
+      unless ($res->status == 403 or $res->status == 410) {
+        $class->error_log ($obj->{config}, (not 'important'),
+                           $job->{options}->{name} . ': ' . $url->stringify . ' ' . $res);
+      }
+      #$m++;
+    } else {
+      #$n++;
+    }
+  }, sub {
+    my $error = $_[0];
+    #push @{$nevent_done->{apploach_errors}},
+    #          {request => {url => $url->stringify,
+    #                       method => 'POST'},
+    #           response => {error_message => '' . $error}};
+    $class->error_log ($obj->{config}, (not 'important'),
+                       $job->{options}->{name} . ': ' . $url->stringify . ' ' . $error);
+    #$m++;
+  });
+  # can't reject
+} # run_fetch_job
 
 ## Notifications (/prefix/) parameters.
 ##

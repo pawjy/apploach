@@ -616,11 +616,30 @@ sub create_tag ($$$) {
   });
 } # create_tag
 
+sub wait_for_count ($$$) {
+  my ($self, $url, $n) = @_;
+  my $client = $self->client_for ($url);
+  my $json;
+  return Promise->resolve->then (sub {
+    return promised_wait_until {
+      return $client->request (url => $url)->then (sub {
+        my $res = $_[0];
+        die $res unless $res->status == 200;
+        $json = json_bytes2perl $res->body_bytes;
+        return 'done' if $json->{count} >= $n;
+        return not 'done';
+      });
+    } timeout => 64, name => "wait_for_count ($n)";
+  })->then (sub {
+    return $json;
+  });
+} # wait_for_count
+
 1;
 
 =head1 LICENSE
 
-Copyright 2018-2019 Wakaba <wakaba@suikawiki.org>.
+Copyright 2018-2020 Wakaba <wakaba@suikawiki.org>.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as

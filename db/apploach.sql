@@ -340,3 +340,17 @@ create table if not exists `day_stats` (
   key (`app_id`, `day`, `item_nobj_id`),
   key (`created`)
 ) default charset=binary engine=innodb;
+
+create table if not exists `fetch_job` (
+  `job_id` bigint unsigned not null,
+  `origin` varbinary(2047) not null,
+  `options` mediumblob not null,
+  `running_since` double not null,
+  `run_after` double not null,
+  `inserted` double not null,
+  `expires` double not null,
+  primary key (`job_id`),
+  key (`run_after`, `running_since`, `inserted`),
+  key (`running_since`),
+  key (`expires`)
+) default charset=binary engine=innodb;
