@@ -25,7 +25,7 @@ Math::ProvablePrime~0.045
 Method::WeakCallback~0.04
 Net::SSLeay~1.88
 Path::Class~0.37
-Path::Tiny~0.112
+Path::Tiny~0.114
 Proc::FastSpawn~1.2
 Scalar::Util~1.55
 Socket~2.029
