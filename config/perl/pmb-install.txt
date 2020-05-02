@@ -1,6 +1,7 @@
 AnyEvent~7.17
 AnyEvent::FileLock~0.06
 AnyEvent::Fork~1.31
+AnyEvent::IO
 Bytes::Random::Secure::Tiny~1.008
 Call::Context~0.03
 Canary::Stability~2013
@@ -11,7 +12,7 @@ Crypt::Format~0.10
 Cwd~3.75
 Data::Dumper~2.173
 Digest::SHA~6.02
-Encode~3.05
+Encode~3.06
 Exporter::Lite~0.08
 File::Path~2.16
 File::Temp~0.2309
