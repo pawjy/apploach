@@ -1,7 +1,7 @@
 AnyEvent~7.17
 AnyEvent::FileLock~0.06
 AnyEvent::Fork~1.31
-AnyEvent::IO
+AnyEvent::Socket
 Bytes::Random::Secure::Tiny~1.008
 Call::Context~0.03
 Canary::Stability~2013
