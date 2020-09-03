@@ -2,7 +2,7 @@
    "jobs" : {
       "build" : {
          "environment" : {
-            "CIRCLE_ARTIFACTS" : "/tmp/circle-artifacts"
+            "CIRCLE_ARTIFACTS" : "/tmp/circle-artifacts/build"
          },
          "machine" : {
             "enabled" : true
@@ -41,34 +41,8 @@
                }
             },
             {
-               "run" : {
-                  "command" : "rm -fr $CIRCLE_ARTIFACTS/ss.pid"
-               }
-            },
-            {
-               "run" : {
-                  "background" : true,
-                  "command" : "TEST_APP_DOCKER_IMAGE=quay.io/wakaba/apploach ./perl t_deps/bin/env-for-circleci.pl > $CIRCLE_ARTIFACTS/servers-http-$CIRCLE_NODE_INDEX.txt.dat 2>&1"
-               }
-            },
-            {
-               "run" : {
-                  "command" : "while [ ! -e $CIRCLE_ARTIFACTS/ss.pid ]; do sleep 1; done"
-               }
-            },
-            {
-               "run" : {
-                  "command" : "if [ ! -e $CIRCLE_ARTIFACTS/ss.pid ]; then cat $CIRCLE_ARTIFACTS/ss.env; fi; cat $CIRCLE_ARTIFACTS/ss.pid"
-               }
-            },
-            {
-               "run" : {
-                  "command" : "SS_ENV_FILE=$CIRCLE_ARTIFACTS/ss.env make test"
-               }
-            },
-            {
                "store_artifacts" : {
-                  "path" : "/tmp/circle-artifacts"
+                  "path" : "/tmp/circle-artifacts/build"
                }
             },
             {
@@ -216,9 +190,6 @@
          ]
       },
       "gaa4" : {
-         "environment" : {
-            "CIRCLE_ARTIFACTS" : "/tmp/circle-artifacts"
-         },
          "machine" : {
             "enabled" : true
          },
@@ -250,6 +221,68 @@
                }
             }
          ]
+      },
+      "test" : {
+         "environment" : {
+            "CIRCLE_ARTIFACTS" : "/tmp/circle-artifacts/test"
+         },
+         "machine" : {
+            "enabled" : true
+         },
+         "steps" : [
+            "checkout",
+            {
+               "attach_workspace" : {
+                  "at" : "./"
+               }
+            },
+            {
+               "attach_workspace" : {
+                  "at" : "/tmp/dockerimages"
+               }
+            },
+            {
+               "run" : {
+                  "command" : "docker load -i /tmp/dockerimages/quay.io/wakaba/apploach.tar"
+               }
+            },
+            {
+               "run" : {
+                  "command" : "mkdir -p $CIRCLE_ARTIFACTS"
+               }
+            },
+            {
+               "run" : {
+                  "command" : "rm -fr $CIRCLE_ARTIFACTS/ss.pid"
+               }
+            },
+            {
+               "run" : {
+                  "background" : true,
+                  "command" : "TEST_APP_DOCKER_IMAGE=quay.io/wakaba/apploach ./perl t_deps/bin/env-for-circleci.pl > $CIRCLE_ARTIFACTS/servers-http-$CIRCLE_NODE_INDEX.txt.dat 2>&1"
+               }
+            },
+            {
+               "run" : {
+                  "command" : "while [ ! -e $CIRCLE_ARTIFACTS/ss.pid ]; do sleep 1; done"
+               }
+            },
+            {
+               "run" : {
+                  "command" : "if [ ! -e $CIRCLE_ARTIFACTS/ss.pid ]; then cat $CIRCLE_ARTIFACTS/ss.env; fi; cat $CIRCLE_ARTIFACTS/ss.pid"
+               }
+            },
+            {
+               "run" : {
+                  "command" : "SS_ENV_FILE=$CIRCLE_ARTIFACTS/ss.env make test"
+               }
+            },
+            {
+               "store_artifacts" : {
+                  "path" : "/tmp/circle-artifacts/test"
+               }
+            }
+         ]
       }
    },
    "version" : 2,
@@ -257,6 +290,13 @@
       "build" : {
          "jobs" : [
             "build",
+            {
+               "test" : {
+                  "requires" : [
+                     "build"
+                  ]
+               }
+            },
             {
                "deploy_master" : {
                   "filters" : {
@@ -267,7 +307,7 @@
                      }
                   },
                   "requires" : [
-                     "build"
+                     "test"
                   ]
                }
             },
@@ -281,7 +321,7 @@
                      }
                   },
                   "requires" : [
-                     "build"
+                     "test"
                   ]
                }
             },
@@ -295,7 +335,7 @@
                      }
                   },
                   "requires" : [
-                     "build"
+                     "test"
                   ]
                }
             }
