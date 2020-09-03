@@ -186,7 +186,7 @@
       "build" : {
          "jobs" : [
             "build0",
-            "build"
+            {"build": {"requires": ["build0"]}}
          ]
       },
       "gaa4" : {
