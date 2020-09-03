@@ -1,5 +1,35 @@
 {
    "jobs" : {
+      "build0" : {
+         "environment" : {
+            "CIRCLE_ARTIFACTS" : "/tmp/circle-artifacts"
+         },
+         "machine" : {
+            "enabled" : true
+         },
+         "steps" : [
+            "checkout",
+            {
+               "run" : {
+                  "command" : "mkdir -p $CIRCLE_ARTIFACTS"
+               }
+            },
+            {
+               "run" : {
+                  "command" : "docker info"
+               }
+            },
+            {
+               "run" : {
+                  "command" : "make deps-circleci"
+               }
+            },
+         {"persist_to_workspace": {
+           "root": "./",
+           "paths": ["deps", "local", "prove"]
+         }}
+         ]
+      },
       "build" : {
          "environment" : {
             "CIRCLE_ARTIFACTS" : "/tmp/circle-artifacts"
@@ -9,6 +39,7 @@
          },
          "steps" : [
             "checkout",
+         {"attach_workspace": {"at": "./"}},
             {
                "run" : {
                   "command" : "mkdir -p $CIRCLE_ARTIFACTS"
@@ -154,6 +185,7 @@
    "workflows" : {
       "build" : {
          "jobs" : [
+            "build0",
             "build"
          ]
       },
