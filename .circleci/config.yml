@@ -1,41 +1,5 @@
 {
    "jobs" : {
-      "build0" : {
-         "environment" : {
-            "CIRCLE_ARTIFACTS" : "/tmp/circle-artifacts"
-         },
-         "machine" : {
-            "enabled" : true
-         },
-         "steps" : [
-            "checkout",
-            {
-               "run" : {
-                  "command" : "mkdir -p $CIRCLE_ARTIFACTS"
-               }
-            },
-            {
-               "run" : {
-                  "command" : "docker info"
-               }
-            },
-            {
-               "run" : {
-                  "command" : "make deps-circleci"
-               }
-            },
-            {
-               "run" : {
-                  "command" : "docker build -t quay.io/wakaba/apploach ."
-               }
-            },
-         {"run": {"command": "mkdir -p local/dockerimages/; docker save -o ./local/dockerimages/apploach.tar quay.io/wakaba/apploach"}},
-         {"persist_to_workspace": {
-           "root": "./",
-           "paths": ["deps", "local", "prove"]
-         }}
-         ]
-      },
       "build" : {
          "environment" : {
             "CIRCLE_ARTIFACTS" : "/tmp/circle-artifacts"
@@ -45,8 +9,6 @@
          },
          "steps" : [
             "checkout",
-         {"attach_workspace": {"at": "./"}},
-         {"run": {"command": "docker load -i local/dockerimages/apploach.tar"}},
             {
                "run" : {
                   "command" : "mkdir -p $CIRCLE_ARTIFACTS"
@@ -75,7 +37,7 @@
             },
             {
                "run" : {
-                  "command" : "git config --global user.email \u0022temp@circleci.test\u0022\u000Agit config --global user.name \u0022CircleCI\u0022"
+                  "command" : "docker build -t quay.io/wakaba/apploach ."
                }
             },
             {
@@ -108,53 +70,147 @@
                "store_artifacts" : {
                   "path" : "/tmp/circle-artifacts"
                }
+            },
+            {
+               "persist_to_workspace" : {
+                  "paths" : [
+                     "deps",
+                     "local",
+                     "perl",
+                     "prove",
+                     "plackup",
+                     "lserver",
+                     "local-server",
+                     "rev"
+                  ],
+                  "root" : "./"
+               }
+            },
+            {
+               "run" : {
+                  "command" : "mkdir -p /tmp/dockerimages/quay.io/wakaba/"
+               }
+            },
+            {
+               "run" : {
+                  "command" : "docker save -o /tmp/dockerimages/quay.io/wakaba/apploach.tar quay.io/wakaba/apploach"
+               }
+            },
+            {
+               "persist_to_workspace" : {
+                  "paths" : [
+                     "dockerimages"
+                  ],
+                  "root" : "/tmp"
+               }
             }
          ]
       },
-      "deploy" : {
-         "environment" : {
-            "CIRCLE_ARTIFACTS" : "/tmp/circle-artifacts"
-         },
+      "deploy_master" : {
          "machine" : {
             "enabled" : true
          },
          "steps" : [
             "checkout",
-         {"attach_workspace": {"at": "./"}},
-         {"run": {"command": "docker load -i local/dockerimages/apploach.tar"}},
             {
-               "deploy" : {
-                  "command" : "if [ \u0022${CIRCLE_BRANCH}\u0022 == 'master' ]; then\u000Atrue\u000Adocker login -e $DOCKER_EMAIL -u $DOCKER_USER -p $DOCKER_PASS quay.io || docker login -u $DOCKER_USER -p $DOCKER_PASS quay.io\u000Afi"
+               "attach_workspace" : {
+                  "at" : "./"
+               }
+            },
+            {
+               "attach_workspace" : {
+                  "at" : "/tmp/dockerimages"
+               }
+            },
+            {
+               "run" : {
+                  "command" : "docker load -i /tmp/dockerimages/quay.io/wakaba/apploach.tar"
                }
             },
             {
                "deploy" : {
-                  "command" : "if [ \u0022${CIRCLE_BRANCH}\u0022 == 'master' ]; then\u000Atrue\u000Adocker push quay.io/wakaba/apploach && curl -sSLf $BWALL_URL -X POST\u000Afi"
+                  "command" : "docker login -e $DOCKER_EMAIL -u $DOCKER_USER -p $DOCKER_PASS quay.io || docker login -u $DOCKER_USER -p $DOCKER_PASS quay.io"
                }
             },
             {
                "deploy" : {
-                  "command" : "if [ \u0022${CIRCLE_BRANCH}\u0022 == 'master' ]; then\u000Atrue\u000Agit checkout --orphan herokucommit && git commit -m \u0022Heroku base commit\u0022\u000Afi"
+                  "command" : "docker push quay.io/wakaba/apploach && curl -sSLf $BWALL_URL -X POST"
                }
             },
             {
                "deploy" : {
-                  "command" : "if [ \u0022${CIRCLE_BRANCH}\u0022 == 'master' ]; then\u000Atrue\u000Amake create-commit-for-heroku\u000Afi"
+                  "command" : "git config --global user.email \u0022temp@circleci.test\u0022\u000Agit config --global user.name \u0022CircleCI\u0022"
                }
             },
             {
                "deploy" : {
-                  "command" : "if [ \u0022${CIRCLE_BRANCH}\u0022 == 'master' ]; then\u000Atrue\u000Agit push git@heroku.com:$HEROKU_APP_NAME.git \u002B`git rev-parse HEAD`:refs/heads/master\u000Afi"
+                  "command" : "git checkout --orphan herokucommit && git commit -m \u0022Heroku base commit\u0022"
                }
             },
             {
                "deploy" : {
-                  "command" : "if [ \u0022${CIRCLE_BRANCH}\u0022 == 'nightly' ]; then\u000Atrue\u000Agit rev-parse HEAD > head.txt\u000Acurl -f -s -S --request POST --header \u0022Authorization:token $GITHUB_ACCESS_TOKEN\u0022 --header \u0022Content-Type:application/json\u0022 --data-binary \u0022{\u005C\u0022base\u005C\u0022:\u005C\u0022master\u005C\u0022,\u005C\u0022head\u005C\u0022:\u005C\u0022`cat head.txt`\u005C\u0022,\u005C\u0022commit_message\u005C\u0022:\u005C\u0022auto-merge $CIRCLE_BRANCH into master\u005C\u0022}\u0022 \u0022https://api.github.com/repos/$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME/merges\u0022\u000Afi"
+                  "command" : "make create-commit-for-heroku"
                }
             },
             {
                "deploy" : {
-                  "command" : "if [ \u0022${CIRCLE_BRANCH}\u0022 == 'staging' ]; then\u000Atrue\u000Agit rev-parse HEAD > head.txt\u000Acurl -f -s -S --request POST --header \u0022Authorization:token $GITHUB_ACCESS_TOKEN\u0022 --header \u0022Content-Type:application/json\u0022 --data-binary \u0022{\u005C\u0022base\u005C\u0022:\u005C\u0022master\u005C\u0022,\u005C\u0022head\u005C\u0022:\u005C\u0022`cat head.txt`\u005C\u0022,\u005C\u0022commit_message\u005C\u0022:\u005C\u0022auto-merge $CIRCLE_BRANCH into master\u005C\u0022}\u0022 \u0022https://api.github.com/repos/$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME/merges\u0022\u000Afi"
+                  "command" : "git push git@heroku.com:$HEROKU_APP_NAME.git \u002B`git rev-parse HEAD`:refs/heads/master"
+               }
+            }
+         ]
+      },
+      "deploy_nightly" : {
+         "machine" : {
+            "enabled" : true
+         },
+         "steps" : [
+            "checkout",
+            {
+               "attach_workspace" : {
+                  "at" : "./"
+               }
+            },
+            {
+               "attach_workspace" : {
+                  "at" : "/tmp/dockerimages"
+               }
+            },
+            {
+               "run" : {
+                  "command" : "docker load -i /tmp/dockerimages/quay.io/wakaba/apploach.tar"
+               }
+            },
+            {
+               "deploy" : {
+                  "command" : "git rev-parse HEAD > head.txt\u000Acurl -f -s -S --request POST --header \u0022Authorization:token $GITHUB_ACCESS_TOKEN\u0022 --header \u0022Content-Type:application/json\u0022 --data-binary \u0022{\u005C\u0022base\u005C\u0022:\u005C\u0022master\u005C\u0022,\u005C\u0022head\u005C\u0022:\u005C\u0022`cat head.txt`\u005C\u0022,\u005C\u0022commit_message\u005C\u0022:\u005C\u0022auto-merge $CIRCLE_BRANCH into master\u005C\u0022}\u0022 \u0022https://api.github.com/repos/$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME/merges\u0022"
+               }
+            }
+         ]
+      },
+      "deploy_staging" : {
+         "machine" : {
+            "enabled" : true
+         },
+         "steps" : [
+            "checkout",
+            {
+               "attach_workspace" : {
+                  "at" : "./"
+               }
+            },
+            {
+               "attach_workspace" : {
+                  "at" : "/tmp/dockerimages"
+               }
+            },
+            {
+               "run" : {
+                  "command" : "docker load -i /tmp/dockerimages/quay.io/wakaba/apploach.tar"
+               }
+            },
+            {
+               "deploy" : {
+                  "command" : "git rev-parse HEAD > head.txt\u000Acurl -f -s -S --request POST --header \u0022Authorization:token $GITHUB_ACCESS_TOKEN\u0022 --header \u0022Content-Type:application/json\u0022 --data-binary \u0022{\u005C\u0022base\u005C\u0022:\u005C\u0022master\u005C\u0022,\u005C\u0022head\u005C\u0022:\u005C\u0022`cat head.txt`\u005C\u0022,\u005C\u0022commit_message\u005C\u0022:\u005C\u0022auto-merge $CIRCLE_BRANCH into master\u005C\u0022}\u0022 \u0022https://api.github.com/repos/$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME/merges\u0022"
                }
             }
          ]
@@ -200,9 +256,49 @@
    "workflows" : {
       "build" : {
          "jobs" : [
-            "build0",
-            {"build": {"requires": ["build0"]}},
-            {"deploy": {"requires": ["build"]}}
+            "build",
+            {
+               "deploy_master" : {
+                  "filters" : {
+                     "branches" : {
+                        "only" : [
+                           "master"
+                        ]
+                     }
+                  },
+                  "requires" : [
+                     "build"
+                  ]
+               }
+            },
+            {
+               "deploy_nightly" : {
+                  "filters" : {
+                     "branches" : {
+                        "only" : [
+                           "nightly"
+                        ]
+                     }
+                  },
+                  "requires" : [
+                     "build"
+                  ]
+               }
+            },
+            {
+               "deploy_staging" : {
+                  "filters" : {
+                     "branches" : {
+                        "only" : [
+                           "staging"
+                        ]
+                     }
+                  },
+                  "requires" : [
+                     "build"
+                  ]
+               }
+            }
          ]
       },
       "gaa4" : {
@@ -212,7 +308,7 @@
          "triggers" : [
             {
                "schedule" : {
-                  "cron" : "49 1 * * *",
+                  "cron" : "23 2 * * *",
                   "filters" : {
                      "branches" : {
                         "only" : [

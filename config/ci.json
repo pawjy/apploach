@@ -10,6 +10,7 @@
     "merger": 1,
     "gaa": 1,
     "heroku": true,
+    "build_generated_pmbp": true,
 
     "build": [
       "make deps-circleci"
