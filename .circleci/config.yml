@@ -243,7 +243,7 @@
             },
             {
                "attach_workspace" : {
-                  "at" : "/tmp/dockerimages"
+                  "at" : "/tmp"
                }
             },
             {
