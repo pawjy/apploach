@@ -24,6 +24,12 @@
                   "command" : "make deps-circleci"
                }
             },
+            {
+               "run" : {
+                  "command" : "docker build -t quay.io/wakaba/apploach ."
+               }
+            },
+         {"run": {"command": "mkdir -p local/dockerimages/; docker save -o ./local/dockerimages/apploach.tar quay.io/wakaba/apploach"}},
          {"persist_to_workspace": {
            "root": "./",
            "paths": ["deps", "local", "prove"]
@@ -40,6 +46,7 @@
          "steps" : [
             "checkout",
          {"attach_workspace": {"at": "./"}},
+         {"run": {"command": "docker load -i local/dockerimages/apploach.tar"}},
             {
                "run" : {
                   "command" : "mkdir -p $CIRCLE_ARTIFACTS"
@@ -64,11 +71,6 @@
             {
                "run" : {
                   "command" : "docker info"
-               }
-            },
-            {
-               "run" : {
-                  "command" : "docker build -t quay.io/wakaba/apploach ."
                }
             },
             {
