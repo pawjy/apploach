@@ -108,7 +108,20 @@
                "store_artifacts" : {
                   "path" : "/tmp/circle-artifacts"
                }
-            },
+            }
+         ]
+      },
+      "deploy" : {
+         "environment" : {
+            "CIRCLE_ARTIFACTS" : "/tmp/circle-artifacts"
+         },
+         "machine" : {
+            "enabled" : true
+         },
+         "steps" : [
+            "checkout",
+         {"attach_workspace": {"at": "./"}},
+         {"run": {"command": "docker load -i local/dockerimages/apploach.tar"}},
             {
                "deploy" : {
                   "command" : "if [ \u0022${CIRCLE_BRANCH}\u0022 == 'master' ]; then\u000Atrue\u000Adocker login -e $DOCKER_EMAIL -u $DOCKER_USER -p $DOCKER_PASS quay.io || docker login -u $DOCKER_USER -p $DOCKER_PASS quay.io\u000Afi"
@@ -188,7 +201,8 @@
       "build" : {
          "jobs" : [
             "build0",
-            {"build": {"requires": ["build0"]}}
+            {"build": {"requires": ["build0"]}},
+            {"deploy": {"requires": ["build"]}}
          ]
       },
       "gaa4" : {
