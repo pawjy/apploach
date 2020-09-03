@@ -248,6 +248,11 @@
             },
             {
                "run" : {
+                  "command" : "find /tmp/dockerimages"
+               }
+            },
+            {
+               "run" : {
                   "command" : "docker load -i /tmp/dockerimages/quay.io/wakaba/apploach.tar"
                }
             },
