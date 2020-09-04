@@ -200,9 +200,9 @@
             }
          ]
       },
-      "test" : {
+      "test-http" : {
          "environment" : {
-            "CIRCLE_ARTIFACTS" : "/tmp/circle-artifacts/test"
+            "CIRCLE_ARTIFACTS" : "/tmp/circle-artifacts/test-http"
          },
          "machine" : {
             "enabled" : true
@@ -257,7 +257,7 @@
             },
             {
                "store_artifacts" : {
-                  "path" : "/tmp/circle-artifacts/test"
+                  "path" : "/tmp/circle-artifacts/test-http"
                }
             }
          ]
@@ -269,7 +269,7 @@
          "jobs" : [
             "build",
             {
-               "test" : {
+               "test-http" : {
                   "requires" : [
                      "build"
                   ]
@@ -285,7 +285,8 @@
                      }
                   },
                   "requires" : [
-                     "test"
+                     "build",
+                     "test-http"
                   ]
                }
             },
@@ -299,7 +300,8 @@
                      }
                   },
                   "requires" : [
-                     "test"
+                     "build",
+                     "test-http"
                   ]
                }
             },
@@ -313,7 +315,8 @@
                      }
                   },
                   "requires" : [
-                     "test"
+                     "build",
+                     "test-http"
                   ]
                }
             }
@@ -326,7 +329,7 @@
          "triggers" : [
             {
                "schedule" : {
-                  "cron" : "51 2 * * *",
+                  "cron" : "1 3 * * *",
                   "filters" : {
                      "branches" : {
                         "only" : [
