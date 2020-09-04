@@ -46,8 +46,19 @@
                }
             },
             {
+               "run" : {
+                  "command" : "mkdir -p .ciconfigtemp/dockerimages/quay.io/wakaba/"
+               }
+            },
+            {
+               "run" : {
+                  "command" : "docker save -o .ciconfigtemp/dockerimages/quay.io/wakaba/apploach.tar quay.io/wakaba/apploach"
+               }
+            },
+            {
                "persist_to_workspace" : {
                   "paths" : [
+                     ".ciconfigtemp",
                      "deps",
                      "local",
                      "perl",
@@ -58,24 +69,6 @@
                      "rev"
                   ],
                   "root" : "./"
-               }
-            },
-            {
-               "run" : {
-                  "command" : "mkdir -p /tmp/dockerimages/quay.io/wakaba/"
-               }
-            },
-            {
-               "run" : {
-                  "command" : "docker save -o /tmp/dockerimages/quay.io/wakaba/apploach.tar quay.io/wakaba/apploach"
-               }
-            },
-            {
-               "persist_to_workspace" : {
-                  "paths" : [
-                     "dockerimages"
-                  ],
-                  "root" : "/tmp"
                }
             }
          ]
@@ -92,18 +85,8 @@
                }
             },
             {
-               "attach_workspace" : {
-                  "at" : "/tmp/dockerimages"
-               }
-            },
-            {
                "run" : {
-                  "command" : "find /tmp/dockerimages"
-               }
-            },
-            {
-               "run" : {
-                  "command" : "docker load -i /tmp/dockerimages/quay.io/wakaba/apploach.tar"
+                  "command" : "docker load -i .ciconfigtemp/dockerimages/quay.io/wakaba/apploach.tar"
                }
             },
             {
@@ -150,13 +133,8 @@
                }
             },
             {
-               "attach_workspace" : {
-                  "at" : "/tmp/dockerimages"
-               }
-            },
-            {
                "run" : {
-                  "command" : "docker load -i /tmp/dockerimages/quay.io/wakaba/apploach.tar"
+                  "command" : "docker load -i .ciconfigtemp/dockerimages/quay.io/wakaba/apploach.tar"
                }
             },
             {
@@ -178,13 +156,8 @@
                }
             },
             {
-               "attach_workspace" : {
-                  "at" : "/tmp/dockerimages"
-               }
-            },
-            {
                "run" : {
-                  "command" : "docker load -i /tmp/dockerimages/quay.io/wakaba/apploach.tar"
+                  "command" : "docker load -i .ciconfigtemp/dockerimages/quay.io/wakaba/apploach.tar"
                }
             },
             {
@@ -242,18 +215,8 @@
                }
             },
             {
-               "attach_workspace" : {
-                  "at" : "/tmp"
-               }
-            },
-            {
                "run" : {
-                  "command" : "find /tmp/dockerimages"
-               }
-            },
-            {
-               "run" : {
-                  "command" : "docker load -i /tmp/dockerimages/quay.io/wakaba/apploach.tar"
+                  "command" : "docker load -i .ciconfigtemp/dockerimages/quay.io/wakaba/apploach.tar"
                }
             },
             {
