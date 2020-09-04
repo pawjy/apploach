@@ -16,6 +16,7 @@
       "make deps-circleci"
     ],
     "tests": [
+      "make deps-circleci",
       "rm -fr $CIRCLE_ARTIFACTS/ss.pid",
       {"TEST_APP_DOCKER_IMAGE=quay.io/wakaba/apploach ./perl t_deps/bin/env-for-circleci.pl > $CIRCLE_ARTIFACTS/servers-http-$CIRCLE_NODE_INDEX.txt.dat 2>&1": {
         "background": true}},
