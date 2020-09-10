@@ -58,6 +58,7 @@ deps-local: pmbp-install
 
 lserver: deps-local
 
+create-commit-for-heroku-circleci: deps-circleci create-commit-for-heroku
 create-commit-for-heroku:
 	git add -f rev
 	git remote rm origin
@@ -76,9 +77,13 @@ PROVE = ./prove
 test: test-deps test-main
 
 test-deps: deps
+test-deps-circleci: deps-circleci
 
 test-main:
 	$(PROVE) t/http/*.t
+
+test-main-circleci:
+	./t_deps/bin/circle-prove t/http/ ""
 
 always:
 

@@ -41,64 +41,82 @@
                }
             },
             {
-               "run" : {
-                  "command" : "git config --global user.email \u0022temp@circleci.test\u0022\u000Agit config --global user.name \u0022CircleCI\u0022"
-               }
-            },
-            {
-               "run" : {
-                  "command" : "rm -fr $CIRCLE_ARTIFACTS/ss.pid"
-               }
-            },
-            {
-               "run" : {
-                  "background" : true,
-                  "command" : "TEST_APP_DOCKER_IMAGE=quay.io/wakaba/apploach ./perl t_deps/bin/env-for-circleci.pl > $CIRCLE_ARTIFACTS/servers-http-$CIRCLE_NODE_INDEX.txt.dat 2>&1"
-               }
-            },
-            {
-               "run" : {
-                  "command" : "while [ ! -e $CIRCLE_ARTIFACTS/ss.pid ]; do sleep 1; done"
-               }
-            },
-            {
-               "run" : {
-                  "command" : "if [ ! -e $CIRCLE_ARTIFACTS/ss.pid ]; then cat $CIRCLE_ARTIFACTS/ss.env; fi; cat $CIRCLE_ARTIFACTS/ss.pid"
-               }
-            },
-            {
-               "run" : {
-                  "command" : "SS_ENV_FILE=$CIRCLE_ARTIFACTS/ss.env make test"
-               }
-            },
-            {
                "store_artifacts" : {
                   "path" : "/tmp/circle-artifacts/build"
                }
             },
             {
-               "deploy" : {
-                  "command" : "if [ \u0022${CIRCLE_BRANCH}\u0022 == 'master' ]; then\u000Atrue\u000Adocker login -e $DOCKER_EMAIL -u $DOCKER_USER -p $DOCKER_PASS quay.io || docker login -u $DOCKER_USER -p $DOCKER_PASS quay.io\u000Afi"
+               "run" : {
+                  "command" : "mkdir -p .ciconfigtemp/dockerimages/quay.io/wakaba/"
+               }
+            },
+            {
+               "run" : {
+                  "command" : "docker save -o .ciconfigtemp/dockerimages/quay.io/wakaba/apploach.tar quay.io/wakaba/apploach"
+               }
+            },
+            {
+               "persist_to_workspace" : {
+                  "paths" : [
+                     ".ciconfigtemp",
+                     "deps",
+                     "local",
+                     "perl",
+                     "prove",
+                     "plackup",
+                     "lserver",
+                     "local-server",
+                     "rev"
+                  ],
+                  "root" : "./"
+               }
+            }
+         ]
+      },
+      "deploy_master" : {
+         "machine" : {
+            "enabled" : true
+         },
+         "steps" : [
+            "checkout",
+            {
+               "attach_workspace" : {
+                  "at" : "./"
+               }
+            },
+            {
+               "run" : {
+                  "command" : "docker load -i .ciconfigtemp/dockerimages/quay.io/wakaba/apploach.tar"
                }
             },
             {
                "deploy" : {
-                  "command" : "if [ \u0022${CIRCLE_BRANCH}\u0022 == 'master' ]; then\u000Atrue\u000Adocker push quay.io/wakaba/apploach && curl -sSLf $BWALL_URL -X POST\u000Afi"
+                  "command" : "docker login -e $DOCKER_EMAIL -u $DOCKER_USER -p $DOCKER_PASS quay.io || docker login -u $DOCKER_USER -p $DOCKER_PASS quay.io"
                }
             },
             {
                "deploy" : {
-                  "command" : "if [ \u0022${CIRCLE_BRANCH}\u0022 == 'master' ]; then\u000Atrue\u000Agit checkout --orphan herokucommit && git commit -m \u0022Heroku base commit\u0022\u000Afi"
+                  "command" : "docker push quay.io/wakaba/apploach && curl -sSLf $BWALL_URL -X POST"
                }
             },
             {
                "deploy" : {
-                  "command" : "if [ \u0022${CIRCLE_BRANCH}\u0022 == 'master' ]; then\u000Atrue\u000Amake create-commit-for-heroku\u000Afi"
+                  "command" : "git config --global user.email \u0022temp@circleci.test\u0022\u000Agit config --global user.name \u0022CircleCI\u0022"
                }
             },
             {
                "deploy" : {
-                  "command" : "if [ \u0022${CIRCLE_BRANCH}\u0022 == 'master' ]; then\u000Atrue\u000Agit push git@heroku.com:$HEROKU_APP_NAME.git \u002B`git rev-parse HEAD`:refs/heads/master\u000Afi"
+                  "command" : "git checkout --orphan herokucommit && git commit -m \u0022Heroku base commit\u0022"
+               }
+            },
+            {
+               "deploy" : {
+                  "command" : "make create-commit-for-heroku-circleci"
+               }
+            },
+            {
+               "deploy" : {
+                  "command" : "git push git@heroku.com:$HEROKU_APP_NAME.git \u002B`git rev-parse HEAD`:refs/heads/master"
                }
             }
          ]
@@ -109,6 +127,16 @@
          },
          "steps" : [
             "checkout",
+            {
+               "attach_workspace" : {
+                  "at" : "./"
+               }
+            },
+            {
+               "run" : {
+                  "command" : "docker load -i .ciconfigtemp/dockerimages/quay.io/wakaba/apploach.tar"
+               }
+            },
             {
                "deploy" : {
                   "command" : "git rev-parse HEAD > head.txt\u000Acurl -f -s -S --request POST --header \u0022Authorization:token $GITHUB_ACCESS_TOKEN\u0022 --header \u0022Content-Type:application/json\u0022 --data-binary \u0022{\u005C\u0022base\u005C\u0022:\u005C\u0022master\u005C\u0022,\u005C\u0022head\u005C\u0022:\u005C\u0022`cat head.txt`\u005C\u0022,\u005C\u0022commit_message\u005C\u0022:\u005C\u0022auto-merge $CIRCLE_BRANCH into master\u005C\u0022}\u0022 \u0022https://api.github.com/repos/$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME/merges\u0022"
@@ -122,6 +150,16 @@
          },
          "steps" : [
             "checkout",
+            {
+               "attach_workspace" : {
+                  "at" : "./"
+               }
+            },
+            {
+               "run" : {
+                  "command" : "docker load -i .ciconfigtemp/dockerimages/quay.io/wakaba/apploach.tar"
+               }
+            },
             {
                "deploy" : {
                   "command" : "git rev-parse HEAD > head.txt\u000Acurl -f -s -S --request POST --header \u0022Authorization:token $GITHUB_ACCESS_TOKEN\u0022 --header \u0022Content-Type:application/json\u0022 --data-binary \u0022{\u005C\u0022base\u005C\u0022:\u005C\u0022master\u005C\u0022,\u005C\u0022head\u005C\u0022:\u005C\u0022`cat head.txt`\u005C\u0022,\u005C\u0022commit_message\u005C\u0022:\u005C\u0022auto-merge $CIRCLE_BRANCH into master\u005C\u0022}\u0022 \u0022https://api.github.com/repos/$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME/merges\u0022"
@@ -161,6 +199,69 @@
                }
             }
          ]
+      },
+      "test-http" : {
+         "environment" : {
+            "CIRCLE_ARTIFACTS" : "/tmp/circle-artifacts/test-http"
+         },
+         "machine" : {
+            "enabled" : true
+         },
+         "parallelism" : 4,
+         "steps" : [
+            "checkout",
+            {
+               "attach_workspace" : {
+                  "at" : "./"
+               }
+            },
+            {
+               "run" : {
+                  "command" : "docker load -i .ciconfigtemp/dockerimages/quay.io/wakaba/apploach.tar"
+               }
+            },
+            {
+               "run" : {
+                  "command" : "mkdir -p $CIRCLE_ARTIFACTS"
+               }
+            },
+            {
+               "run" : {
+                  "command" : "make test-deps-circleci"
+               }
+            },
+            {
+               "run" : {
+                  "command" : "rm -fr $CIRCLE_ARTIFACTS/ss.pid"
+               }
+            },
+            {
+               "run" : {
+                  "background" : true,
+                  "command" : "TEST_APP_DOCKER_IMAGE=quay.io/wakaba/apploach ./perl t_deps/bin/env-for-circleci.pl > $CIRCLE_ARTIFACTS/servers-http-$CIRCLE_NODE_INDEX.txt.dat 2>&1"
+               }
+            },
+            {
+               "run" : {
+                  "command" : "while [ ! -e $CIRCLE_ARTIFACTS/ss.pid ]; do sleep 1; done"
+               }
+            },
+            {
+               "run" : {
+                  "command" : "if [ ! -e $CIRCLE_ARTIFACTS/ss.pid ]; then cat $CIRCLE_ARTIFACTS/ss.env; fi; cat $CIRCLE_ARTIFACTS/ss.pid"
+               }
+            },
+            {
+               "run" : {
+                  "command" : "SS_ENV_FILE=$CIRCLE_ARTIFACTS/ss.env make test-main-circleci"
+               }
+            },
+            {
+               "store_artifacts" : {
+                  "path" : "/tmp/circle-artifacts/test-http"
+               }
+            }
+         ]
       }
    },
    "version" : 2,
@@ -168,6 +269,28 @@
       "build" : {
          "jobs" : [
             "build",
+            {
+               "test-http" : {
+                  "requires" : [
+                     "build"
+                  ]
+               }
+            },
+            {
+               "deploy_master" : {
+                  "filters" : {
+                     "branches" : {
+                        "only" : [
+                           "master"
+                        ]
+                     }
+                  },
+                  "requires" : [
+                     "build",
+                     "test-http"
+                  ]
+               }
+            },
             {
                "deploy_nightly" : {
                   "filters" : {
@@ -178,7 +301,8 @@
                      }
                   },
                   "requires" : [
-                     "build"
+                     "build",
+                     "test-http"
                   ]
                }
             },
@@ -192,7 +316,8 @@
                      }
                   },
                   "requires" : [
-                     "build"
+                     "build",
+                     "test-http"
                   ]
                }
             }
@@ -205,7 +330,7 @@
          "triggers" : [
             {
                "schedule" : {
-                  "cron" : "49 1 * * *",
+                  "cron" : "39 3 * * *",
                   "filters" : {
                      "branches" : {
                         "only" : [
