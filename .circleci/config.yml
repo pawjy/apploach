@@ -207,7 +207,7 @@
          "machine" : {
             "enabled" : true
          },
-         "parallelism" : 2,
+         "parallelism" : 4,
          "steps" : [
             "checkout",
             {
@@ -227,7 +227,7 @@
             },
             {
                "run" : {
-                  "command" : "make deps-circleci"
+                  "command" : "make test-deps-circleci"
                }
             },
             {
@@ -253,7 +253,7 @@
             },
             {
                "run" : {
-                  "command" : "SS_ENV_FILE=$CIRCLE_ARTIFACTS/ss.env make test"
+                  "command" : "SS_ENV_FILE=$CIRCLE_ARTIFACTS/ss.env make test-main-circleci"
                }
             },
             {
@@ -330,7 +330,7 @@
          "triggers" : [
             {
                "schedule" : {
-                  "cron" : "23 3 * * *",
+                  "cron" : "39 3 * * *",
                   "filters" : {
                      "branches" : {
                         "only" : [

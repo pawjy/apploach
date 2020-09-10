@@ -11,20 +11,20 @@
     "gaa": 1,
     "heroku": true,
     "build_generated_pmbp": true,
-    "parallel": true,
+    "parallel": 4,
 
     "build": [
       "make deps-circleci"
     ],
     "tests": {"http": [
-      "make deps-circleci",
+      "make test-deps-circleci",
       "rm -fr $CIRCLE_ARTIFACTS/ss.pid",
       {"TEST_APP_DOCKER_IMAGE=quay.io/wakaba/apploach ./perl t_deps/bin/env-for-circleci.pl > $CIRCLE_ARTIFACTS/servers-http-$CIRCLE_NODE_INDEX.txt.dat 2>&1": {
         "background": true}},
       "while [ ! -e $CIRCLE_ARTIFACTS/ss.pid ]; do sleep 1; done",
       "if [ ! -e $CIRCLE_ARTIFACTS/ss.pid ]; then cat $CIRCLE_ARTIFACTS/ss.env; fi; cat $CIRCLE_ARTIFACTS/ss.pid",
       
-      "SS_ENV_FILE=$CIRCLE_ARTIFACTS/ss.env make test"
+      "SS_ENV_FILE=$CIRCLE_ARTIFACTS/ss.env make test-main-circleci"
     ]}
   }
 }

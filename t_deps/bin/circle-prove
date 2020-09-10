@@ -1,0 +1,17 @@
+#!/bin/bash
+
+i=0
+files=()
+for file in $(find $1 -name "$2*.t" | sort)
+do
+  if [ $(($i % $CIRCLE_NODE_TOTAL)) -eq $CIRCLE_NODE_INDEX ]
+  then
+    files+=" $file"
+  fi
+  ((i++))
+done
+
+echo ${files[@]}
+./prove $PROVE_OPTIONS ${files[@]}
+
+## License: Public Domain.

@@ -77,9 +77,13 @@ PROVE = ./prove
 test: test-deps test-main
 
 test-deps: deps
+test-deps-circleci: deps-circleci
 
 test-main:
 	$(PROVE) t/http/*.t
+
+test-main-circleci:
+	./t_deps/bin/circle-prove t/http/ ""
 
 always:
 
