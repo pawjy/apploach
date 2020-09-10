@@ -207,7 +207,7 @@
          "machine" : {
             "enabled" : true
          },
-         "parallelism" : 4,
+         "parallelism" : 2,
          "steps" : [
             "checkout",
             {

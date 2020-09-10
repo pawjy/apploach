@@ -11,7 +11,7 @@
     "gaa": 1,
     "heroku": true,
     "build_generated_pmbp": true,
-    "parallel": 4,
+    "parallel": 2,
 
     "build": [
       "make deps-circleci"
