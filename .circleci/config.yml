@@ -111,7 +111,7 @@
             },
             {
                "deploy" : {
-                  "command" : "make create-commit-for-heroku"
+                  "command" : "make create-commit-for-heroku-circleci"
                }
             },
             {

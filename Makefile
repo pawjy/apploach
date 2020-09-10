@@ -58,7 +58,8 @@ deps-local: pmbp-install
 
 lserver: deps-local
 
-create-commit-for-heroku: deps-circleci
+create-commit-for-heroku-circleci: deps-circleci create-commit-for-heroku
+create-commit-for-heroku:
 	git add -f rev
 	git remote rm origin
 	rm -fr deps/pmtar/.git deps/pmpp/.git modules/*/.git
