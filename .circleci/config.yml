@@ -227,6 +227,17 @@
             },
             {
                "run" : {
+                  "command" : "docker info"
+               }
+            },
+            {
+               "run" : {
+                  "background" : true,
+                  "command" : "docker pull quay.io/wakaba/docker-perl-app-base && docker pull minio/minio && docker pull mariadb"
+               }
+            },
+            {
+               "run" : {
                   "command" : "make test-deps-circleci"
                }
             },
