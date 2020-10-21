@@ -5,7 +5,7 @@
             "CIRCLE_ARTIFACTS" : "/tmp/circle-artifacts/build"
          },
          "machine" : {
-            "enabled" : true
+            "image" : "ubuntu-2004:202008-01"
          },
          "steps" : [
             "checkout",
@@ -75,7 +75,7 @@
       },
       "deploy_master" : {
          "machine" : {
-            "enabled" : true
+            "image" : "ubuntu-2004:202008-01"
          },
          "steps" : [
             "checkout",
@@ -123,7 +123,7 @@
       },
       "deploy_nightly" : {
          "machine" : {
-            "enabled" : true
+            "image" : "ubuntu-2004:202008-01"
          },
          "steps" : [
             "checkout",
@@ -146,7 +146,7 @@
       },
       "deploy_staging" : {
          "machine" : {
-            "enabled" : true
+            "image" : "ubuntu-2004:202008-01"
          },
          "steps" : [
             "checkout",
@@ -169,7 +169,7 @@
       },
       "gaa4" : {
          "machine" : {
-            "enabled" : true
+            "image" : "ubuntu-2004:202008-01"
          },
          "steps" : [
             "checkout",
@@ -205,7 +205,7 @@
             "CIRCLE_ARTIFACTS" : "/tmp/circle-artifacts/test-http"
          },
          "machine" : {
-            "enabled" : true
+            "image" : "ubuntu-2004:202008-01"
          },
          "parallelism" : 2,
          "steps" : [
