@@ -43,6 +43,7 @@ sub start ($%) {
   return [$obj, $r];
 } # start
 
+my $JobSleep = $Config->{fetch_job_interval} || 60;
 sub run_jobs ($$%) {
   my ($class, $obj, %args) = @_;
   my $ac1 = new AbortController;
@@ -58,7 +59,7 @@ sub run_jobs ($$%) {
       return $obj->{dbs}->{main}->delete ('fetch_job', {
         expires => {'<', time},
       })->then (sub {
-        return promised_sleep (20, signal => $ac1->signal)->then (sub { return not 'done' });
+        return promised_sleep ($JobSleep, signal => $ac1->signal)->then (sub { return not 'done' });
       });
     }, sub {
       my $e = $_[0];
@@ -121,7 +122,7 @@ sub run_a_job ($$) {
 
 =head1 LICENSE
 
-Copyright 2019-2020 Wakaba <wakaba@suikawiki.org>.
+Copyright 2019-2021 Wakaba <wakaba@suikawiki.org>.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as
