@@ -561,8 +561,7 @@ sub write_log ($$$$$$) {
   my ($self, $db_or_tr, $operator, $target, $verb, $data) = @_;
   return $self->db_ids ($db_or_tr, 1)->then (sub {
     my ($log_id) = @{$_[0]};
-    my $time = time;
-    $data->{timestamp} = $time;
+    my $time = $data->{timestamp} = 0+($data->{timestamp} // time);
     return $db_or_tr->insert ('log', [{
       ($self->app_id_columns),
       log_id => $log_id,
@@ -4243,8 +4242,10 @@ sub run_nobj ($) {
       ##
       ##   NObj (|verb|) : The log's verb NObj.
       ##
-      ##   |data| : JSON object : The log's data.  Its |timestamp| is
-      ##   replaced by the time Apploach saves the log.
+      ##   |data| : JSON object : The log's data.  If it has a
+      ##   name/value pair whose name is |timestamp|, its value,
+      ##   interpreted as Timestamp, is used as the timestamp of the
+      ##   log entry.
       ##
       ## Response.
       ##
@@ -4269,7 +4270,7 @@ sub run_nobj ($) {
       ##
       ##   NObj (|operator|) : The log's operator NObj.
       ##
-      ##   NObj (|object|) : The log's object NObj.
+      ##   NObj (|target|) : The log's object NObj.
       ##
       ##   NObj (|verb|) : The log's object NObj.  At least one of
       ##   these four parameters should be specified.  Logs matching
@@ -4977,7 +4978,7 @@ sub close ($) {
 
 =head1 LICENSE
 
-Copyright 2018-2019 Wakaba <wakaba@suikawiki.org>.
+Copyright 2018-2021 Wakaba <wakaba@suikawiki.org>.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as
