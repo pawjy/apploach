@@ -53,6 +53,7 @@ sub run_jobs ($$%) {
     $ac2->abort;
   });
   return promised_wait_until {
+    AnyEvent->now_update;
     return $class->run_a_job ($obj)->then (sub {
       my $job_found = shift;
       return not 'done' if $job_found;
