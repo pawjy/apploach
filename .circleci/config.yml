@@ -190,7 +190,7 @@
             },
             {
                "deploy" : {
-                  "command" : "git commit -m auto"
+                  "command" : "git diff-index --quiet HEAD --cached || git commit -m auto"
                }
             },
             {
