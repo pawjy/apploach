@@ -61,6 +61,7 @@ Test {
 
 Test {
   my $current = shift;
+  $current->generate_text ('g1' => {});
   return $current->create (
     [a1 => account => {}],
     [v1 => nobj => {}],
