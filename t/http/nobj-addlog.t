@@ -97,7 +97,7 @@ Test {
       is $log->{verb_nobj_key}, $current->o ('v1')->{nobj_key};
     } $current->c;
   });
-} n => 11, name => 'addlog';
+} n => 10, name => 'addlog';
 
 RUN;
 
