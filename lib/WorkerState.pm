@@ -43,7 +43,7 @@ sub start ($%) {
   return [$obj, $r];
 } # start
 
-my $JobSleep1 = $Config->{fetch_job_interval} || 10;
+my $JobSleep1 = $Config->{fetch_job_interval} || 30;
 my $JobSleep2 = $Config->{fetch_job_sleep} || 60;
 sub run_jobs ($$%) {
   my ($class, $obj, %args) = @_;
