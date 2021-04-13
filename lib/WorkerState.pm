@@ -43,7 +43,8 @@ sub start ($%) {
   return [$obj, $r];
 } # start
 
-my $JobSleep = $Config->{fetch_job_interval} || 60;
+my $JobSleep1 = $Config->{fetch_job_interval} || 10;
+my $JobSleep2 = $Config->{fetch_job_sleep} || 60;
 sub run_jobs ($$%) {
   my ($class, $obj, %args) = @_;
   my $ac1 = new AbortController;
@@ -53,14 +54,17 @@ sub run_jobs ($$%) {
     $ac2->abort;
   });
   return promised_wait_until {
-    AnyEvent->now_update;
     return $class->run_a_job ($obj)->then (sub {
       my $job_found = shift;
-      return not 'done' if $job_found;
+      if ($job_found) {
+        return promised_sleep ($JobSleep1, signal => $ac1->signal)->then (sub {
+          return not 'done';
+        });
+      }
       return $obj->{dbs}->{main}->delete ('fetch_job', {
         expires => {'<', time},
       })->then (sub {
-        return promised_sleep ($JobSleep, signal => $ac1->signal)->then (sub { return not 'done' });
+        return promised_sleep ($JobSleep2, signal => $ac1->signal)->then (sub { return not 'done' });
       });
     }, sub {
       my $e = $_[0];
