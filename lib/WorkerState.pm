@@ -54,7 +54,9 @@ sub run_jobs ($$%) {
     $ac2->abort;
   });
   return promised_wait_until {
-    return $class->run_a_job ($obj)->then (sub {
+    return promised_sleep (rand ($JobSleep1), signal => $ac1->signal)->then (sub {
+      return $class->run_a_job ($obj);
+    })->then (sub {
       my $job_found = shift;
       if ($job_found) {
         return promised_sleep ($JobSleep1, signal => $ac1->signal)->then (sub {
@@ -90,7 +92,7 @@ sub run_a_job ($$) {
   ])->then (sub {
     return $db->select ('fetch_job', {
       running_since => $now,
-    }, fields => ['origin'], source_name => 'master');
+    }, fields => ['origin'], source_name => 'master', limit => 1);
   })->then (sub {
     my $v = $_[0]->first;
     return not 'job found' unless defined $v;
@@ -105,7 +107,8 @@ sub run_a_job ($$) {
     ])->then (sub {
       return $db->select ('fetch_job', {
         running_since => $now,
-      }, fields => ['job_id', 'options'], source_name => 'master');
+      }, fields => ['job_id', 'options'], source_name => 'master',
+      limit => 10);
     })->then (sub {
       my $jobs = $_[0]->all;
       return promised_for {
