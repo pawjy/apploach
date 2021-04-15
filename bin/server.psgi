@@ -2,6 +2,7 @@
 use strict;
 use warnings;
 use Path::Tiny;
+use Time::HiRes qw(time);
 use Wanage::HTTP;
 use Warabe::App;
 use Promise;
@@ -56,8 +57,11 @@ return sub {
   my $http = Wanage::HTTP->new_from_psgi_env ($_[0]);
   my $app = Warabe::App->new_from_http ($http);
 
-  warn sprintf "Access: [%s] %s %s\n",
-      scalar gmtime, $app->http->request_method, $app->http->url->stringify;
+  my $id = int rand 10000;
+  my $start_time = time;
+  warn sprintf "Access: (%d) [%s] %s %s\n",
+      $id, scalar gmtime $start_time,
+      $app->http->request_method, $app->http->url->stringify;
 
   return $app->execute_by_promise (sub {
     return Promise->resolve->then (sub {
@@ -70,13 +74,17 @@ return sub {
       }
       Application->error_log ($http->server_state->data->{config}, 'important', $e);
       return $app->send_error (500);
+    })->finally (sub {
+      my $end_time = time;
+      warn sprintf "Elapsed: (%d) %f\n",
+          $id, $end_time - $start_time;
     });
   });
 };
 
 =head1 LICENSE
 
-Copyright 2018-2020 Wakaba <wakaba@suikawiki.org>.
+Copyright 2018-2021 Wakaba <wakaba@suikawiki.org>.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as
