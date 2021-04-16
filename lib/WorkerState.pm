@@ -70,7 +70,8 @@ sub run_jobs ($$%) {
       });
     }, sub {
       my $e = $_[0];
-      Application->error_log ($obj->{config}, 'important', $e);
+      Application->error_log ($obj->{config}, 'important', $e)
+          unless UNIVERSAL::can ($e, 'name') and $e->name eq 'AbortError';
       return not 'done';
     });
   } signal => $ac2->signal;
