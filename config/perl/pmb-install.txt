@@ -11,7 +11,7 @@ Crypt::Format~0.10
 Cwd~3.75
 Data::Dumper~2.180
 Digest::SHA~6.02
-Encode~3.09
+Encode~3.10
 Exporter::Lite~0.08
 File::Path~2.18
 File::Temp~0.2311
