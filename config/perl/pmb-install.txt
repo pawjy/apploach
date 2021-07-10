@@ -1,7 +1,6 @@
 AnyEvent~7.17
 AnyEvent::FileLock~0.06
 AnyEvent::Fork~1.31
-AnyEvent::Util
 Bytes::Random::Secure::Tiny~1.011
 Call::Context~0.03
 Canary::Stability~2013
@@ -20,7 +19,7 @@ Filter::Util::Call~1.60
 IO::FDPass~1.3
 IO::Handle~1.45
 MIME::Base64~3.16
-Math::BigInt~1.999821
+Math::BigInt~1.999822
 Math::ProvablePrime~0.045
 Method::WeakCallback~0.04
 Net::SSLeay~1.90
