@@ -1,11 +1,11 @@
 AnyEvent~7.17
 AnyEvent::FileLock~0.06
 AnyEvent::Fork~1.31
-AnyEvent::Handle
+AnyEvent::IO
 Bytes::Random::Secure::Tiny~1.011
 Call::Context~0.03
 Canary::Stability~2013
-Carp~1.50
+Carp::Heavy~1.50
 Class::Accessor::Fast~0.51
 Convert::ASN1~0.31
 Crypt::Format~0.10
@@ -31,7 +31,7 @@ Scalar::Util~1.56
 Socket~2.032
 Symbol::Get~0.10
 Term::ANSIColor~5.01
-Test::More~1.302185
+Test::Builder~1.302185
 Time::HiRes~1.9764
 Time::Local~1.30
 Try::Tiny~0.30
