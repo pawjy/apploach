@@ -20,7 +20,7 @@ IO::FDPass~1.3
 IO::Handle~1.48
 MIME::Base64~3.16
 Math::BigInt~1.999823
-Math::ProvablePrime~0.045
+Math::ProvablePrime~0.51
 Method::WeakCallback~0.04
 Net::SSLeay~1.90
 Path::Class~0.37
