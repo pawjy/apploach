@@ -1,7 +1,7 @@
 AnyEvent~7.17
 AnyEvent::FileLock~0.06
 AnyEvent::Fork~1.31
-AnyEvent::Util
+AnyEvent::IO
 Bytes::Random::Secure::Tiny~1.011
 Call::Context~0.03
 Canary::Stability~2013
@@ -20,7 +20,7 @@ Filter::Util::Call~1.60
 IO::FDPass~1.3
 IO::Handle~1.48
 MIME::Base64~3.16
-Math::BigInt~1.999823
+Math::BigInt~1.999824
 Math::ProvablePrime~0.51
 Method::WeakCallback~0.04
 Net::SSLeay~1.90
@@ -31,7 +31,7 @@ Scalar::Util~1.59
 Socket~2.032
 Symbol::Get~0.10
 Term::ANSIColor~5.01
-Test::More~1.302187
+Test::Builder~1.302187
 Time::HiRes~1.9764
 Time::Local~1.30
 Try::Tiny~0.30
