@@ -4276,6 +4276,9 @@ sub run_nobj ($) {
       ##   these four parameters should be specified.  Logs matching
       ##   with these four parameters are returned in the response.
       ##
+      ##   |without_data| : Boolean : If true, the logs' |data| is
+      ##   omitted from the response.
+      ##
       ##   Pages.
       ##
       ## List response of logs.
@@ -4288,7 +4291,9 @@ sub run_nobj ($) {
       ##
       ##   NObj (|verb|) : The log's verb NObj.
       ##
-      ##   |data| : JSON Object : The log's data.
+      ##   |data| : JSON Object : The log's data.  Omitted if
+      ##   |without_data| parameter is set to true.
+      ##
       my $s = $self->{app}->bare_param ('operator_nobj_key');
       my $o = $self->{app}->bare_param ('target_nobj_key');
       my $v = $self->{app}->bare_param ('verb_nobj_key');
@@ -4331,7 +4336,8 @@ sub run_nobj ($) {
 
         return $self->db->select ('log', $where, fields => [
           'operator_nobj_id', 'target_nobj_id', 'verb_nobj_id',
-          'data', 'timestamp', 'log_id',
+          'timestamp', 'log_id',
+          ($self->{app}->bare_param ('without_data') ? () : ('data')),
         ], source_name => 'master',
           offset => $page->{offset}, limit => $page->{limit},
           order => ['timestamp', $page->{order_direction}],
@@ -4344,7 +4350,8 @@ sub run_nobj ($) {
         for (@$items) {
           delete $_->{timestamp};
           $_->{log_id} .= '';
-          $_->{data} = Dongry::Type->parse ('json', $_->{data});
+          $_->{data} = Dongry::Type->parse ('json', $_->{data})
+              if defined $_->{data};
         }
         return $self->json ({items => $items, %$next_page});
       });

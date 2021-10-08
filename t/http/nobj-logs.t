@@ -123,8 +123,24 @@ Test {
       is $v->{data}->{abc}, $current->o ('v1');
       is $v->{timestamp}, undef;
     } $current->c, name => 's & v';
+    return $current->json (['nobj', 'logs.json'], {
+      operator_nobj_key => $current->o ('a1')->{nobj_key},
+      verb_nobj_key => $current->o ('t1')->{nobj_key},
+      without_data => 1,
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $v = $result->{json}->{items}->[0];
+      is $v->{operator_nobj_key}, $current->o ('a1')->{nobj_key};
+      is $v->{target_nobj_key}, $current->o ('a2')->{nobj_key};
+      is $v->{verb_nobj_key}, $current->o ('t1')->{nobj_key};
+      is $v->{data}, undef;
+      is $v->{timestamp}, undef;
+    } $current->c, name => 'without_data';
   });
-} n => 41, name => 'log list';
+} n => 47, name => 'log list';
 
 Test {
   my $current = shift;
