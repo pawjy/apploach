@@ -578,6 +578,7 @@ sub create_log ($$$) {
     ($self->_nobj ('operator', $opts)),
     ($self->_nobj ('target', $opts)),
     ($self->_nobj_opt ('target_index', $opts)),
+    test_no_target_index => $opts->{no_target_index},
     ($self->_nobj ('verb', $opts)),
     data => $opts->{data} // {},
     author_data => $opts->{author_data}, # or undef

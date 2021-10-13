@@ -253,6 +253,8 @@ Test {
                    target_index => 'i2', data => {value => 3}}],
     [f4 => log => {operator => 'a1', target => 'a1', verb => 't1',
                    data => {value => 4}}],
+    [f5 => log => {operator => 'a1', target => 'a1', verb => 't1',
+                   no_target_index => 1, data => {value => 5}}],
   )->then (sub {
     return $current->json (['nobj', 'logs.json'], {
       operator_nobj_key => $current->o ('a1')->{nobj_key},
@@ -260,7 +262,7 @@ Test {
   })->then (sub {
     my $result = $_[0];
     test {
-      is 0+@{$result->{json}->{items}}, 4;
+      is 0+@{$result->{json}->{items}}, 5;
     } $current->c;
     return $current->json (['nobj', 'logs.json'], {
       operator_nobj_key => $current->o ('a1')->{nobj_key},
@@ -301,13 +303,32 @@ Test {
 
     return $current->json (['nobj', 'logs.json'], {
       operator_nobj_key => $current->o ('a1')->{nobj_key},
-      target_index_distinct => 1,
+      target_index_distinct => 3,
     });
   })->then (sub {
     my $result = $_[0];
     test {
       is 0+@{$result->{json}->{items}}, 4;
-      is $result->{json}->{items}->[0]->{target_index_nobj_key}, undef;
+      {
+        my $v = $result->{json}->{items}->[0];
+        is $v->{target_index_nobj_key}, undef;
+        is $v->{data}->{value}, 5;
+      }
+      {
+        my $v = $result->{json}->{items}->[1];
+        is $v->{target_index_nobj_key}, 'apploach-null';
+        is $v->{data}->{value}, 4;
+      }
+      {
+        my $v = $result->{json}->{items}->[2];
+        is $v->{target_index_nobj_key}, $current->o ('i2')->{nobj_key};
+        is $v->{data}->{value}, 3;
+      }
+      {
+        my $v = $result->{json}->{items}->[3];
+        is $v->{target_index_nobj_key}, $current->o ('i1')->{nobj_key};
+        ok $v->{data}->{value};
+      }
     } $current->c;
     return $current->json (['nobj', 'logs.json'], {
       operator_nobj_key => $current->o ('a1')->{nobj_key},
@@ -317,12 +338,13 @@ Test {
   })->then (sub {
     my $result = $_[0];
     test {
-      is 0+@{$result->{json}->{items}}, 1;
-      my $v2 = $result->{json}->{items}->[0];
-      ok (($v2->{data}->{value} == 1 or
-           $v2->{data}->{value} == 2),
-          $v2->{data}->{value});
-      is $v2->{target_index_nobj_key}, $current->o ('i1')->{nobj_key};
+      is 0+@{$result->{json}->{items}}, 2;
+      my $v2 = $result->{json}->{items}->[1];
+      is $v2->{data}->{value}, 1;
+      is $v2->{target_index_nobj_key}, undef;
+      my $v1 = $result->{json}->{items}->[0];
+      is $v1->{data}->{value}, 2;
+      is $v1->{target_index_nobj_key}, undef;
     } $current->c;
     return $current->json (['nobj', 'logs.json'], {
       operator_nobj_key => $current->o ('a1')->{nobj_key},
@@ -335,7 +357,7 @@ Test {
       is 0+@{$result->{json}->{items}}, 1;
       my $v2 = $result->{json}->{items}->[0];
       is $v2->{data}->{value}, 3;
-      is $v2->{target_index_nobj_key}, $current->o ('i2')->{nobj_key};
+      is $v2->{target_index_nobj_key}, undef;
     } $current->c;
     return $current->json (['nobj', 'logs.json'], {
       operator_nobj_key => $current->o ('a1')->{nobj_key},
@@ -348,7 +370,7 @@ Test {
       is 0+@{$result->{json}->{items}}, 0;
     } $current->c;
   });
-} n => 19, name => 'log list with index';
+} n => 28, name => 'log list with index';
 
 RUN;
 

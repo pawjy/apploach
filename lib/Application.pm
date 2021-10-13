@@ -548,7 +548,13 @@ sub _nobj_list_by_ids ($$) {
         if (ref $_ eq 'NObj') {
           $_;
         } else {
-          $self->{nobj_id_to_object}->{$_} // die "NObj |$_| not found";
+          $self->{nobj_id_to_object}->{$_} // do {
+            if ($_ eq '0') {
+              ();
+            } else {
+              die "NObj |$_| not found";
+            }
+          };
         }
       } @$ids];
     });
@@ -4264,6 +4270,10 @@ sub run_nobj ($) {
       $self->new_nobj_list (['operator', 'target', 'verb', \$ti]),
     ])->then (sub {
       my ($operator, $target, $verb, $target_index) = @{$_[0]->[0]};
+      if ($ti eq 'apploach-null' and
+          $self->{app}->bare_param ('test_no_target_index')) {
+        undef $target_index;
+      }
       my $data = $self->json_object_param ('data');
       return $self->write_log ($self->db, $operator, $target, $target_index, $verb, $data)->then (sub {
         return $self->json ($_[0]);
@@ -4285,8 +4295,8 @@ sub run_nobj ($) {
     ##   with these four parameters are returned in the response.
     ##
     ##   |target_index_distinct| : Boolean : If true and
-    ##   |target_index_nobj_key| is specified, only single log per the
-    ##   log's object index NObj.
+    ##   |target_index_nobj_key| is not specified, only single log per
+    ##   the log's object index NObj.
     ##
     ##   |without_data| : Boolean : If true, the logs' |data| is
     ##   omitted from the response.
@@ -4347,6 +4357,7 @@ sub run_nobj ($) {
           %$where,
           ($obj_index->to_columns ('target_index')),
         };
+      } else {
         if ($self->{app}->bare_param ('target_index_distinct')) {
           push @ti_field, 'target_index_nobj_id';
         }
