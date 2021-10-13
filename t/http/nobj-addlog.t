@@ -93,11 +93,54 @@ Test {
       is $log->{data}->{timestamp}, 543535;
       is $log->{data}->{foo}, $current->o ('g1');
       is $log->{target_nobj_key}, $current->o ('t1')->{nobj_key};
+      is $log->{target_nobj_index_key}, undef;
       is $log->{operator_nobj_key}, $current->o ('a1')->{nobj_key};
       is $log->{verb_nobj_key}, $current->o ('v1')->{nobj_key};
     } $current->c;
   });
-} n => 10, name => 'addlog';
+} n => 11, name => 'addlog';
+
+Test {
+  my $current = shift;
+  $current->generate_text ('g1' => {});
+  return $current->create (
+    [a1 => account => {}],
+    [v1 => nobj => {}],
+    [t1 => nobj => {}],
+  )->then (sub {
+    return $current->json (['nobj', 'addlog.json'], {
+      target_nobj_key => $current->o ('t1')->{nobj_key},
+      verb_nobj_key => $current->o ('v1')->{nobj_key},
+      operator_nobj_key => $current->o ('a1')->{nobj_key},
+      data => {foo => $current->o ('g1'), timestamp => 543535},
+      test_no_target_index => 1,
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      ok $result->{json}->{log_id};
+      is $result->{json}->{timestamp}, 543535;
+      $current->set_o (l1 => $result->{json});
+    } $current->c;
+    return $current->json (['nobj', 'logs.json'], {
+      log_id => $current->o ('l1')->{log_id},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $log = $result->{json}->{items}->[0];
+      is $log->{log_id}, $current->o ('l1')->{log_id};
+      is $log->{timestamp}, undef;
+      is $log->{data}->{timestamp}, 543535;
+      is $log->{data}->{foo}, $current->o ('g1');
+      is $log->{target_nobj_key}, $current->o ('t1')->{nobj_key};
+      is $log->{target_nobj_index_key}, undef;
+      is $log->{operator_nobj_key}, $current->o ('a1')->{nobj_key};
+      is $log->{verb_nobj_key}, $current->o ('v1')->{nobj_key};
+    } $current->c;
+  });
+} n => 11, name => 'addlog';
 
 RUN;
 
