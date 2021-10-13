@@ -557,8 +557,8 @@ sub _nobj_list_by_ids ($$) {
   });
 } # _nobj_list_by_ids
 
-sub write_log ($$$$$$) {
-  my ($self, $db_or_tr, $operator, $target, $verb, $data) = @_;
+sub write_log ($$$$$$$) {
+  my ($self, $db_or_tr, $operator, $target, $target_index, $verb, $data) = @_;
   return $self->db_ids ($db_or_tr, 1)->then (sub {
     my ($log_id) = @{$_[0]};
     my $time = $data->{timestamp} = 0+($data->{timestamp} // time);
@@ -567,6 +567,7 @@ sub write_log ($$$$$$) {
       log_id => $log_id,
       ($operator->to_columns ('operator')),
       ($target->to_columns ('target')),
+      ((defined $target_index and not $target_index->is_error) ? $target_index->to_columns ('target_index') : (target_index_nobj_id => 0)),
       ($verb->to_columns ('verb')),
       data => Dongry::Type->serialize ('json', $data),
       timestamp => $time,
@@ -581,7 +582,7 @@ sub write_log ($$$$$$) {
 
 sub set_status_info ($$$$$$$) {
   my ($self, $db_or_tr, $operator, $target, $verb, $data, $d1, $d2, $d3) = @_;
-  return $self->write_log ($db_or_tr, $operator, $target, $verb, {
+  return $self->write_log ($db_or_tr, $operator, $target, undef, $verb, {
     data => $data,
     author_data => $d1,
     owner_data => $d2,
@@ -4238,7 +4239,7 @@ sub run_nobj ($) {
       ##
       ##   NObj (|operator|) : The log's operator NObj.
       ##
-      ##   NObj (|target|) : The log's target NObj.
+      ##   NObj (|target| with index) : The log's target NObj.
       ##
       ##   NObj (|verb|) : The log's verb NObj.
       ##
@@ -4252,16 +4253,23 @@ sub run_nobj ($) {
       ##   |log_id| : ID : The log's ID.
       ##
       ##   |timestamp| : Timestamp : The log's data's |timestamp|.
-      return Promise->all ([
-        $self->new_nobj_list (['operator', 'target', 'verb']),
-      ])->then (sub {
-        my ($operator, $target, $verb) = @{$_[0]->[0]};
-        my $data = $self->json_object_param ('data');
-        return $self->write_log ($self->db, $operator, $target, $verb, $data)->then (sub {
-          return $self->json ($_[0]);
-        });
+    my $ti = $self->{app}->bare_param ('target_index_nobj_key') // 'apploach-null';
+        ## Note that |target_index_nobj_id| column is added by
+        ## R3.10.13 update of Apploach.  Any data inserted by previous
+        ## versions would have the value of zero (i.e. the default
+        ## column value specified in the |ALTER TABLE| statement or in
+        ## |target_index_nobj_id|), which would not be resolved to
+        ## |apploach-null|.
+    return Promise->all ([
+      $self->new_nobj_list (['operator', 'target', 'verb', \$ti]),
+    ])->then (sub {
+      my ($operator, $target, $verb, $target_index) = @{$_[0]->[0]};
+      my $data = $self->json_object_param ('data');
+      return $self->write_log ($self->db, $operator, $target, $target_index, $verb, $data)->then (sub {
+        return $self->json ($_[0]);
       });
-    } elsif (@{$self->{path}} == 1 and $self->{path}->[0] eq 'logs.json') {
+    });
+  } elsif (@{$self->{path}} == 1 and $self->{path}->[0] eq 'logs.json') {
       ## /{app_id}/nobj/logs.json - Get logs.
       ##
       ## Parameters.
@@ -4270,7 +4278,7 @@ sub run_nobj ($) {
       ##
       ##   NObj (|operator|) : The log's operator NObj.
       ##
-      ##   NObj (|target|) : The log's object NObj.
+      ##   NObj (|target| with index) : The log's object NObj.
       ##
       ##   NObj (|verb|) : The log's object NObj.  At least one of
       ##   these four parameters should be specified.  Logs matching
@@ -4294,45 +4302,52 @@ sub run_nobj ($) {
       ##   |data| : JSON Object : The log's data.  Omitted if
       ##   |without_data| parameter is set to true.
       ##
-      my $s = $self->{app}->bare_param ('operator_nobj_key');
-      my $o = $self->{app}->bare_param ('target_nobj_key');
-      my $v = $self->{app}->bare_param ('verb_nobj_key');
-      my $page = Pager::this_page ($self, limit => 10, max_limit => 10000);
-      return Promise->all ([
-        $self->_no ([$s, $o, $v]),
-      ])->then (sub {
-        my ($subj, $obj, $verb) = @{$_[0]->[0]};
-        return [] if defined $v and $verb->is_error;
-        return [] if defined $s and $subj->is_error;
-        return [] if defined $o and $obj->is_error;
+    my $s = $self->{app}->bare_param ('operator_nobj_key');
+    my $o = $self->{app}->bare_param ('target_nobj_key');
+    my $oi = $self->{app}->bare_param ('target_index_nobj_key');
+    my $v = $self->{app}->bare_param ('verb_nobj_key');
+    my $page = Pager::this_page ($self, limit => 10, max_limit => 10000);
+    return Promise->all ([
+      $self->_no ([$s, $o, $v, $oi]),
+    ])->then (sub {
+      my ($subj, $obj, $verb, $obj_index) = @{$_[0]->[0]};
+      return [] if defined $v and $verb->is_error;
+      return [] if defined $s and $subj->is_error;
+      return [] if defined $o and $obj->is_error;
 
-        my $where = {
-          ($self->app_id_columns),
+      my $where = {
+        ($self->app_id_columns),
+      };
+      if (not $subj->is_error) {
+        $where = {
+          %$where,
+          ($subj->to_columns ('operator')),
         };
-        if (not $subj->is_error) {
-          $where = {
-            %$where,
-            ($subj->to_columns ('operator')),
-          };
-        }
-        if (not $verb->is_error) {
-          $where = {
-            %$where,
-            ($verb->to_columns ('verb')),
-          };
-        }
-        if (not $obj->is_error) {
-          $where = {
-            %$where,
-            ($obj->to_columns ('target')),
-          };
-        }
-        my $id = $self->{app}->bare_param ('log_id');
-        if (defined $id) {
-          $where->{log_id} = $id;
-          $page->{only_item} = 1;
-        }
-        $where->{timestamp} = $page->{value} if defined $page->{value};
+      }
+      if (not $verb->is_error) {
+        $where = {
+          %$where,
+          ($verb->to_columns ('verb')),
+        };
+      }
+      if (not $obj->is_error) {
+        $where = {
+          %$where,
+          ($obj->to_columns ('target')),
+        };
+      }
+      if (defined $obj_index and not $obj_index->is_error) {
+        $where = {
+          %$where,
+          ($obj_index->to_columns ('target_index')),
+        };
+      }
+      my $id = $self->{app}->bare_param ('log_id');
+      if (defined $id) {
+        $where->{log_id} = $id;
+        $page->{only_item} = 1;
+      }
+      $where->{timestamp} = $page->{value} if defined $page->{value};
 
         return $self->db->select ('log', $where, fields => [
           'operator_nobj_id', 'target_nobj_id', 'verb_nobj_id',

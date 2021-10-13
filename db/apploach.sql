@@ -32,6 +32,10 @@ create table if not exists `log` (
   key (`timestamp`)
 ) default charset=binary engine=innodb;
 
+alter table `log`
+    add column `target_index_nobj_id` bigint unsigned not null default 0,
+    add key (`app_id`, `target_index_nobj_id`, `timestamp`);
+
 create table if not exists `revision` (
   `app_id` bigint unsigned not null,
   `revision_id` bigint unsigned not null,

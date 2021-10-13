@@ -236,11 +236,62 @@ Test {
   });
 } n => 1, name => 'pager paging';
 
+Test {
+  my $current = shift;
+  return $current->create (
+    [a1 => account => {}],
+    [t1 => nobj => {}],
+    [i1 => nobj => {}],
+    [i2 => nobj => {}],
+    [f1 => log => {operator => 'a1', target => 'a1', verb => 't1',
+                   target_index => 'i1', data => {value => 1}}],
+    [f2 => log => {operator => 'a1', target => 'a1', verb => 't1',
+                   target_index => 'i1', data => {value => 2}}],
+    [f3 => log => {operator => 'a1', target => 'a1', verb => 't1',
+                   target_index => 'i2', data => {value => 3}}],
+    [f4 => log => {operator => 'a1', target => 'a1', verb => 't1',
+                   data => {value => 4}}],
+  )->then (sub {
+    return $current->json (['nobj', 'logs.json'], {
+      operator_nobj_key => $current->o ('a1')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 4;
+    } $current->c;
+    return $current->json (['nobj', 'logs.json'], {
+      operator_nobj_key => $current->o ('a1')->{nobj_key},
+      target_index_nobj_key => $current->o ('i1')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 2;
+      my $v = $result->{json}->{items}->[1];
+      is $v->{data}->{value}, 1;
+      my $v2 = $result->{json}->{items}->[0];
+      is $v2->{data}->{value}, 2;
+    } $current->c;
+    return $current->json (['nobj', 'logs.json'], {
+      operator_nobj_key => $current->o ('a1')->{nobj_key},
+      target_index_nobj_key => $current->o ('i2')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $v2 = $result->{json}->{items}->[0];
+      is $v2->{data}->{value}, 3;
+    } $current->c;
+  });
+} n => 6, name => 'log list';
+
 RUN;
 
 =head1 LICENSE
 
-Copyright 2018 Wakaba <wakaba@suikawiki.org>.
+Copyright 2018-2021 Wakaba <wakaba@suikawiki.org>.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as
