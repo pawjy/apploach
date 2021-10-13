@@ -23,6 +23,7 @@ Test {
         'app_id',
         ['get_nobj', 'operator'],
         ['get_nobj', 'target'],
+        ['get_nobj', 'target_index'],
         ['get_nobj', 'verb'],
         {params => {log_id => $current->generate_id (rand, {})}},
       ],
@@ -236,11 +237,124 @@ Test {
   });
 } n => 1, name => 'pager paging';
 
+Test {
+  my $current = shift;
+  return $current->create (
+    [a1 => account => {}],
+    [t1 => nobj => {}],
+    [i1 => nobj => {}],
+    [i2 => nobj => {}],
+    [i3 => nobj => {}],
+    [f1 => log => {operator => 'a1', target => 'a1', verb => 't1',
+                   target_index => 'i1', data => {value => 1}}],
+    [f2 => log => {operator => 'a1', target => 'a1', verb => 't1',
+                   target_index => 'i1', data => {value => 2}}],
+    [f3 => log => {operator => 'a1', target => 'a1', verb => 't1',
+                   target_index => 'i2', data => {value => 3}}],
+    [f4 => log => {operator => 'a1', target => 'a1', verb => 't1',
+                   data => {value => 4}}],
+  )->then (sub {
+    return $current->json (['nobj', 'logs.json'], {
+      operator_nobj_key => $current->o ('a1')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 4;
+    } $current->c;
+    return $current->json (['nobj', 'logs.json'], {
+      operator_nobj_key => $current->o ('a1')->{nobj_key},
+      target_index_nobj_key => $current->o ('i1')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 2;
+      my $v = $result->{json}->{items}->[1];
+      is $v->{data}->{value}, 1;
+      is $v->{target_index_nobj_key}, undef;
+      my $v2 = $result->{json}->{items}->[0];
+      is $v2->{data}->{value}, 2;
+      is $v2->{target_index_nobj_key}, undef;
+    } $current->c;
+    return $current->json (['nobj', 'logs.json'], {
+      operator_nobj_key => $current->o ('a1')->{nobj_key},
+      target_index_nobj_key => $current->o ('i2')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $v2 = $result->{json}->{items}->[0];
+      is $v2->{data}->{value}, 3;
+      is $v2->{target_index_nobj_key}, undef;
+    } $current->c;
+    return $current->json (['nobj', 'logs.json'], {
+      operator_nobj_key => $current->o ('a1')->{nobj_key},
+      target_index_nobj_key => $current->o ('i3')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 0;
+    } $current->c;
+
+    return $current->json (['nobj', 'logs.json'], {
+      operator_nobj_key => $current->o ('a1')->{nobj_key},
+      target_index_distinct => 1,
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 4;
+      is $result->{json}->{items}->[0]->{target_index_nobj_key}, undef;
+    } $current->c;
+    return $current->json (['nobj', 'logs.json'], {
+      operator_nobj_key => $current->o ('a1')->{nobj_key},
+      target_index_nobj_key => $current->o ('i1')->{nobj_key},
+      target_index_distinct => 1,
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $v2 = $result->{json}->{items}->[0];
+      ok (($v2->{data}->{value} == 1 or
+           $v2->{data}->{value} == 2),
+          $v2->{data}->{value});
+      is $v2->{target_index_nobj_key}, $current->o ('i1')->{nobj_key};
+    } $current->c;
+    return $current->json (['nobj', 'logs.json'], {
+      operator_nobj_key => $current->o ('a1')->{nobj_key},
+      target_index_nobj_key => $current->o ('i2')->{nobj_key},
+      target_index_distinct => 1,
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $v2 = $result->{json}->{items}->[0];
+      is $v2->{data}->{value}, 3;
+      is $v2->{target_index_nobj_key}, $current->o ('i2')->{nobj_key};
+    } $current->c;
+    return $current->json (['nobj', 'logs.json'], {
+      operator_nobj_key => $current->o ('a1')->{nobj_key},
+      target_index_nobj_key => $current->o ('i3')->{nobj_key},
+      target_index_distinct => 1,
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 0;
+    } $current->c;
+  });
+} n => 19, name => 'log list with index';
+
 RUN;
 
 =head1 LICENSE
 
-Copyright 2018 Wakaba <wakaba@suikawiki.org>.
+Copyright 2018-2021 Wakaba <wakaba@suikawiki.org>.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as

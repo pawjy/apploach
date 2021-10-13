@@ -443,6 +443,13 @@ sub _nobj ($$$) {
   ));
 } # _nobj
 
+sub _nobj_opt ($$$) {
+  my ($self, $prefix, $opts) = @_;
+  return ($prefix.'_nobj_key' => (
+    defined $opts->{$prefix.'_nobj_key'} ? $opts->{$prefix.'_nobj_key'} :defined $opts->{$prefix} ? $self->o ($opts->{$prefix})->{nobj_key} : undef
+  ));
+} # _nobj_opt
+
 sub _nobj_list ($$$) {
   my ($self, $prefix, $opts) = @_;
   return ($prefix.'_nobj_key' => [
@@ -570,6 +577,7 @@ sub create_log ($$$) {
   return $self->json (['nobj', $opts->{status_info} ? 'setstatusinfo.json' : 'addlog.json'], {
     ($self->_nobj ('operator', $opts)),
     ($self->_nobj ('target', $opts)),
+    ($self->_nobj_opt ('target_index', $opts)),
     ($self->_nobj ('verb', $opts)),
     data => $opts->{data} // {},
     author_data => $opts->{author_data}, # or undef
