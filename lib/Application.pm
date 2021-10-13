@@ -4270,38 +4270,42 @@ sub run_nobj ($) {
       });
     });
   } elsif (@{$self->{path}} == 1 and $self->{path}->[0] eq 'logs.json') {
-      ## /{app_id}/nobj/logs.json - Get logs.
-      ##
-      ## Parameters.
-      ##
-      ##   |log_id| : ID : The log's ID.
-      ##
-      ##   NObj (|operator|) : The log's operator NObj.
-      ##
-      ##   NObj (|target| with index) : The log's object NObj.
-      ##
-      ##   NObj (|verb|) : The log's object NObj.  At least one of
-      ##   these four parameters should be specified.  Logs matching
-      ##   with these four parameters are returned in the response.
-      ##
-      ##   |without_data| : Boolean : If true, the logs' |data| is
-      ##   omitted from the response.
-      ##
-      ##   Pages.
-      ##
-      ## List response of logs.
-      ##
-      ##   |log_id| : ID : The log's ID.
-      ##
-      ##   NObj (|operator|) : The log's operator NObj.
-      ##
-      ##   NObj (|target|) : The log's target NObj.
-      ##
-      ##   NObj (|verb|) : The log's verb NObj.
-      ##
-      ##   |data| : JSON Object : The log's data.  Omitted if
-      ##   |without_data| parameter is set to true.
-      ##
+    ## /{app_id}/nobj/logs.json - Get logs.
+    ##
+    ## Parameters.
+    ##
+    ##   |log_id| : ID : The log's ID.
+    ##
+    ##   NObj (|operator|) : The log's operator NObj.
+    ##
+    ##   NObj (|target| with index) : The log's object NObj.
+    ##
+    ##   NObj (|verb|) : The log's object NObj.  At least one of
+    ##   these four parameters should be specified.  Logs matching
+    ##   with these four parameters are returned in the response.
+    ##
+    ##   |target_index_distinct| : Boolean : If true and
+    ##   |target_index_nobj_key| is specified, only single log per the
+    ##   log's object index NObj.
+    ##
+    ##   |without_data| : Boolean : If true, the logs' |data| is
+    ##   omitted from the response.
+    ##
+    ##   Pages.
+    ##
+    ## List response of logs.
+    ##
+    ##   |log_id| : ID : The log's ID.
+    ##
+    ##   NObj (|operator|) : The log's operator NObj.
+    ##
+    ##   NObj (|target|) : The log's target NObj.
+    ##
+    ##   NObj (|verb|) : The log's verb NObj.
+    ##
+    ##   |data| : JSON Object : The log's data.  Omitted if
+    ##   |without_data| parameter is set to true.
+    ##
     my $s = $self->{app}->bare_param ('operator_nobj_key');
     my $o = $self->{app}->bare_param ('target_nobj_key');
     my $oi = $self->{app}->bare_param ('target_index_nobj_key');
@@ -4314,6 +4318,7 @@ sub run_nobj ($) {
       return [] if defined $v and $verb->is_error;
       return [] if defined $s and $subj->is_error;
       return [] if defined $o and $obj->is_error;
+      return [] if defined $oi and $obj_index->is_error;
 
       my $where = {
         ($self->app_id_columns),
@@ -4336,11 +4341,15 @@ sub run_nobj ($) {
           ($obj->to_columns ('target')),
         };
       }
+      my @ti_field;
       if (defined $obj_index and not $obj_index->is_error) {
         $where = {
           %$where,
           ($obj_index->to_columns ('target_index')),
         };
+        if ($self->{app}->bare_param ('target_index_distinct')) {
+          push @ti_field, 'target_index_nobj_id';
+        }
       }
       my $id = $self->{app}->bare_param ('log_id');
       if (defined $id) {
@@ -4349,28 +4358,31 @@ sub run_nobj ($) {
       }
       $where->{timestamp} = $page->{value} if defined $page->{value};
 
-        return $self->db->select ('log', $where, fields => [
-          'operator_nobj_id', 'target_nobj_id', 'verb_nobj_id',
-          'timestamp', 'log_id',
-          ($self->{app}->bare_param ('without_data') ? () : ('data')),
-        ], source_name => 'master',
-          offset => $page->{offset}, limit => $page->{limit},
-          order => ['timestamp', $page->{order_direction}],
-        )->then (sub {
-          return $self->replace_nobj_ids ($_[0]->all->to_a, ['operator', 'target', 'verb']);
-        });
-      })->then (sub {
-        my $items = $_[0];
-        my $next_page = Pager::next_page $page, $items, 'timestamp';
-        for (@$items) {
-          delete $_->{timestamp};
-          $_->{log_id} .= '';
-          $_->{data} = Dongry::Type->parse ('json', $_->{data})
-              if defined $_->{data};
-        }
-        return $self->json ({items => $items, %$next_page});
+      return $self->db->select ('log', $where, fields => [
+        'operator_nobj_id', 'target_nobj_id', 'verb_nobj_id',
+        'timestamp', 'log_id',
+        ($self->{app}->bare_param ('without_data') ? () : ('data')),
+        @ti_field,
+      ], source_name => 'master',
+        offset => $page->{offset}, limit => $page->{limit},
+        order => ['timestamp', $page->{order_direction}],
+        (@ti_field ? (group => ['target_index_nobj_id']) : ()),
+      )->then (sub {
+        return $self->replace_nobj_ids
+            ($_[0]->all->to_a, ['operator', 'target', 'verb', (@ti_field ? ('target_index') : ())]);
       });
-    }
+    })->then (sub {
+      my $items = $_[0];
+      my $next_page = Pager::next_page $page, $items, 'timestamp';
+      for (@$items) {
+        delete $_->{timestamp};
+        $_->{log_id} .= '';
+        $_->{data} = Dongry::Type->parse ('json', $_->{data})
+            if defined $_->{data};
+      }
+      return $self->json ({items => $items, %$next_page});
+    });
+  }
 
   ## Revisions.  An NObj can have zero or more revisions.  A revision
   ## has target NObj, which is the revised NObj, revision ID : ID,
