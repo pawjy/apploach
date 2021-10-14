@@ -1,6 +1,7 @@
 AnyEvent~7.17
 AnyEvent::FileLock~0.06
 AnyEvent::Fork~1.31
+AnyEvent::Util
 Bytes::Random::Secure::Tiny~1.011
 Call::Context~0.03
 Canary::Stability~2013
@@ -11,7 +12,7 @@ Crypt::Format~0.10
 Cwd~3.75
 Data::Dumper~2.183
 Digest::SHA~6.02
-Encode~3.15
+Encode~3.16
 Exporter::Lite~0.08
 File::Path~2.18
 File::Temp~0.2311
@@ -30,7 +31,7 @@ Scalar::Util~1.60
 Socket~2.032
 Symbol::Get~0.10
 Term::ANSIColor~5.01
-Test::Builder~1.302188
+Test::More~1.302188
 Time::HiRes~1.9764
 Time::Local~1.30
 Try::Tiny~0.30
