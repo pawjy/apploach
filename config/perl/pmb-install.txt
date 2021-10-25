@@ -1,11 +1,11 @@
 AnyEvent~7.17
 AnyEvent::FileLock~0.06
 AnyEvent::Fork~1.31
-AnyEvent::Handle
+AnyEvent::IO
 Bytes::Random::Secure::Tiny~1.011
 Call::Context~0.03
 Canary::Stability~2013
-Carp~1.50
+Carp::Heavy~1.50
 Class::Accessor::Fast~0.51
 Convert::ASN1~0.33
 Crypt::Format~0.10
@@ -25,7 +25,7 @@ Math::ProvablePrime~0.51
 Method::WeakCallback~0.04
 Net::SSLeay~1.90
 Path::Class~0.37
-Path::Tiny~0.118
+Path::Tiny~0.120
 Proc::FastSpawn~1.2
 Scalar::Util~1.60
 Socket~2.032
