@@ -1,7 +1,7 @@
 AnyEvent~7.17
 AnyEvent::FileLock~0.06
 AnyEvent::Fork~1.31
-AnyEvent::Util
+AnyEvent::Handle
 Bytes::Random::Secure::Tiny~1.011
 Call::Context~0.03
 Canary::Stability~2013
@@ -44,7 +44,7 @@ Test::Exception~0.43
 Test::FailWarnings~0.008
 Time::HiRes~1.9764
 Time::Local~1.30
-Try::Tiny~0.30
+Try::Tiny~0.31
 autodie~2.34
 common::sense~3.75
 parent~0.238
