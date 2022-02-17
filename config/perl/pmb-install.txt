@@ -31,7 +31,7 @@ Net::SSLeay~1.92
 Path::Class~0.37
 Path::Tiny~0.122
 Proc::FastSpawn~1.2
-Scalar::Util~1.60
+Scalar::Util~1.61
 Socket~2.032
 Sub::Uplevel~0.2800
 Symbol::Get~0.10
