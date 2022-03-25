@@ -1,7 +1,7 @@
 AnyEvent~7.17
 AnyEvent::FileLock~0.06
 AnyEvent::Fork~1.32
-AnyEvent::Socket
+AnyEvent::Handle
 Bytes::Random::Secure::Tiny~1.011
 Call::Context~0.03
 Canary::Stability~2013
@@ -37,11 +37,11 @@ Socket~2.032
 Sub::Uplevel~0.2800
 Symbol::Get~0.10
 Term::ANSIColor~5.01
-Test::Builder~1.302190
 Test::Class~0.52
 Test::Deep~1.130
 Test::Exception~0.43
 Test::FailWarnings~0.008
+Test::More~1.302190
 Time::HiRes~1.9764
 Time::Local~1.30
 Try::Tiny~0.31
