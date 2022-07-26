@@ -4916,7 +4916,7 @@ sub run_nobj ($) {
         ($self->app_id_columns),
         ($target->to_columns ('target')),
         %$where,
-      }, source_name => 'master', fields => ['data'])->then (sub {
+      }, source_name => 'master', fields => ['data'], lock => 'update')->then (sub {
         my $files = $_[0]->all->to_a;
         my $clients = {};
         return promised_cleanup {
