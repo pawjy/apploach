@@ -8,6 +8,7 @@ Test {
   my $current = shift;
   $current->set_o (t1 => time);
   return $current->create (
+    [o1 => nobj => {}],
     [s1 => nobj => {}],
     [s2 => nobj => {}],
     [r1 => nobj => {}],
@@ -15,6 +16,7 @@ Test {
     [l1 => nobj => {}],
   )->then (sub {
     return $current->json (['alarm', 'update.json'], {
+      operator_nobj_key => $current->o ('o1')->{nobj_key},
       scope_nobj_key => $current->o ('s1')->{nobj_key},
       timestamp => $current->o ('t1'),
       alarm => [
@@ -47,6 +49,7 @@ Test {
         ],
       }],
       [
+        ['new_nobj', 'operator'],
         ['new_nobj', 'scope'],
         ['json_opt', 'alarm'],
         {p => {
@@ -73,6 +76,8 @@ Test {
             data => {},
           }),
         }, status => 400},
+        {p => {operator_nobj_key => undef}, status => 400},
+        {p => {scope_nobj_key => undef}, status => 400},
       ],
     );
   })->then (sub {
@@ -111,6 +116,7 @@ Test {
   my $current = shift;
   $current->set_o (t1 => time);
   return $current->create (
+    [o1 => nobj => {}],
     [s1 => nobj => {}],
     [r1 => nobj => {}],
     [y1 => nobj => {}],
@@ -128,6 +134,7 @@ Test {
       is 0+@{$result->{json}->{items}}, 0;
     } $current->c;
     return $current->json (['alarm', 'update.json'], {
+      operator_nobj_key => $current->o ('o1')->{nobj_key},
       scope_nobj_key => $current->o ('s1')->{nobj_key},
       timestamp => $current->o ('t1'),
       alarm => [
@@ -162,6 +169,7 @@ Test {
       is $item1->{data}->{abc}, $current->o ('x1');
     } $current->c;
     return $current->json (['alarm', 'update.json'], {
+      operator_nobj_key => $current->o ('o1')->{nobj_key},
       scope_nobj_key => $current->o ('s1')->{nobj_key},
       timestamp => $current->o ('t1')+100,
       alarm => [
@@ -214,6 +222,7 @@ Test {
       is $item2->{data}->{abc}, $current->o ('x3');
     } $current->c;
     return $current->json (['alarm', 'update.json'], {
+      operator_nobj_key => $current->o ('o1')->{nobj_key},
       scope_nobj_key => $current->o ('s1')->{nobj_key},
       timestamp => $current->o ('t1')+200,
       alarm => [
@@ -277,6 +286,7 @@ Test {
       }
     } $current->c;
     return $current->json (['alarm', 'update.json'], {
+      operator_nobj_key => $current->o ('o1')->{nobj_key},
       scope_nobj_key => $current->o ('s1')->{nobj_key},
       timestamp => $current->o ('t1')+300,
     });
@@ -327,6 +337,7 @@ Test {
   my $current = shift;
   $current->set_o (t1 => time);
   return $current->create (
+    [o1 => nobj => {}],
     [s1 => nobj => {}],
     [r1 => nobj => {}],
     [y1 => nobj => {}],
@@ -336,6 +347,7 @@ Test {
     [l2 => nobj => {}],
   )->then (sub {
     return $current->json (['alarm', 'update.json'], {
+      operator_nobj_key => $current->o ('o1')->{nobj_key},
       scope_nobj_key => $current->o ('s1')->{nobj_key},
       timestamp => $current->o ('t1')+100,
       alarm => [
@@ -388,6 +400,7 @@ Test {
       is $item2->{data}->{abc}, $current->o ('x3');
     } $current->c;
     return $current->json (['alarm', 'update.json'], {
+      operator_nobj_key => $current->o ('o1')->{nobj_key},
       scope_nobj_key => $current->o ('s1')->{nobj_key},
       timestamp => $current->o ('t1')+300,
     });
@@ -423,6 +436,7 @@ Test {
       }
     } $current->c;
     return $current->json (['alarm', 'update.json'], {
+      operator_nobj_key => $current->o ('o1')->{nobj_key},
       scope_nobj_key => $current->o ('s1')->{nobj_key},
       timestamp => $current->o ('t1')+200,
       alarm => [
@@ -475,6 +489,7 @@ Test {
       is $item2->{data}->{abc}, $current->o ('x5');
     } $current->c;
     return $current->json (['alarm', 'update.json'], {
+      operator_nobj_key => $current->o ('o1')->{nobj_key},
       scope_nobj_key => $current->o ('s1')->{nobj_key},
       timestamp => $current->o ('t1')-100,
       alarm => [
@@ -527,6 +542,7 @@ Test {
       is $item2->{data}->{abc}, $current->o ('x5');
     } $current->c;
     return $current->json (['alarm', 'update.json'], {
+      operator_nobj_key => $current->o ('o1')->{nobj_key},
       scope_nobj_key => $current->o ('s1')->{nobj_key},
       timestamp => $current->o ('t1')+150,
       alarm => [
@@ -578,8 +594,40 @@ Test {
       is $item2->{ended}, $current->o ('t1')+300;
       is $item2->{data}->{abc}, $current->o ('x5');
     } $current->c;
+    return $current->json (['nobj', 'logs.json'], {
+      target_nobj_key => $current->o ('r1')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 2;
+      {
+        my $item = $result->{json}->{items}->[0];
+        is $item->{operator_nobj_key}, $current->o ('o1')->{nobj_key};
+        is $item->{target_nobj_key}, $current->o ('r1')->{nobj_key};
+        is $item->{verb_nobj_key}, $current->o ('y1')->{nobj_key};
+        is $item->{data}->{timestamp}, $current->o ('t1')+300;
+        is $item->{data}->{started}, $current->o ('t1')+100;
+        is $item->{data}->{ended}, $current->o ('t1')+300;
+        is $item->{data}->{scope_nobj_key}, $current->o ('s1')->{nobj_key};
+        is $item->{data}->{level_nobj_key}, $current->o ('l1')->{nobj_key};
+        is $item->{data}->{data}->{abc}, undef;
+      }
+      {
+        my $item = $result->{json}->{items}->[1];
+        is $item->{operator_nobj_key}, $current->o ('o1')->{nobj_key};
+        is $item->{target_nobj_key}, $current->o ('r1')->{nobj_key};
+        is $item->{verb_nobj_key}, $current->o ('y1')->{nobj_key};
+        is $item->{data}->{timestamp}, $current->o ('t1')+100;
+        is $item->{data}->{started}, $current->o ('t1')+100;
+        is $item->{data}->{ended}, 0;
+        is $item->{data}->{scope_nobj_key}, $current->o ('s1')->{nobj_key};
+        is $item->{data}->{level_nobj_key}, $current->o ('l1')->{nobj_key};
+        is $item->{data}->{data}->{abc}, $current->o ('x2');
+      }
+    } $current->c;
   });
-} n => 85, name => 'alarm updates old timestamp';
+} n => 104, name => 'alarm updates old timestamp';
 
 RUN;
 
