@@ -358,3 +358,19 @@ create table if not exists `fetch_job` (
   key (`running_since`),
   key (`expires`)
 ) default charset=binary engine=innodb;
+
+create table if not exists `alarm_status` (
+  `app_id` bigint unsigned not null,
+  `scope_nobj_id` bigint unsigned not null,
+  `target_nobj_id` bigint unsigned not null,
+  `type_nobj_id` bigint unsigned not null,
+  `level_nobj_id` bigint unsigned not null,
+  `created` double not null,
+  `started` double not null,
+  `latest` double not null,
+  `ended` double not null,
+  `data` mediumblob not null,
+  primary key (`app_id`, `scope_nobj_id`, `target_nobj_id`, `type_nobj_id`),
+  key (`app_id`, `scope_nobj_id`, `started`),
+  key (`created`)
+) default charset=binary engine=innodb;
