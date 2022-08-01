@@ -244,6 +244,20 @@ sub optional_json_object_param ($$) {
   return $self->throw ({reason => 'Bad JSON parameter |'.$name.'|'});
 } # optional_json_object_param
 
+sub json_object_list_param ($$) {
+  my ($self, $name) = @_;
+  my @v;
+  for my $v (@{$self->{app}->bare_param_list ($name)}) {
+    my $w = json_bytes2perl $v;
+    if (defined $w and ref $w eq 'HASH') {
+      push @v, $w;
+    } else {
+      return $self->throw ({reason => 'Bad JSON parameter |'.$name.'|'});
+    }
+  }
+  return \@v;
+} # json_object_list_param
+
 sub app_id_columns ($) {
   return (app_id => $_[0]->{app_id});
 } # app_id_columns
@@ -508,7 +522,7 @@ sub replace_nobj_ids ($$$) {
       $keys->{$item->{$field.'_nobj_id'}}++;
     }
   }
-  return $self->_nobj_list_by_ids ([keys %$keys])->then (sub {
+  return $self->_nobj_list_by_ids ($self->db, [keys %$keys])->then (sub {
     my $map = $_[0];
     for my $item (@$items) {
       for my $field (@$fields) {
@@ -521,8 +535,28 @@ sub replace_nobj_ids ($$$) {
   });
 } # replace_nobj_ids
 
-sub _nobj_list_by_ids ($$) {
-  my ($self, $ids) = @_;
+sub _nobj_ids_to_nobj ($$$$) {
+  my ($self, $db_or_tr, $items, $fields) = @_;
+  my $keys = {};
+  for my $item (@$items) {
+    for my $field (@$fields) {
+      $keys->{$item->{$field.'_nobj_id'}}++;
+    }
+  }
+  return $self->_nobj_list_by_ids ($db_or_tr, [keys %$keys])->then (sub {
+    my $map = $_[0];
+    for my $item (@$items) {
+      for my $field (@$fields) {
+        my $v = $map->{delete $item->{$field.'_nobj_id'}};
+        $item->{$field} = $v if defined $v and not $v->is_error;
+      }
+    }
+    return $items;
+  });
+} # replace_nobj_ids_to_nobj
+
+sub _nobj_list_by_ids ($$$) {
+  my ($self, $db_or_tr, $ids) = @_;
   return Promise->resolve->then (sub {
     my @id;
     my $results = [map {
@@ -534,7 +568,7 @@ sub _nobj_list_by_ids ($$) {
       }
     } @$ids];
     return $results unless @id;
-    return $self->db->select ('nobj', {
+    return $db_or_tr->select ('nobj', {
       ($self->app_id_columns),
       nobj_id => {-in => \@id},
     }, fields => ['nobj_id', 'nobj_key'], source_name => 'master')->then (sub {
@@ -3693,6 +3727,358 @@ sub run_notification ($) {
   return $self->{app}->throw_error (404);
 } # run_notification
 
+sub run_alarm ($) {
+  my $self = $_[0];
+
+  ## An alarm has:
+  ##
+  ##   NObj (|target|) : The alarm's target.  An application-specific
+  ##   value that identifies the target about which the alarm
+  ##   describes.
+  ##
+  ##   NObj (|type|) : The alarm's type.  An application-specific
+  ##   value that identifies the kind of the alarm.  It is also used
+  ##   to the verb of the log that is added when the alarm is started
+  ##   or ended.
+  ##
+  ##   NObj (|level|) : The alarm's level.  An application-specific
+  ##   value that identifies the severity or priority of the alarm.
+  ##
+  ##   |started| : Timestamp : The latest time the alarm has been
+  ##   started.
+  ##
+  ##   |latest| : Timestamp : The latest time the alarm has been
+  ##   confirmed.
+  ##
+  ##   |ended| : Timestamp : The latest time the alarm has been ended.
+  ##   If it's never been ended, 0.
+  ##
+  ##   |data| : Object : The alarm's data.  An application-specific
+  ##   set of values.
+  ##
+  ## An alarm is uniquly identified by a tuple of (application, scope,
+  ## target, type).
+  ##
+  ## An alarm is in active at a time when its |started| is less than
+  ## the time and either its |ended| is 0 or its |ended| is greater
+  ## than the time.
+
+  if (@{$self->{path}} == 1 and
+      $self->{path}->[0] eq 'update.json') {
+    ## /{app_id}/alarm/update.json - Update alarm statuses.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|scope|) : The alarm's scope.
+    ##
+    ##   NObj (|operator|) : The operator of logs.
+    ##
+    ##   |timestamp| : Timestamp : The "current" time.
+    ##
+    ##   |alarm| : JSON object : An alarm's current status.  Zero or
+    ##   more parameters can be specified.  An object can have the
+    ##   following name/value pairs:
+    ##
+    ##     NObj (|target|) : The alarm's target.
+    ##
+    ##     NObj (|type|) : The alarm's type.
+    ##
+    ##     NObj (|level|) : The alarm's level.
+    ##
+    ##     |data| : Object : The alarm's data.
+    ##
+    ##   Notifications (|notification_|).  If specified, an nevent is
+    ##   fired when at least one of alarms is started or ended.
+    ##
+    ## Empty response.
+    ##
+    ## Any existing alarm with same target and type within the
+    ## application and scope is replaced by new one.  Any existing
+    ## alarm with no updated alarm is marked as ended.
+    ##
+    ## When an alarm is changed to in-active or not-in-active, a log
+    ## is inserted.
+    my $alarms = $self->json_object_list_param ('alarm');
+    my $time = 0+$self->{app}->bare_param ('timestamp');
+
+    for (@$alarms) {
+      $_->{target_nobj_key} //= '';
+      $_->{type_nobj_key} //= '';
+      $_->{level_nobj_key} //= '';
+    }
+    return Promise->all ([
+      $self->new_nobj_list ([
+        'scope',
+        'operator',
+        map {
+          (\(''.$_->{target_nobj_key}),
+           \(''.$_->{type_nobj_key}),
+           \(''.$_->{level_nobj_key}));
+        } @$alarms
+      ]),
+    ])->then (sub {
+      my ($scope, $operator, @nobjs) = @{$_[0]->[0]};
+      my $k2no = {};
+      for my $no (@nobjs) {
+        return $self->throw ({reason => 'Bad nobj key |'.$no->nobj_key.'|'})
+            if $no->is_error;
+        $k2no->{$no->nobj_key} = $no;
+      }
+      return $self->throw ({reason => 'Bad NObj parameter |scope|'})
+          if $scope->is_error;
+
+      return $self->db->transaction->then (sub {
+        my $tr = $_[0];
+
+        my $current = {};
+        my $logs = [];
+        my $nevent_data = [];
+        my $prev_timestamp = $time;
+        return Promise->resolve->then (sub {
+          my $offset = 0;
+          return promised_until {
+            return $tr->select ('alarm_status', {
+              ($self->app_id_columns),
+              ($scope->to_columns ('scope')),
+            }, lock => 'update', fields => [
+              'target_nobj_id', 'type_nobj_id', 'level_nobj_id',
+              'started', 'latest', 'ended',
+            ], order => [
+              'created', 'asc',
+            ], limit => 100, offset => $offset)->then (sub {
+              my @v = $_[0]->all->to_list;
+              return 'done' unless @v;
+              for (@v) {
+                $current->{$_->{target_nobj_id}, $_->{type_nobj_id}} = $_;
+              }
+              $offset += @v;
+              return not 'done' if @v == 100;
+              return 'done';
+            });
+          };
+        })->then (sub {
+          my $new = [];
+          my $new2 = [];
+          my $has_started = 0;
+
+          for my $alarm (@$alarms) {
+            my $target_no = $k2no->{$alarm->{target_nobj_key}};
+            my $type_no = $k2no->{$alarm->{type_nobj_key}};
+            my $level_no = $k2no->{$alarm->{level_nobj_key}};
+            my $cur = delete $current->{$target_no->nobj_id, $type_no->nobj_id};
+            $prev_timestamp = $cur->{latest}
+                if defined $cur and $cur->{latest} < $prev_timestamp;
+
+            if (not defined $cur) {
+              my $data = ref $alarm->{data} eq 'HASH' ? $alarm->{data} : {};
+              push @$new, {
+                ($self->app_id_columns),
+                ($scope->to_columns ('scope')),
+                ($target_no->to_columns ('target')),
+                ($type_no->to_columns ('type')),
+                ($level_no->to_columns ('level')),
+                data => Dongry::Type->serialize ('json', $data),
+                created => time, # now
+                started => $time,
+                latest => $time,
+                ended => 0,
+              };
+              $has_started = 1;
+              push @$logs, [$target_no, undef, $type_no, {
+                scope_nobj_key => $scope->nobj_key,
+                level_nobj_key => $level_no->nobj_key,
+                data => $data,
+                timestamp => $time,
+                started => $time,
+                ended => 0,
+              }];
+            } elsif ($time < $cur->{started}) {
+              #
+            } elsif ($cur->{started} <= $time and $time <= $cur->{ended}) {
+              if ($cur->{latest} <= $time) {
+                push @$new, {
+                  ($self->app_id_columns),
+                  ($scope->to_columns ('scope')),
+                  ($target_no->to_columns ('target')),
+                  ($type_no->to_columns ('type')),
+                  ($level_no->to_columns ('level')),
+                  data => Dongry::Type->serialize ('json', ref $alarm->{data} eq 'HASH' ? $alarm->{data} : {}),
+                  created => time, # now
+                  started => $cur->{started},
+                  latest => $time,
+                  ended => $cur->{ended},
+                };
+              }
+            } elsif ($cur->{started} <= $time and not $cur->{ended}) {
+              my $data = ref $alarm->{data} eq 'HASH' ? $alarm->{data} : {};
+              push @$new, {
+                ($self->app_id_columns),
+                ($scope->to_columns ('scope')),
+                ($target_no->to_columns ('target')),
+                ($type_no->to_columns ('type')),
+                ($level_no->to_columns ('level')),
+                data => Dongry::Type->serialize ('json', $data),
+                created => time, # now
+                started => $cur->{started},
+                latest => ($cur->{latest} < $time ? $time : $cur->{latest}),
+                ended => $cur->{ended},
+              };
+            } else {
+              my $data = ref $alarm->{data} eq 'HASH' ? $alarm->{data} : {};
+              push @$new, {
+                ($self->app_id_columns),
+                ($scope->to_columns ('scope')),
+                ($target_no->to_columns ('target')),
+                ($type_no->to_columns ('type')),
+                ($level_no->to_columns ('level')),
+                data => Dongry::Type->serialize ('json', $data),
+                created => time, # now
+                started => $time,
+                latest => $time,
+                ended => 0,
+              };
+              $has_started = 1;
+              push @$logs, [$target_no, undef, $type_no, {
+                scope_nobj_key => $scope->nobj_key,
+                level_nobj_key => $level_no->nobj_key,
+                data => $data,
+                started => $time,
+                ended => 0,
+                timestamp => $time,
+              }];
+            }
+          } # $alarm
+
+          my $removed = [];
+          for (keys %$current) {
+            my $cur = $current->{$_};
+            $prev_timestamp = $cur->{latest}
+                if $cur->{latest} < $prev_timestamp;
+            if ($cur->{started} <= $time and
+                (not $cur->{ended} or $time <= $cur->{ended})) {
+              push @$new2, {
+                ($self->app_id_columns),
+                ($scope->to_columns ('scope')),
+                target_nobj_id => $cur->{target_nobj_id},
+                type_nobj_id => $cur->{type_nobj_id},
+                level_nobj_id => $cur->{level_nobj_id},
+                data => '{}', #
+                created => time, # now #
+                started => $time, #
+                ended => $time,
+                latest => $time, #
+              };
+              push @$removed, {
+                target_nobj_id => $cur->{target_nobj_id},
+                type_nobj_id => $cur->{type_nobj_id},
+                level_nobj_id => $cur->{level_nobj_id},
+                started => $cur->{started},
+              };
+            }
+          } # $current
+
+          push @$nevent_data, {
+            scope_nobj_key => $scope->nobj_key,
+            has_in_active => (@$new ? 1 : 0),
+            has_started => ($has_started ? 1 : 0),
+            has_ended => (@$removed ? 1 : 0),
+            prev_timestamp => ($time == $prev_timestamp ? 0 : $prev_timestamp),
+            timestamp => $time,
+          } if @$logs or @$removed;
+          
+          return Promise->all ([
+            (@$new ? $tr->insert ('alarm_status', $new, duplicate => {
+              level_nobj_id => $self->db->bare_sql_fragment ('values(`level_nobj_id`)'),
+              data => $self->db->bare_sql_fragment ('values(`data`)'),
+              started => $self->db->bare_sql_fragment ('values(`started`)'),
+              latest => $self->db->bare_sql_fragment ('values(`latest`)'),
+              ended => $self->db->bare_sql_fragment ('values(`ended`)'),
+            }) : ()),
+            (@$new2 ? $tr->insert ('alarm_status', $new2, duplicate => {
+              ended => $self->db->bare_sql_fragment ('values(`ended`)'),
+            }) : ()),
+            $self->_nobj_ids_to_nobj ($tr, $removed, ['target', 'type', 'level'])->then (sub {
+              my $is = $_[0];
+              for (@$is) {
+                push @$logs, [$_->{target}, undef, $_->{type}, {
+                  scope_nobj_key => $scope->nobj_key,
+                  level_nobj_key => $_->{level}->nobj_key,
+                  data => {},
+                  timestamp => $time,
+                  started => $_->{started},
+                  ended => $time,
+                }];
+              }
+            }),
+          ]);
+        })->then (sub {
+          return promised_for {
+            return $self->write_log ($tr, $operator, @{$_[0]});
+          } $logs;
+        })->then (sub {
+          return $tr->commit;
+        })->then (sub {
+          return promised_for {
+            my $data = $_[0];
+            return $self->fire_nevent (
+              'notification_',
+              $data,
+              timestamp => $data->{timestamp},
+            );
+          } $nevent_data;
+        });
+      })->then (sub {
+        return $self->json ({});
+      });
+    });
+  }
+  
+  if (@{$self->{path}} == 1 and
+      $self->{path}->[0] eq 'list.json') {
+    ## /{app_id}/alarm/list.json - List alarm statuses.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|scope|) : The alarm's scope.
+    ##
+    ## List response of alarms.
+    my $page = Pager::this_page ($self, limit => 100, max_limit => 10000);
+    return Promise->all ([
+      $self->nobj ('scope'),
+    ])->then (sub {
+      my $scope = $_[0]->[0];
+      return [] if $scope->not_found;
+
+      my $where = {
+        ($self->app_id_columns),
+        ($scope->to_columns ('scope')),
+      };
+      $where->{created} = $page->{value} if defined $page->{value};
+      
+      return $self->db->select ('alarm_status', $where, fields => [
+        'target_nobj_id', 'type_nobj_id', 'level_nobj_id',
+        'data', 'created', 'started', 'ended', 'latest',
+      ], source_name => 'master',
+        offset => $page->{offset}, limit => $page->{limit},
+        order => ['created', $page->{order_direction}],
+      )->then (sub {
+        return $_[0]->all->to_a;
+      });
+    })->then (sub {
+      my $items = $_[0];
+      for my $item (@$items) {
+        $item->{data} = Dongry::Type->parse ('json', $item->{data});
+      }
+      return $self->replace_nobj_ids ($items, ['target', 'type', 'level'])->then (sub {
+        my $next_page = Pager::next_page $page, $items, 'created';
+        return $self->json ({items => $items, %$next_page});
+      });
+    });
+  }
+  
+  return $self->{app}->throw_error (404);
+} # run_alarm
+
 sub run_fetch_job ($$$) {
   my ($class, $obj, $job) = @_;
 
@@ -3899,7 +4285,7 @@ sub fire_nevent ($$$;%) {
             ($prefix.'topic_fallback_nobj_key_template');
         return unless @$templates;
         return unless keys %$undecided_subscribers;
-        return $self->_nobj_list_by_ids ([keys %$undecided_subscribers])->then (sub {
+        return $self->_nobj_list_by_ids ($self->db, [keys %$undecided_subscribers])->then (sub {
           my $sub_map = $_[0];
           return promised_for {
             my $sub_id = $_[0];
@@ -5005,6 +5391,7 @@ sub run ($) {
       $self->{type} eq 'follow' or
       $self->{type} eq 'tag' or
       $self->{type} eq 'notification' or
+      $self->{type} eq 'alarm' or
       $self->{type} eq 'stats' or
       $self->{type} eq 'nobj') {
     my $method = 'run_'.$self->{type};
@@ -5023,7 +5410,7 @@ sub close ($) {
 
 =head1 LICENSE
 
-Copyright 2018-2021 Wakaba <wakaba@suikawiki.org>.
+Copyright 2018-2022 Wakaba <wakaba@suikawiki.org>.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as
