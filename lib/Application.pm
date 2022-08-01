@@ -3787,6 +3787,9 @@ sub run_alarm ($) {
     ##
     ##     |data| : Object : The alarm's data.
     ##
+    ##   Notifications (|notification_|).  If specified, an nevent is
+    ##   fired when at least one of alarms is started or ended.
+    ##
     ## Empty response.
     ##
     ## Any existing alarm with same target and type within the
@@ -3829,6 +3832,8 @@ sub run_alarm ($) {
 
         my $current = {};
         my $logs = [];
+        my $nevent_data = [];
+        my $prev_timestamp = $time;
         return Promise->resolve->then (sub {
           my $offset = 0;
           return promised_until {
@@ -3854,12 +3859,15 @@ sub run_alarm ($) {
         })->then (sub {
           my $new = [];
           my $new2 = [];
+          my $has_started = 0;
 
           for my $alarm (@$alarms) {
             my $target_no = $k2no->{$alarm->{target_nobj_key}};
             my $type_no = $k2no->{$alarm->{type_nobj_key}};
             my $level_no = $k2no->{$alarm->{level_nobj_key}};
             my $cur = delete $current->{$target_no->nobj_id, $type_no->nobj_id};
+            $prev_timestamp = $cur->{latest}
+                if defined $cur and $cur->{latest} < $prev_timestamp;
 
             if (not defined $cur) {
               my $data = ref $alarm->{data} eq 'HASH' ? $alarm->{data} : {};
@@ -3875,6 +3883,7 @@ sub run_alarm ($) {
                 latest => $time,
                 ended => 0,
               };
+              $has_started = 1;
               push @$logs, [$target_no, undef, $type_no, {
                 scope_nobj_key => $scope->nobj_key,
                 level_nobj_key => $level_no->nobj_key,
@@ -3928,6 +3937,7 @@ sub run_alarm ($) {
                 latest => $time,
                 ended => 0,
               };
+              $has_started = 1;
               push @$logs, [$target_no, undef, $type_no, {
                 scope_nobj_key => $scope->nobj_key,
                 level_nobj_key => $level_no->nobj_key,
@@ -3942,6 +3952,8 @@ sub run_alarm ($) {
           my $removed = [];
           for (keys %$current) {
             my $cur = $current->{$_};
+            $prev_timestamp = $cur->{latest}
+                if $cur->{latest} < $prev_timestamp;
             if ($cur->{started} <= $time and
                 (not $cur->{ended} or $time <= $cur->{ended})) {
               push @$new2, {
@@ -3964,6 +3976,15 @@ sub run_alarm ($) {
               };
             }
           } # $current
+
+          push @$nevent_data, {
+            scope_nobj_key => $scope->nobj_key,
+            has_in_active => (@$new ? 1 : 0),
+            has_started => ($has_started ? 1 : 0),
+            has_ended => (@$removed ? 1 : 0),
+            prev_timestamp => ($time == $prev_timestamp ? 0 : $prev_timestamp),
+            timestamp => $time,
+          } if @$logs or @$removed;
           
           return Promise->all ([
             (@$new ? $tr->insert ('alarm_status', $new, duplicate => {
@@ -3994,11 +4015,17 @@ sub run_alarm ($) {
           return promised_for {
             return $self->write_log ($tr, $operator, @{$_[0]});
           } $logs;
-          
-                  
-          # XXX notifications
         })->then (sub {
           return $tr->commit;
+        })->then (sub {
+          return promised_for {
+            my $data = $_[0];
+            return $self->fire_nevent (
+              'notification_',
+              $data,
+              timestamp => $data->{timestamp},
+            );
+          } $nevent_data;
         });
       })->then (sub {
         return $self->json ({});

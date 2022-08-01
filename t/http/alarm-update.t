@@ -109,8 +109,123 @@ Test {
     test {
       is 0+@{$result->{json}->{items}}, 0;
     } $current->c, name => 'other scope not affected';
+    return $current->json (['notification', 'nevent', 'list.json'], {
+      subscriber_nobj_key => $current->o ('u4')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 0;
+    } $current->c;
   });
 } n => 12, name => 'new nobj key';
+
+Test {
+  my $current = shift;
+  $current->set_o (t1 => time);
+  return $current->create (
+    [o1 => nobj => {}],
+    [s1 => nobj => {}],
+    [s2 => nobj => {}],
+    [r1 => nobj => {}],
+    [y1 => nobj => {}],
+    [l1 => nobj => {}],
+    [l2 => nobj => {}],
+    [u1 => nobj => {}],
+    [topic1 => nobj => {}],
+  )->then (sub {
+    return $current->create (
+      [sub1 => topic_subscription => {
+        topic_nobj_key => $current->o ('topic1')->{nobj_key},
+        subscriber => 'u1',
+      }],
+    );
+  })->then (sub {
+    return $current->json (['alarm', 'update.json'], {
+      operator_nobj_key => $current->o ('o1')->{nobj_key},
+      scope_nobj_key => $current->o ('s1')->{nobj_key},
+      timestamp => $current->o ('t1'),
+      alarm => [
+        map { perl2json_chars $_ }
+            {
+              target_nobj_key => $current->o ('r1')->{nobj_key},
+              type_nobj_key => $current->o ('y1')->{nobj_key},
+              level_nobj_key => $current->o ('l1')->{nobj_key},
+            },
+      ],
+      notification_topic_nobj_key => $current->o ('topic1')->{nobj_key},
+    });
+  })->then (sub {
+    return $current->json (['notification', 'nevent', 'list.json'], {
+      subscriber_nobj_key => $current->o ('u1')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      {
+        my $item = $result->{json}->{items}->[0];
+        is $item->{data}->{scope_nobj_key}, $current->o ('s1')->{nobj_key};
+        is $item->{timestamp}, $current->o ('t1');
+        is $item->{data}->{timestamp}, $current->o ('t1');
+        is $item->{data}->{prev_timestamp}, 0;
+        ok $item->{data}->{has_in_active};
+        ok $item->{data}->{has_started};
+        ok ! $item->{data}->{has_ended};
+      }
+    } $current->c;
+    return $current->json (['alarm', 'update.json'], {
+      operator_nobj_key => $current->o ('o1')->{nobj_key},
+      scope_nobj_key => $current->o ('s1')->{nobj_key},
+      timestamp => $current->o ('t1')+100,
+      alarm => [
+        map { perl2json_chars $_ }
+            {
+              target_nobj_key => $current->o ('r1')->{nobj_key},
+              type_nobj_key => $current->o ('y1')->{nobj_key},
+              level_nobj_key => $current->o ('l2')->{nobj_key}, # changed
+            },
+      ],
+      notification_topic_nobj_key => $current->o ('topic1')->{nobj_key},
+    });
+  })->then (sub {
+    return $current->json (['notification', 'nevent', 'list.json'], {
+      subscriber_nobj_key => $current->o ('u1')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+    } $current->c;
+    return $current->json (['alarm', 'update.json'], {
+      operator_nobj_key => $current->o ('o1')->{nobj_key},
+      scope_nobj_key => $current->o ('s1')->{nobj_key},
+      timestamp => $current->o ('t1')+200,
+      alarm => [
+      ],
+      notification_topic_nobj_key => $current->o ('topic1')->{nobj_key},
+    });
+  })->then (sub {
+    return $current->json (['notification', 'nevent', 'list.json'], {
+      subscriber_nobj_key => $current->o ('u1')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 2;
+      {
+        my $item = $result->{json}->{items}->[0];
+        is $item->{data}->{scope_nobj_key}, $current->o ('s1')->{nobj_key};
+        is $item->{timestamp}, $current->o ('t1')+200;
+        is $item->{data}->{timestamp}, $current->o ('t1')+200;
+        is $item->{data}->{prev_timestamp}, $current->o ('t1')+100;
+        ok ! $item->{data}->{has_in_active};
+        ok ! $item->{data}->{has_started};
+        ok $item->{data}->{has_ended};
+      }
+    } $current->c;
+  });
+} n => 17, name => 'notification';
 
 Test {
   my $current = shift;
