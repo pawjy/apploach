@@ -109,14 +109,6 @@ Test {
     test {
       is 0+@{$result->{json}->{items}}, 0;
     } $current->c, name => 'other scope not affected';
-    return $current->json (['notification', 'nevent', 'list.json'], {
-      subscriber_nobj_key => $current->o ('u4')->{nobj_key},
-    });
-  })->then (sub {
-    my $result = $_[0];
-    test {
-      is 0+@{$result->{json}->{items}}, 0;
-    } $current->c;
   });
 } n => 12, name => 'new nobj key';
 
