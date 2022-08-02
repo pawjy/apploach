@@ -65,7 +65,7 @@ lserver: deps-local
 
 create-commit-for-heroku-circleci: deps-circleci create-commit-for-heroku
 create-commit-for-heroku:
-	git config --global url."https://_:$$HEROKU_KEY@git.heroku.com/".insteadOf git@heroku.com:
+	git config --global url."https://_:$$HEROKU_API_KEY@git.heroku.com/".insteadOf git@heroku.com:
 	git add -f rev
 	git remote rm origin
 	rm -fr deps/pmtar/.git deps/pmpp/.git modules/*/.git
