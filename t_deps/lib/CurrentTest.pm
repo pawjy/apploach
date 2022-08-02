@@ -251,7 +251,8 @@ sub are_errors ($$$;$) {
           if ($res->status == ($test->{status} // 400) and
               ($res->header ('content-type') // '') eq 'application/json;charset=utf-8') {
             my $json = json_bytes2perl $res->body_bytes;
-            if ($json->{reason} eq $test->{reason}) {
+            if (not defined $test->{reason} or
+                $json->{reason} eq $test->{reason}) {
               return;
             } else {
               $has_error = 1;
@@ -320,7 +321,10 @@ sub pages_ok ($$$$;$) {
   my $self = $_[0];
   my ($path, $params, %args) = @{$_[1]};
   my $items = [@{$_[2]}];
-  my $field = $_[3];
+  my $xfield = my $afield = $_[3];
+  if (ref $xfield eq 'ARRAY') {
+    ($afield, $xfield) = @$xfield;
+  }
   my $name = $_[4];
   my $count = int (@$items / 2) + 3;
   my $page = 1;
@@ -345,20 +349,22 @@ sub pages_ok ($$$$;$) {
       my $actual_length = 0+@{$result->{json}->{items}};
       if ($expected_length == $actual_length) {
         if ($expected_length >= 1) {
-          unless ($result->{json}->{items}->[0]->{$field} eq $self->o ($items->[-1])->{$field}) {
+          unless ($result->{json}->{items}->[0]->{$afield} eq
+                  $self->o ($items->[-1])->{$xfield}) {
             test {
-              is $result->{json}->{items}->[0]->{$field},
-                 $self->o ($items->[-1])->{$field}, "page $page, first item";
+              is $result->{json}->{items}->[0]->{$afield},
+                 $self->o ($items->[-1])->{$xfield}, "page $page, first item";
             } $self->c, name => $name;
             $count = 0;
             $has_error = 1;
           }
         }
         if ($expected_length >= 2) {
-          unless ($result->{json}->{items}->[1]->{$field} eq $self->o ($items->[-2])->{$field}) {
+          unless ($result->{json}->{items}->[1]->{$afield} eq
+                  $self->o ($items->[-2])->{$xfield}) {
             test {
-              is $result->{json}->{items}->[1]->{$field},
-                 $self->o ($items->[-2])->{$field}, "page $page, second item";
+              is $result->{json}->{items}->[1]->{$afield},
+                 $self->o ($items->[-2])->{$xfield}, "page $page, second item";
             } $self->c, name => $name;
             $count = 0;
             $has_error = 1;

@@ -28,7 +28,7 @@ endif
 
 deps-docker: pmbp-install
 
-deps-circleci: git-submodules pmbp-install
+deps-circleci: git-submodules deps-local-circleci
 	$(GIT) rev-parse HEAD > rev
 
 git-submodules:
@@ -55,6 +55,11 @@ deps-local: pmbp-install
             --create-perl-command-shortcut @local/run-local-server=perl\ bin/local-server.pl \
             --create-bootstrap-script "src/lserver.in lserver"
 	chmod u+x ./lserver
+
+deps-local-circleci: pmbp-install
+	./perl local/bin/pmbp.pl $(PMBP_OPTIONS) \
+	    --install-commands "make git docker mysqld wget curl" \
+            --create-perl-command-shortcut @prove
 
 lserver: deps-local
 
