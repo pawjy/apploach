@@ -39,6 +39,7 @@ Test {
 Test {
   my $current = shift;
   return $current->create (
+    [u1 => nobj => {}],
     [t1 => nobj => {}],
     [t2 => nobj => {}],
     [t3 => nobj => {}],
@@ -49,6 +50,7 @@ Test {
     [s1 => nobj => {}],
   )->then (sub {
     return $current->json (['alarm', 'update.json'], {
+      operator_nobj_key => $current->o ('u1')->{nobj_key},
       scope_nobj_key => $current->o ('s1')->{nobj_key},
       timestamp => time,
       alarm => [

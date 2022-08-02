@@ -3861,6 +3861,7 @@ sub run_alarm ($) {
           my $new2 = [];
           my $has_started = 0;
 
+          my $now = time;
           for my $alarm (@$alarms) {
             my $target_no = $k2no->{$alarm->{target_nobj_key}};
             my $type_no = $k2no->{$alarm->{type_nobj_key}};
@@ -3878,7 +3879,7 @@ sub run_alarm ($) {
                 ($type_no->to_columns ('type')),
                 ($level_no->to_columns ('level')),
                 data => Dongry::Type->serialize ('json', $data),
-                created => time, # now
+                created => ($now += 0.001),
                 started => $time,
                 latest => $time,
                 ended => 0,
@@ -3903,7 +3904,7 @@ sub run_alarm ($) {
                   ($type_no->to_columns ('type')),
                   ($level_no->to_columns ('level')),
                   data => Dongry::Type->serialize ('json', ref $alarm->{data} eq 'HASH' ? $alarm->{data} : {}),
-                  created => time, # now
+                  created => ($now += 0.001),
                   started => $cur->{started},
                   latest => $time,
                   ended => $cur->{ended},
@@ -3918,7 +3919,7 @@ sub run_alarm ($) {
                 ($type_no->to_columns ('type')),
                 ($level_no->to_columns ('level')),
                 data => Dongry::Type->serialize ('json', $data),
-                created => time, # now
+                created => ($now += 0.001),
                 started => $cur->{started},
                 latest => ($cur->{latest} < $time ? $time : $cur->{latest}),
                 ended => $cur->{ended},
@@ -3932,7 +3933,7 @@ sub run_alarm ($) {
                 ($type_no->to_columns ('type')),
                 ($level_no->to_columns ('level')),
                 data => Dongry::Type->serialize ('json', $data),
-                created => time, # now
+                created => ($now += 0.001),
                 started => $time,
                 latest => $time,
                 ended => 0,
@@ -3963,7 +3964,7 @@ sub run_alarm ($) {
                 type_nobj_id => $cur->{type_nobj_id},
                 level_nobj_id => $cur->{level_nobj_id},
                 data => '{}', #
-                created => time, # now #
+                created => ($now += 0.001), #
                 started => $time, #
                 ended => $time,
                 latest => $time, #
