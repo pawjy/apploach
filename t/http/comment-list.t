@@ -434,8 +434,17 @@ Test {
       is $result->{json}->{items}->[1]->{comment_id}, $current->o ('c2')->{comment_id};
       is $result->{json}->{items}->[2]->{comment_id}, $current->o ('c1')->{comment_id};
     } $current->c;
+    return $current->json (['comment', 'list.json'], {
+      comment_id => [$current->o ('c1')->{comment_id},
+                     rand],
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+    } $current->c;
   });
-} n => 4, name => 'Multiple comment_id';
+} n => 5, name => 'Multiple comment_id';
 
 Test {
   my $current = shift;
