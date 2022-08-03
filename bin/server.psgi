@@ -18,10 +18,10 @@ sub main ($$) {
   my ($class, $app) = @_;
 
   my $path = $app->path_segments;
+  $app->http->set_response_header ('x-rev', $Rev);
   
   if (@$path == 1 and $path->[0] eq 'robots.txt') {
     # /robots.txt
-    $app->http->set_response_header ('x-rev', $Rev);
     return $app->send_plain_text ("User-agent: *\nDisallow: /");
   }
 

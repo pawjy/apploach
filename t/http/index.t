@@ -10,9 +10,10 @@ Test {
     my $res = $_[0];
     test {
       is $res->status, 404;
+      ok $res->header ('x-rev');
     } $current->c;
   });
-} n => 1, name => '/';
+} n => 2, name => '/';
 
 Test {
   my $current = shift;
