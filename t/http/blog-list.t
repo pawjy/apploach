@@ -164,8 +164,19 @@ Test {
       is $result->{json}->{items}->[2]->{blog_entry_id},
          $current->o ('e1')->{blog_entry_id};
     } $current->c, name => 'not blog filtered';
+    return $current->json (['blog', 'list.json'], {
+      blog_entry_id => [
+        $current->o ('e1')->{blog_entry_id},
+        rand,
+      ],
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+    } $current->c;
   });
-} n => 7, name => 'multiple blog_entry_id';
+} n => 8, name => 'multiple blog_entry_id';
 
 Test {
   my $current = shift;

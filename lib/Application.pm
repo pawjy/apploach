@@ -1073,9 +1073,10 @@ sub run_comment ($) {
       };
       $where->{timestamp} = $page->{value} if defined $page->{value};
       
-      my $comment_ids = $self->{app}->bare_param_list ('comment_id');
+      my $comment_ids = $self->{app}->bare_param_list ('comment_id')->to_a;
       if (@$comment_ids) {
-        $where->{comment_id} = {-in => $comment_ids->to_a};
+        $_ = unpack 'Q', pack 'Q', $_ for @$comment_ids;
+        $where->{comment_id} = {-in => $comment_ids};
         $page->{only_item} = 1;
       } else {
         return $self->throw
@@ -1460,8 +1461,9 @@ sub run_blog ($) {
         }
       }
 
-      my $id_list = $self->{app}->bare_param_list ('blog_entry_id');
+      my $id_list = $self->{app}->bare_param_list ('blog_entry_id')->to_a;
       if (@$id_list) {
+        $_ = unpack 'Q', pack 'Q', $_ for @$id_list;
         $where->{blog_entry_id} = {-in => $id_list};
         $page->{only_item} = 1;
       } else {
