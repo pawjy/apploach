@@ -92,6 +92,7 @@ Test {
 
       my $item1 = $result->{json}->{items}->[0];
       is $item1->{target_nobj_key}, $current->o ('r1')->{nobj_key};
+      is $item1->{target_index_nobj_key}, 'apploach-null';
       is $item1->{type_nobj_key}, $current->o ('y1')->{nobj_key};
       is $item1->{level_nobj_key}, $current->o ('l1')->{nobj_key};
       ok $item1->{created};
@@ -110,7 +111,7 @@ Test {
       is 0+@{$result->{json}->{items}}, 0;
     } $current->c, name => 'other scope not affected';
   });
-} n => 12, name => 'new nobj key';
+} n => 13, name => 'new nobj key';
 
 Test {
   my $current = shift;
@@ -226,6 +227,7 @@ Test {
     [o1 => nobj => {}],
     [s1 => nobj => {}],
     [r1 => nobj => {}],
+    [ri1 => nobj => {}],
     [y1 => nobj => {}],
     [l1 => nobj => {}],
     [r2 => nobj => {}],
@@ -248,6 +250,7 @@ Test {
         map { perl2json_chars $_ }
             {
               target_nobj_key => $current->o ('r1')->{nobj_key},
+              target_index_nobj_key => $current->o ('ri1')->{nobj_key},
               type_nobj_key => $current->o ('y1')->{nobj_key},
               level_nobj_key => $current->o ('l1')->{nobj_key},
               data => {
@@ -267,6 +270,7 @@ Test {
 
       my $item1 = $result->{json}->{items}->[0];
       is $item1->{target_nobj_key}, $current->o ('r1')->{nobj_key};
+      is $item1->{target_index_nobj_key}, $current->o ('ri1')->{nobj_key};
       is $item1->{type_nobj_key}, $current->o ('y1')->{nobj_key};
       is $item1->{level_nobj_key}, $current->o ('l1')->{nobj_key};
       ok $item1->{created};
@@ -438,7 +442,7 @@ Test {
       }
     } $current->c;
   });
-} n => 77, name => 'alarm updates';
+} n => 78, name => 'alarm updates';
 
 Test {
   my $current = shift;
@@ -447,9 +451,11 @@ Test {
     [o1 => nobj => {}],
     [s1 => nobj => {}],
     [r1 => nobj => {}],
+    [ri1 => nobj => {}],
     [y1 => nobj => {}],
     [l1 => nobj => {}],
     [r2 => nobj => {}],
+    [ri2 => nobj => {}],
     [y2 => nobj => {}],
     [l2 => nobj => {}],
   )->then (sub {
@@ -461,6 +467,7 @@ Test {
         map { perl2json_chars $_ }
             {
               target_nobj_key => $current->o ('r1')->{nobj_key},
+              target_index_nobj_key => $current->o ('ri1')->{nobj_key},
               type_nobj_key => $current->o ('y1')->{nobj_key},
               level_nobj_key => $current->o ('l1')->{nobj_key},
               data => {
@@ -469,6 +476,7 @@ Test {
             },
             {
               target_nobj_key => $current->o ('r2')->{nobj_key},
+              target_index_nobj_key => $current->o ('ri2')->{nobj_key},
               type_nobj_key => $current->o ('y2')->{nobj_key},
               level_nobj_key => $current->o ('l2')->{nobj_key},
               data => {
@@ -550,6 +558,7 @@ Test {
         map { perl2json_chars $_ }
             {
               target_nobj_key => $current->o ('r1')->{nobj_key},
+              target_index_nobj_key => $current->o ('ri1')->{nobj_key},
               type_nobj_key => $current->o ('y1')->{nobj_key},
               level_nobj_key => $current->o ('l2')->{nobj_key},
               data => {
@@ -558,6 +567,7 @@ Test {
             },
             {
               target_nobj_key => $current->o ('r2')->{nobj_key},
+              target_index_nobj_key => $current->o ('ri2')->{nobj_key},
               type_nobj_key => $current->o ('y2')->{nobj_key},
               level_nobj_key => $current->o ('l1')->{nobj_key},
               data => {
@@ -603,6 +613,7 @@ Test {
         map { perl2json_chars $_ }
             {
               target_nobj_key => $current->o ('r1')->{nobj_key},
+              target_index_nobj_key => $current->o ('ri1')->{nobj_key},
               type_nobj_key => $current->o ('y1')->{nobj_key},
               level_nobj_key => $current->o ('l1')->{nobj_key},
               data => {
@@ -611,6 +622,7 @@ Test {
             },
             {
               target_nobj_key => $current->o ('r2')->{nobj_key},
+              target_index_nobj_key => $current->o ('ri2')->{nobj_key},
               type_nobj_key => $current->o ('y2')->{nobj_key},
               level_nobj_key => $current->o ('l2')->{nobj_key},
               data => {
@@ -656,6 +668,7 @@ Test {
         map { perl2json_chars $_ }
             {
               target_nobj_key => $current->o ('r1')->{nobj_key},
+              target_index_nobj_key => $current->o ('ri1')->{nobj_key},
               type_nobj_key => $current->o ('y1')->{nobj_key},
               level_nobj_key => $current->o ('l1')->{nobj_key},
               data => {
@@ -664,6 +677,7 @@ Test {
             },
             {
               target_nobj_key => $current->o ('r2')->{nobj_key},
+              target_index_nobj_key => $current->o ('ri2')->{nobj_key},
               type_nobj_key => $current->o ('y2')->{nobj_key},
               level_nobj_key => $current->o ('l2')->{nobj_key},
               data => {
@@ -733,8 +747,26 @@ Test {
         is $item->{data}->{data}->{abc}, $current->o ('x2');
       }
     } $current->c;
+    return $current->json (['nobj', 'logs.json'], {
+      target_nobj_key => $current->o ('r1')->{nobj_key},
+      target_index_nobj_key => $current->o ('ri1')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 2;
+    } $current->c;
+    return $current->json (['nobj', 'logs.json'], {
+      target_nobj_key => $current->o ('r1')->{nobj_key},
+      target_index_nobj_key => rand,
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 0;
+    } $current->c;
   });
-} n => 104, name => 'alarm updates old timestamp';
+} n => 106, name => 'alarm updates old timestamp';
 
 RUN;
 

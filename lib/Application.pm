@@ -3781,7 +3781,7 @@ sub run_alarm ($) {
     ##   more parameters can be specified.  An object can have the
     ##   following name/value pairs:
     ##
-    ##     NObj (|target|) : The alarm's target.
+    ##     NObj (|target| with index) : The alarm's target.
     ##
     ##     NObj (|type|) : The alarm's type.
     ##
@@ -3805,6 +3805,7 @@ sub run_alarm ($) {
 
     for (@$alarms) {
       $_->{target_nobj_key} //= '';
+      $_->{target_index_nobj_key} //= 'apploach-null';
       $_->{type_nobj_key} //= '';
       $_->{level_nobj_key} //= '';
     }
@@ -3814,6 +3815,7 @@ sub run_alarm ($) {
         'operator',
         map {
           (\(''.$_->{target_nobj_key}),
+           \(''.$_->{target_index_nobj_key}),
            \(''.$_->{type_nobj_key}),
            \(''.$_->{level_nobj_key}));
         } @$alarms
@@ -3843,7 +3845,8 @@ sub run_alarm ($) {
               ($self->app_id_columns),
               ($scope->to_columns ('scope')),
             }, lock => 'update', fields => [
-              'target_nobj_id', 'type_nobj_id', 'level_nobj_id',
+              'target_nobj_id', 'target_index_nobj_id',
+              'type_nobj_id', 'level_nobj_id',
               'started', 'latest', 'ended',
             ], order => [
               'created', 'asc',
@@ -3866,6 +3869,7 @@ sub run_alarm ($) {
           my $now = time;
           for my $alarm (@$alarms) {
             my $target_no = $k2no->{$alarm->{target_nobj_key}};
+            my $target_index_no = $k2no->{$alarm->{target_index_nobj_key}};
             my $type_no = $k2no->{$alarm->{type_nobj_key}};
             my $level_no = $k2no->{$alarm->{level_nobj_key}};
             my $cur = delete $current->{$target_no->nobj_id, $type_no->nobj_id};
@@ -3878,6 +3882,7 @@ sub run_alarm ($) {
                 ($self->app_id_columns),
                 ($scope->to_columns ('scope')),
                 ($target_no->to_columns ('target')),
+                ($target_index_no->to_columns ('target_index')),
                 ($type_no->to_columns ('type')),
                 ($level_no->to_columns ('level')),
                 data => Dongry::Type->serialize ('json', $data),
@@ -3887,7 +3892,7 @@ sub run_alarm ($) {
                 ended => 0,
               };
               $has_started = 1;
-              push @$logs, [$target_no, undef, $type_no, {
+              push @$logs, [$target_no, $target_index_no, $type_no, {
                 scope_nobj_key => $scope->nobj_key,
                 level_nobj_key => $level_no->nobj_key,
                 data => $data,
@@ -3903,6 +3908,7 @@ sub run_alarm ($) {
                   ($self->app_id_columns),
                   ($scope->to_columns ('scope')),
                   ($target_no->to_columns ('target')),
+                  ($target_index_no->to_columns ('target_index')),
                   ($type_no->to_columns ('type')),
                   ($level_no->to_columns ('level')),
                   data => Dongry::Type->serialize ('json', ref $alarm->{data} eq 'HASH' ? $alarm->{data} : {}),
@@ -3918,6 +3924,7 @@ sub run_alarm ($) {
                 ($self->app_id_columns),
                 ($scope->to_columns ('scope')),
                 ($target_no->to_columns ('target')),
+                ($target_index_no->to_columns ('target_index')),
                 ($type_no->to_columns ('type')),
                 ($level_no->to_columns ('level')),
                 data => Dongry::Type->serialize ('json', $data),
@@ -3932,6 +3939,7 @@ sub run_alarm ($) {
                 ($self->app_id_columns),
                 ($scope->to_columns ('scope')),
                 ($target_no->to_columns ('target')),
+                ($target_index_no->to_columns ('target_index')),
                 ($type_no->to_columns ('type')),
                 ($level_no->to_columns ('level')),
                 data => Dongry::Type->serialize ('json', $data),
@@ -3941,7 +3949,7 @@ sub run_alarm ($) {
                 ended => 0,
               };
               $has_started = 1;
-              push @$logs, [$target_no, undef, $type_no, {
+              push @$logs, [$target_no, $target_index_no, $type_no, {
                 scope_nobj_key => $scope->nobj_key,
                 level_nobj_key => $level_no->nobj_key,
                 data => $data,
@@ -3963,6 +3971,7 @@ sub run_alarm ($) {
                 ($self->app_id_columns),
                 ($scope->to_columns ('scope')),
                 target_nobj_id => $cur->{target_nobj_id},
+                target_index_nobj_id => $cur->{target_index_nobj_id},
                 type_nobj_id => $cur->{type_nobj_id},
                 level_nobj_id => $cur->{level_nobj_id},
                 data => '{}', #
@@ -3973,6 +3982,7 @@ sub run_alarm ($) {
               };
               push @$removed, {
                 target_nobj_id => $cur->{target_nobj_id},
+                target_index_nobj_id => $cur->{target_index_nobj_id},
                 type_nobj_id => $cur->{type_nobj_id},
                 level_nobj_id => $cur->{level_nobj_id},
                 started => $cur->{started},
@@ -4000,10 +4010,12 @@ sub run_alarm ($) {
             (@$new2 ? $tr->insert ('alarm_status', $new2, duplicate => {
               ended => $self->db->bare_sql_fragment ('values(`ended`)'),
             }) : ()),
-            $self->_nobj_ids_to_nobj ($tr, $removed, ['target', 'type', 'level'])->then (sub {
+            $self->_nobj_ids_to_nobj ($tr, $removed, [
+              'target', 'target_index', 'type', 'level',
+            ])->then (sub {
               my $is = $_[0];
               for (@$is) {
-                push @$logs, [$_->{target}, undef, $_->{type}, {
+                push @$logs, [$_->{target}, $_->{target_index}, $_->{type}, {
                   scope_nobj_key => $scope->nobj_key,
                   level_nobj_key => $_->{level}->nobj_key,
                   data => {},
@@ -4059,7 +4071,8 @@ sub run_alarm ($) {
       $where->{created} = $page->{value} if defined $page->{value};
       
       return $self->db->select ('alarm_status', $where, fields => [
-        'target_nobj_id', 'type_nobj_id', 'level_nobj_id',
+        'target_nobj_id', 'target_index_nobj_id',
+        'type_nobj_id', 'level_nobj_id',
         'data', 'created', 'started', 'ended', 'latest',
       ], source_name => 'master',
         offset => $page->{offset}, limit => $page->{limit},
@@ -4072,7 +4085,9 @@ sub run_alarm ($) {
       for my $item (@$items) {
         $item->{data} = Dongry::Type->parse ('json', $item->{data});
       }
-      return $self->replace_nobj_ids ($items, ['target', 'type', 'level'])->then (sub {
+      return $self->replace_nobj_ids ($items, [
+        'target', 'target_index', 'type', 'level',
+      ])->then (sub {
         my $next_page = Pager::next_page $page, $items, 'created';
         return $self->json ({items => $items, %$next_page});
       });
@@ -4143,11 +4158,11 @@ sub run_fetch_job ($$$) {
 ##   unresolved with the status of 4 (inherit), the topic chain is
 ##   further extended with the NObjs whose keys are replacements of
 ##   the templates where /{subscriber}/ is replaced with the topic
-##   notification's subscriber's NObj key.  If there is an "inherit"
-##   topic notification for the |apploach-any-channel| special
-##   channel, any channel topic notification (without explicit
-##   overridden topic notification) is applied.  Otherwise, only
-##   explicitly "inherit"ed topic notifications are applied.
+##   subscription's subscriber's NObj key.  If there is an "inherit"
+##   topic subscription for the |apploach-any-channel| special
+##   channel, any channel topic subscription (without explicit
+##   overridden topic subscription) is applied.  Otherwise, only
+##   explicitly "inherit"ed topic subscriptions are applied.
 ##
 ##   NObj (|/prefix/excluded_subscriber|) : The subscribers that
 ##   should be excluded to distribution of the nevent, even when there
@@ -4162,10 +4177,10 @@ sub run_fetch_job ($$$) {
 ##   there is another nevent with same key, the new event replaces the
 ##   old one.
 ##
-## When an nevent is fired, applicable topic notifications are looked
-## up by their topics.  First, the notification whose topic is equal
-## to the NObj (|/prefix/topic|) is searched.  If not found, NObj
-## (|/prefix/topic_fallback|) are searched in order.  Any first
+## When an nevent is fired, applicable topic subscriptions are looked
+## up by their topics.  First, the topic subscription whose topic is
+## equal to the NObj (|/prefix/topic|) is searched.  If not found,
+## NObj (|/prefix/topic_fallback|) are searched in order.  Any first
 ## matched topic subscription for each subscriber is used to determine
 ## who and whether the nevent is routed.
 sub fire_nevent ($$$;%) {
