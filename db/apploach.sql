@@ -374,3 +374,6 @@ create table if not exists `alarm_status` (
   key (`app_id`, `scope_nobj_id`, `started`),
   key (`created`)
 ) default charset=binary engine=innodb;
+
+alter table `alarm_status`
+    add column `target_index_nobj_id` bigint unsigned not null;
