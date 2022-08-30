@@ -637,7 +637,9 @@ sub wait_for_count ($$$) {
   my $json;
   return Promise->resolve->then (sub {
     return promised_wait_until {
-      return $client->request (url => $url)->then (sub {
+      return $client->request (url => $url, headers => {
+        'x-test' => 1,
+      })->then (sub {
         my $res = $_[0];
         die $res unless $res->status == 200;
         $json = json_bytes2perl $res->body_bytes;
@@ -654,7 +656,7 @@ sub wait_for_count ($$$) {
 
 =head1 LICENSE
 
-Copyright 2018-2020 Wakaba <wakaba@suikawiki.org>.
+Copyright 2018-2022 Wakaba <wakaba@suikawiki.org>.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as

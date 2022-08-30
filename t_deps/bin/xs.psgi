@@ -25,14 +25,21 @@ return sub {
     if ($path =~ m{^/push/([0-9A-Za-z._-]+)$}) {
       my $key = $1;
       if ($http->request_method eq 'POST') {
-        $Counts->{$key}++;
+        $Counts->{'POST', $key}++;
+        $http->set_status (200);
+        return $http->close_response_body;
+      } elsif (not $http->get_request_header ('x-test')) {
+        $Counts->{'GET', $key}++;
         $http->set_status (200);
         return $http->close_response_body;
       }
       $http->set_status (200);
-      $http->send_response_body_as_ref (\perl2json_bytes {
-        count => $Counts->{$key} || 0,
-      });
+      my $json = {
+        get_count => $Counts->{'GET', $key} || 0,
+        post_count => $Counts->{'POST', $key} || 0,
+      };
+      $json->{count} = $json->{get_count} + $json->{post_count};
+      $http->send_response_body_as_ref (\perl2json_bytes $json);
       return $http->close_response_body;
     }
     

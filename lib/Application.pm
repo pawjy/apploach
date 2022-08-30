@@ -4091,6 +4091,7 @@ sub run_alarm ($) {
 sub insert_fetch_jobs ($$;%) {
   my ($self, $jobs, %args) = @_;
   my $now = $args{now} // die;
+  my $after = $args{after} // $now;
   my $expires = $args{expires} // die;
   return unless @$jobs;
 
@@ -4104,7 +4105,7 @@ sub insert_fetch_jobs ($$;%) {
         origin => Dongry::Type->serialize ('text', $job->{url}->get_origin->to_ascii), # must be an HTTP(S) URL
         options => Dongry::Type->serialize ('json', $job->{options}),
         running_since => 0,
-        run_after => $now,
+        run_after => $after,
         inserted => $now,
         expires => $expires,
       };
@@ -4159,6 +4160,65 @@ sub run_fetch_job ($$$) {
   });
   # can't reject
 } # run_fetch_job
+
+sub run_fetch ($) {
+  my $self = $_[0];
+
+  if (@{$self->{path}} == 1 and
+      $self->{path}->[0] eq 'enqueue.json') {
+    ## /{app_id}/fetch/enqueue.json - Enqueue a fetch job.
+    ##
+    ## Parameters.
+    ##
+    ##   |options| : Object : The request's options.  Following
+    ##   name/value pairs:
+    ##
+    ##     |url| : String : The request URL.  It must be an HTTP(S) URL.
+    ##
+    ##     |method| : String : The request method.  Either |GET| or
+    ##     |POST|.  Defaulted to |GET|.
+    ##
+    ##     |params| : Object : The request's parameters.  Defaulted to
+    ##     none.
+    ##
+    ##   |after| : Timestamp : The time after that the fetch can be
+    ##   done.  Defaulted to now.
+    ##
+    ## Response.
+    ##
+    ##   |job_id| : ID : The fetch job's ID.
+    my $options = $self->json_object_param ('options');
+    
+    my $url = Web::URL->parse_string ($options->{url});
+    return $self->throw ({reason => 'Bad |url|'})
+        unless defined $url and $url->is_http_s;
+
+    my $job = {
+      url => $url,
+      options => {
+        url => $url,
+        method => $options->{method} // 'GET',
+      },
+    };
+    return $self->throw ({reason => 'Bad |method|'})
+        unless $job->{options}->{method} eq 'GET' or
+               $job->{options}->{method} eq 'POST';
+
+    my $now = time;
+    my $after = 0+($self->{app}->bare_param ('after') || $now);
+    my $expires = $after + 60*60*10; # XXX configurable
+    return $self->insert_fetch_jobs
+        ([$job],
+         now => $now,
+         after => $after,
+         expires => $expires)->then (sub {
+      return $self->json ({job_id => $job->{job_id}});
+    });
+  }
+
+
+  return $self->{app}->throw_error (404);
+} # run_fetch
 
 ## Notifications (/prefix/) parameters.
 ##
@@ -5428,7 +5488,8 @@ sub run ($) {
       $self->{type} eq 'notification' or
       $self->{type} eq 'alarm' or
       $self->{type} eq 'stats' or
-      $self->{type} eq 'nobj') {
+      $self->{type} eq 'nobj' or
+      $self->{type} eq 'fetch') {
     my $method = 'run_'.$self->{type};
     return $self->$method;
   }
