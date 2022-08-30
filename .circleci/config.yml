@@ -96,7 +96,7 @@
             },
             {
                "deploy" : {
-                  "command" : "docker push quay.io/wakaba/apploach && curl -sSLf $BWALL_URL -X POST"
+                  "command" : "docker push quay.io/wakaba/apploach "
                }
             },
             {
