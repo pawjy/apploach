@@ -3685,8 +3685,10 @@ sub run_notification ($) {
         };
         if (1) {
           $options->{url} = $url->stringify;
-          $options->{_origin} = $url->get_origin->to_ascii;
-          push @job, $options;
+          push @job, {
+            url => $url,
+            options => $options,
+          };
         } else {
           return $self->run_fetch_job ($self->{app}->http->server_state->data, {
             url => $url,
@@ -3694,23 +3696,12 @@ sub run_notification ($) {
           });
         }
       } $urls)->then (sub {
-        return unless @job;
         my $now = time;
         my $expires = $now + 60*60*10; # XXX configurable
-        return $self->db->uuid_short (0+@job)->then (sub {
-          my $ids = shift;
-          return $self->db->insert ('fetch_job', [map {
-            +{
-              job_id => shift @$ids,
-              origin => Dongry::Type->serialize ('text', delete $_->{_origin}),
-              options => Dongry::Type->serialize ('json', $_),
-              running_since => 0,
-              run_after => $now,
-              inserted => $now,
-              expires => $expires,
-            };
-          } @job]);
-        });
+        return $self->insert_fetch_jobs
+            (\@job,
+             now => $now,
+             expires => $expires);
       })->then (sub {
         return unless defined $nevent_id;
         return $self->done_queued_nevent
@@ -4096,6 +4087,32 @@ sub run_alarm ($) {
   
   return $self->{app}->throw_error (404);
 } # run_alarm
+
+sub insert_fetch_jobs ($$;%) {
+  my ($self, $jobs, %args) = @_;
+  my $now = $args{now} // die;
+  my $expires = $args{expires} // die;
+  return unless @$jobs;
+
+  return $self->db->uuid_short (0+@$jobs)->then (sub {
+    my $ids = shift;
+    return $self->db->insert ('fetch_job', [map {
+      my $job = $_;
+      $job->{job_id} = '' . shift @$ids;
+      +{
+        job_id => $job->{job_id},
+        origin => Dongry::Type->serialize ('text', $job->{url}->get_origin->to_ascii), # must be an HTTP(S) URL
+        options => Dongry::Type->serialize ('json', $job->{options}),
+        running_since => 0,
+        run_after => $now,
+        inserted => $now,
+        expires => $expires,
+      };
+    } @$jobs]);
+  })->then (sub {
+    return $jobs;
+  });
+} # insert_fetch_jobs
 
 sub run_fetch_job ($$$) {
   my ($class, $obj, $job) = @_;
