@@ -123,7 +123,9 @@ Test {
       ok 1;
     } $current->c;
     my $url = Web::URL->parse_string ($current->o ('e3'));
-    return $current->client_for ($url)->request (url => $url);
+    return $current->client_for ($url)->request (url => $url, headers => {
+      'x-test' => 1,
+    });
   })->then (sub {
     my $res = $_[0];
     die $res unless $res->status == 200;
@@ -200,7 +202,9 @@ Test {
     });
   })->then (sub {
     my $url = Web::URL->parse_string ($current->o ('e1'));
-    return $current->client_for ($url)->request (url => $url);
+    return $current->client_for ($url)->request (url => $url, headers => {
+      'x-test' => 1,
+    });
   })->then (sub {
     my $res = $_[0];
     die $res unless $res->status == 200;
