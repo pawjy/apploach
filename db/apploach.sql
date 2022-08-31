@@ -359,6 +359,9 @@ create table if not exists `fetch_job` (
   key (`expires`)
 ) default charset=binary engine=innodb;
 
+alter table `fetch_job`
+  add column `app_id` bigint unsigned not null;
+
 create table if not exists `alarm_status` (
   `app_id` bigint unsigned not null,
   `scope_nobj_id` bigint unsigned not null,

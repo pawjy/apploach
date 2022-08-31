@@ -4101,6 +4101,7 @@ sub insert_fetch_jobs ($$;%) {
       my $job = $_;
       $job->{job_id} = '' . shift @$ids;
       +{
+        ($self->app_id_columns),
         job_id => $job->{job_id},
         origin => Dongry::Type->serialize ('text', $job->{url}->get_origin->to_ascii), # must be an HTTP(S) URL
         options => Dongry::Type->serialize ('json', $job->{options}),
@@ -4214,8 +4215,50 @@ sub run_fetch ($) {
          expires => $expires)->then (sub {
       return $self->json ({job_id => $job->{job_id}});
     });
-  }
+  } elsif (@{$self->{path}} == 1 and
+           $self->{path}->[0] eq 'cancel.json') {
+    ## /{app_id}/fetch/cancel.json - Cancel a fetch job.
+    ##
+    ## Parameters.
+    ##
+    ##   |job_id| : ID : The job's ID.
+    ##
+    ## Response.
+    ##
+    ##   |running_since| : Timestamp? : The timestamp from which the
+    ##   fetch job has started, if there is any fetch job.  Set to
+    ##   zero if it has never executed.  Set to |null| if there is no
+    ##   fetch job (either the |job_id| is invalid or the job has been
+    ##   completed).
+    my $job_id = $self->{app}->bare_param ('job_id') // '';
 
+    return $self->db->transaction->then (sub {
+      my $tr = $_[0];
+      return $tr->select ('fetch_job', {
+        ($self->app_id_columns),
+        job_id => $job_id,
+      }, lock => 'update', fields => ['running_since'], limit => 1)->then (sub {
+        my $v = $_[0]->first;
+        if (defined $v) {
+          return $tr->delete ('fetch_job', {
+            ($self->app_id_columns),
+            job_id => $job_id,
+          })->then (sub {
+            return {running_since => $v->{running_since}};
+          });
+        } else {
+          return {};
+        }
+      })->then (sub {
+        my $r = $_[0];
+        return $tr->commit->then (sub { return $r })
+            if keys %$r;
+        return $tr->rollback->then (sub { return $r });
+      })->then (sub {
+        return $self->json ($_[0]);
+      });
+    });
+  }
 
   return $self->{app}->throw_error (404);
 } # run_fetch
