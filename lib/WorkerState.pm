@@ -97,6 +97,8 @@ sub run_a_job ($$) {
   })->then (sub {
     my $v = $_[0]->first;
     return not 'job found' unless defined $v;
+    ## $v not found if there is no job at all or is canceled during
+    ## update and select.
     return $db->update ('fetch_job', {
       running_since => $now,
     }, where => {
@@ -119,6 +121,7 @@ sub run_a_job ($$) {
           return $db->delete ('fetch_job', {
             job_id => $job->{job_id},
           });
+          ## row_count = 0 if $job is canceled during the execution.
         });
       } $jobs;
     })->then (sub {
