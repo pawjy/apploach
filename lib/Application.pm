@@ -3360,6 +3360,14 @@ sub run_notification ($) {
         }, source_name => 'master')->then (sub {
           return $_[0]->all;
         });
+      }, sub {
+        my $e = $_[0];
+        if (UNIVERSAL::can ($e, 'error_text') and
+            $e->error_text =~ m{^Deadlock found when trying to get lock}) {
+          #Deadlock found when trying to get lock; try restarting transaction
+          return [];
+        }
+        die $e;
       });
     })->then (sub {
       my $items = $_[0];
