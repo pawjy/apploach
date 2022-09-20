@@ -4101,24 +4101,32 @@ sub insert_fetch_jobs ($$;%) {
   my $now = $args{now} // die;
   my $after = $args{after} // $now;
   my $expires = $args{expires} // die;
-  return unless @$jobs;
 
-  return $self->db->uuid_short (0+@$jobs)->then (sub {
-    my $ids = shift;
-    return $self->db->insert ('fetch_job', [map {
-      my $job = $_;
-      $job->{job_id} = '' . shift @$ids;
-      +{
-        ($self->app_id_columns),
-        job_id => $job->{job_id},
-        origin => Dongry::Type->serialize ('text', $job->{url}->get_origin->to_ascii), # must be an HTTP(S) URL
-        options => Dongry::Type->serialize ('json', $job->{options}),
-        running_since => 0,
-        run_after => $after,
-        inserted => $now,
-        expires => $expires,
-      };
-    } @$jobs]);
+  my @job = @$jobs;
+  return Promise->resolve->then (sub {
+    return promised_until {
+      return 'done' if not @job;
+      my @jj = splice @job, 0, 100, ();
+      return $self->db->uuid_short (0+@jj)->then (sub {
+        my $ids = shift;
+        return $self->db->insert ('fetch_job', [map {
+          my $job = $_;
+          $job->{job_id} = '' . shift @$ids;
+          +{
+            ($self->app_id_columns),
+            job_id => $job->{job_id},
+            origin => Dongry::Type->serialize ('text', $job->{url}->get_origin->to_ascii), # must be an HTTP(S) URL
+            options => Dongry::Type->serialize ('json', $job->{options}),
+            running_since => 0,
+            run_after => $after,
+            inserted => $now,
+            expires => $expires,
+          };
+        } @jj]);
+      })->then (sub {
+        return not 'done';
+      });
+    };
   })->then (sub {
     return $jobs;
   });
