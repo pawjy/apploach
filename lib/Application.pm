@@ -3733,6 +3733,9 @@ sub run_alarm ($) {
 
   ## An alarm has:
   ##
+  ##   NObj (|scope|) : The alarm's scope.  An application-specific
+  ##   value that defines the realm to which the alarm belongs.
+  ##
   ##   NObj (|target|) : The alarm's target.  An application-specific
   ##   value that identifies the target about which the alarm
   ##   describes.
@@ -4053,24 +4056,26 @@ sub run_alarm ($) {
     ##
     ## Parameters.
     ##
-    ##   NObj (|scope|) : The alarm's scope.
+    ##   NObj (|scope|) : The alarm's scope.  Zero or more parameters
+    ##   can be specified.
     ##
     ## List response of alarms.
     my $page = Pager::this_page ($self, limit => 100, max_limit => 10000);
     return Promise->all ([
-      $self->nobj ('scope'),
+      $self->nobj_list_set (['scope']),
     ])->then (sub {
-      my $scope = $_[0]->[0];
-      return [] if $scope->not_found;
+      my ($scopes) = @{$_[0]->[0]};
+      $scopes = [grep { not $_->is_error } @$scopes];
+      return [] unless @$scopes;
 
       my $where = {
         ($self->app_id_columns),
-        ($scope->to_columns ('scope')),
+        'scope_nobj_id' => {-in => [map { $_->nobj_id } @$scopes]},
       };
       $where->{created} = $page->{value} if defined $page->{value};
       
       return $self->db->select ('alarm_status', $where, fields => [
-        'target_nobj_id', 'target_index_nobj_id',
+        'target_nobj_id', 'target_index_nobj_id', 'scope_nobj_id',
         'type_nobj_id', 'level_nobj_id',
         'data', 'created', 'started', 'ended', 'latest',
       ], source_name => 'master',
@@ -4085,7 +4090,7 @@ sub run_alarm ($) {
         $item->{data} = Dongry::Type->parse ('json', $item->{data});
       }
       return $self->replace_nobj_ids ($items, [
-        'target', 'target_index', 'type', 'level',
+        'target', 'target_index', 'type', 'level', 'scope',
       ])->then (sub {
         my $next_page = Pager::next_page $page, $items, 'created';
         return $self->json ({items => $items, %$next_page});

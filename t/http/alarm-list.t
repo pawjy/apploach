@@ -70,6 +70,65 @@ Test {
   });
 } n => 1, name => 'pager paging';
 
+Test {
+  my $current = shift;
+  return $current->create (
+    [u1 => nobj => {}],
+    [s1 => nobj => {}],
+    [s2 => nobj => {}],
+    [t1 => nobj => {}],
+    [y1 => nobj => {}],
+    [l1 => nobj => {}],
+  )->then (sub {
+    return $current->json (['alarm', 'update.json'], {
+      operator_nobj_key => $current->o ('u1')->{nobj_key},
+      scope_nobj_key => $current->o ('s1')->{nobj_key},
+      timestamp => time,
+      alarm => [
+        perl2json_chars {
+          target_nobj_key => $current->o ('t1')->{nobj_key},
+          type_nobj_key => $current->o ('y1')->{nobj_key},
+          level_nobj_key => $current->o ('l1')->{nobj_key},
+        },
+      ],
+    });
+  })->then (sub {
+    return $current->json (['alarm', 'update.json'], {
+      operator_nobj_key => $current->o ('u1')->{nobj_key},
+      scope_nobj_key => $current->o ('s2')->{nobj_key},
+      timestamp => time,
+      alarm => [
+        perl2json_chars {
+          target_nobj_key => $current->o ('t1')->{nobj_key},
+          type_nobj_key => $current->o ('y1')->{nobj_key},
+          level_nobj_key => $current->o ('l1')->{nobj_key},
+        },
+      ],
+    });
+  })->then (sub {
+    return $current->json (['alarm', 'list.json'], {
+      scope_nobj_key => [
+        $current->o ('s1')->{nobj_key},
+        $current->o ('s2')->{nobj_key},
+        rand,
+      ],
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 2;
+      {
+        my $item = $result->{json}->{items}->[0];
+        is $item->{scope_nobj_key}, $current->o ('s2')->{nobj_key};
+      }
+      {
+        my $item = $result->{json}->{items}->[1];
+        is $item->{scope_nobj_key}, $current->o ('s1')->{nobj_key};
+      }
+    } $current->c;
+  });
+} n => 3, name => 'scopes';
+
 RUN;
 
 =head1 LICENSE
