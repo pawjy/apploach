@@ -4,7 +4,7 @@ AnyEvent::Fork~1.32
 Bytes::Random::Secure::Tiny~1.011
 Call::Context~0.03
 Canary::Stability~2013
-Carp::Heavy~1.50
+Carp~1.50
 Class::Accessor::Fast~0.51
 Convert::ASN1~0.33
 Crypt::Format~0.12
@@ -46,4 +46,4 @@ Time::Local~1.30
 Try::Tiny~0.31
 autodie~2.36
 common::sense~3.75
-parent~0.239
+parent~0.240
