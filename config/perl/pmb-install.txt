@@ -1,11 +1,11 @@
 AnyEvent~7.17
 AnyEvent::FileLock~0.06
 AnyEvent::Fork~1.32
-AnyEvent::Util
+AnyEvent::Socket
 Bytes::Random::Secure::Tiny~1.011
 Call::Context~0.03
 Canary::Stability~2013
-Carp~1.50
+Carp::Heavy~1.50
 Class::Accessor::Fast~0.51
 Convert::ASN1~0.33
 Crypt::Format~0.12
@@ -23,7 +23,7 @@ IO::FDPass~1.3
 IO::Handle~1.51
 MIME::Base64~3.16
 MRO::Compat~0.15
-Math::BigInt~1.999837
+Math::BigInt~1.999838
 Math::ProvablePrime~0.51
 Method::WeakCallback~0.04
 Module::Build~0.4232
