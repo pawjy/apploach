@@ -4,7 +4,7 @@ AnyEvent::Fork~1.32
 Bytes::Random::Secure::Tiny~1.011
 Call::Context~0.03
 Canary::Stability~2013
-Carp::Heavy~1.50
+Carp~1.50
 Class::Accessor::Fast~0.51
 Convert::ASN1~0.33
 Crypt::Format~0.12
@@ -36,11 +36,11 @@ Socket~2.037
 Sub::Uplevel~0.2800
 Symbol::Get~0.10
 Term::ANSIColor~5.01
+Test::Builder~1.302195
 Test::Class~0.52
 Test::Deep~1.204
 Test::Exception~0.43
 Test::FailWarnings~0.008
-Test::More~1.302195
 Time::HiRes~1.9764
 Time::Local~1.35
 Try::Tiny~0.31
