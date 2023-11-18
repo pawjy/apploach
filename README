@@ -5,7 +5,7 @@ Apploach
 
 To run Apploach on your local environment:
 
-  $ git clone https://github.com/wakaba/apploach
+  $ git clone https://github.com/pawjy/apploach
   $ cd apploach
   $ ./lserver
 
@@ -15,9 +15,14 @@ Then, the server's URL is shown to the console.
 
 Wakaba <wakaba@suikawiki.org>.
 
+* History
+
+The Git repository was at <https://github.com/wakaba/apploach> until
+18 November 2023.
+
 * License
 
-Copyright 2018 Wakaba <wakaba@suikawiki.org>.
+Copyright 2018-2023 Wakaba <wakaba@suikawiki.org>.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as
