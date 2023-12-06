@@ -2892,16 +2892,16 @@ sub run_notification ($) {
     ##   Required.
     ##
     ##   |is_default| : Boolean : If true, the topic subscription is
-    ##   only added when there is no topic subscription with same
+    ##   added only when there is no topic subscription with same
     ##   topic, subscriber, and channel.  Otherwise, any existing
-    ##   topic subscription is updated.
+    ##   topic subscription is not updated.
     ##
     ## Empty response.
     return Promise->all ([
       $self->new_nobj_list (['topic', 'topic_index', 'subscriber', 'channel']),
     ])->then (sub {
       my ($topic, $topic_index, $subscriber, $channel) = @{$_[0]->[0]};
-      
+
       my $status = $self->{app}->bare_param ('status') // '';
       return $self->throw ({reason => "Bad |status|"})
           unless $status =~ /\A[1-9][0-9]*\z/ and
@@ -3811,6 +3811,7 @@ sub run_alarm ($) {
       $_->{type_nobj_key} //= '';
       $_->{level_nobj_key} //= '';
     }
+    
     return Promise->all ([
       $self->new_nobj_list ([
         'scope',
@@ -4374,6 +4375,7 @@ sub fire_nevent ($$$;%) {
             'status', 'data', 'updated',
           ], source_name => 'master', limit => 10, order => ['updated', 'asc'])->then (sub {
             my $all = $_[0]->all;
+
             return 'done' unless @$all;
             return ((promised_for {
               my $v = $_[0];
@@ -4416,6 +4418,7 @@ sub fire_nevent ($$$;%) {
                 return 1;
               })->then (sub {
                 return unless $_[0];
+
                 return $self->db->insert ('nevent_queue', [{
                   ($self->app_id_columns),
                   subscriber_nobj_id => $v->{subscriber_nobj_id},
@@ -5397,11 +5400,10 @@ sub run_nobj ($) {
     ##   NObj (|target|) : ID : The NObj.  Required.
     ##
     ##   |open| : Boolean : The attachment's open.  If true, the
-    ##   attachemnts of the NObj, whose open is false, deleted is
-    ##   false, and payload is not null, are set to true.  If false,
-    ##   the attachments of the NObj, whose open is true, are set to
-    ##   false.  Defaulted to false.  |setattachmentopenness.json|
-    ##   only.
+    ##   attachemnts of the NObj, whose open is false and payload is
+    ##   not null, are set to true.  If false, the attachments of the
+    ##   NObj, whose open is true, are set to false.  Defaulted to
+    ##   false.  |setattachmentopenness.json| only.
     ##
     ##   |used_url| : String : The attachment's URL that is still in
     ##   use.  Zero or more parameters can be
@@ -5422,17 +5424,17 @@ sub run_nobj ($) {
     my $update;
     if ($self->{path}->[0] eq 'setattachmentopenness.json') {
       my $open = $self->{app}->bare_param ('open');
+      $update = {modified => time};
       if ($open) {
         $pubcopy = 1;
         $where->{open} = 0;
-        $where->{deleted} = 0;
+        #$where->{deleted} = 0;
+        $update->{open} = 1;
+        $update->{deleted} = 0;
       } else {
         $where->{open} = 1;
+        $update->{open} = 0;
       }
-      $update = {
-        open => $open ? 1 : 0,
-        modified => time,
-      };
     } elsif ($self->{path}->[0] eq 'hideunusedattachments.json') {
       my $used_urls = $self->{app}->bare_param_list ('used_url');
       if (@$used_urls) {
@@ -5570,7 +5572,7 @@ sub close ($) {
 
 =head1 LICENSE
 
-Copyright 2018-2022 Wakaba <wakaba@suikawiki.org>.
+Copyright 2018-2023 Wakaba <wakaba@suikawiki.org>.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as
