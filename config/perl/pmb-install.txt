@@ -1,11 +1,11 @@
 AnyEvent~7.17
 AnyEvent::FileLock~0.06
 AnyEvent::Fork~1.32
-AnyEvent::Handle
+AnyEvent::Util
 Bytes::Random::Secure::Tiny~1.011
 Call::Context~0.03
 Canary::Stability~2013
-Carp::Heavy~1.50
+Carp~1.50
 Class::Accessor::Fast~0.51
 Convert::ASN1~0.34
 Crypt::Format~0.12
