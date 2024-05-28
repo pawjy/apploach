@@ -1,7 +1,6 @@
 AnyEvent~7.17
 AnyEvent::FileLock~0.06
 AnyEvent::Fork~1.32
-AnyEvent::IO
 Bytes::Random::Secure::Tiny~1.011
 Call::Context~0.05
 Canary::Stability~2013
@@ -25,7 +24,7 @@ IO::FDPass~1.3
 IO::Handle~1.55
 MIME::Base64~3.16
 MRO::Compat~0.15
-Math::BigInt~2.003002
+Math::BigInt~2.003003
 Math::ProvablePrime~0.51
 Method::WeakCallback~0.04
 Module::Build~0.4234
@@ -39,11 +38,11 @@ Socket~2.038
 Sub::Uplevel~0.2800
 Symbol::Get~0.12
 Term::ANSIColor~5.01
+Test::Builder~1.302199
 Test::Class~0.52
 Test::Deep~1.204
 Test::Exception~0.43
 Test::FailWarnings~0.008
-Test::More~1.302199
 Time::HiRes~1.9764
 Time::Local~1.35
 Try::Tiny~0.31
