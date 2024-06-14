@@ -9,7 +9,7 @@ Class::Accessor::Fast~0.51
 Convert::ASN1~0.34
 Crypt::Format~0.12
 Crypt::OpenSSL::RSA~0.33
-Crypt::OpenSSL::Random~0.16
+Crypt::OpenSSL::Random~0.17
 Cwd~3.75
 Data::Dumper~2.183
 Digest::SHA~6.04
