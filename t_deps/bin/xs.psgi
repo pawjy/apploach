@@ -2,15 +2,22 @@
 use strict;
 use warnings;
 use Path::Tiny;
+use Promised::Flow;
+use Web::URL;
 use Wanage::HTTP;
 use JSON::PS;
+use Web::Encoding;
+use Web::Transport::Base64;
+use Web::Transport::BasicClient;
 
 my $Counts = {};
+my $Messages = [];
+my $Bearer = $ENV{APP_BEARER};
 
 return sub {
   my $http = Wanage::HTTP->new_from_psgi_env ($_[0]);
 
-  warn sprintf "Access: [%s] %s %s\n",
+  warn sprintf "xs: Access: [%s] %s %s\n",
       scalar gmtime, $http->request_method, $http->url->stringify;
 
   $http->send_response (onready => sub {
@@ -40,6 +47,52 @@ return sub {
       };
       $json->{count} = $json->{get_count} + $json->{post_count};
       $http->send_response_body_as_ref (\perl2json_bytes $json);
+      return $http->close_response_body;
+    }
+
+    if ($path =~ m{^/vonage/send$}) {
+      my $json = {};
+      my $status = {};
+      push @$Messages, my $message = {
+        channel => 'vonage',
+        %{json_bytes2perl ${ $http->request_body_as_ref }},
+        api_key => $http->request_auth->{userid},
+        api_secret => $http->request_auth->{password},
+      };
+      if ($message->{text} =~ /RFAILURE/) {
+        $http->set_status (400);
+        delete $status->{status};
+      } elsif ($message->{text} =~ /CFAILURE/) {
+        $status->{status} = 'unknownstatus';
+      } else {
+        $status->{status} = 'submitted';
+      }
+      $status->{client_ref} = $message->{client_ref};
+      $message->{to} =~ /^([0-9]*)/;
+      my $app_id = $1;
+      $http->send_response_body_as_ref (\perl2json_bytes $json);
+      $http->close_response_body;
+
+      return if not defined $status->{status};
+      return promised_sleep (1)->then (sub {
+        my $url = Web::URL->parse_string
+            (qq<http://app.server.test/$app_id/message/callback.json>);
+        my $client = Web::Transport::BasicClient->new_from_url ($url);
+        return $client->request (
+          method => 'POST',
+          url => $url,
+          bearer => $Bearer,
+          params => {
+            channel => 'vonage',
+            body => encode_web_base64 (perl2json_bytes $status),
+          },
+        )->finally (sub {
+          return $client->close;
+        });
+      });
+    } elsif ($path =~ m{^/vonage/get$}) {
+      my $to = decode_web_utf8 ($http->query_params->{to}->[0] // '');
+      $http->send_response_body_as_ref (\perl2json_bytes [grep { $_->{to} eq $to } @$Messages]);
       return $http->close_response_body;
     }
     

@@ -110,18 +110,29 @@ sub run_a_job ($$) {
     ])->then (sub {
       return $db->select ('fetch_job', {
         running_since => $now,
-      }, fields => ['job_id', 'options'], source_name => 'master',
+      }, fields => ['app_id', 'job_id', 'options'], source_name => 'master',
       limit => 10);
     })->then (sub {
       my $jobs = $_[0]->all;
       return promised_for {
         my $job = shift;
         $job->{options} = Dongry::Type->parse ('json', $job->{options});
-        return Application->run_fetch_job ($obj, $job)->then (sub {
-          return $db->delete ('fetch_job', {
-            job_id => $job->{job_id},
-          });
-          ## row_count = 0 if $job is canceled during the execution.
+        return Application->run_fetch_job ($obj, $job, $db)->then (sub {
+          my $ret = $_[0];
+          if ($ret->{retry_after}) {
+            my $time = time;
+            return $db->update ('fetch_job', {
+              running_since => 0,
+              run_after => $time + $ret->{retry_after},
+            }, where => {
+              job_id => $job->{job_id},
+            });
+          } else {
+            return $db->delete ('fetch_job', {
+              job_id => $job->{job_id},
+            });
+            ## row_count = 0 if $job is canceled during the execution.
+          }
         });
       } $jobs;
     })->then (sub {

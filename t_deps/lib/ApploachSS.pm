@@ -140,9 +140,14 @@ sub run ($%) {
     }, # app_docker
     xs => {
       handler => 'ServerSet::SarzeHandler',
+      requires => ['app_config'],
       prepare => sub {
         my ($handler, $self, $args, $data) = @_;
+        my $envs = {};
+        $self->set_local_envs ('proxy', $envs);
+        $envs->{APP_BEARER} = $self->key ('app_bearer');
         return {
+          envs => $envs,
           hostports => [
             [$self->local_url ('xs')->host->to_ascii,
              $self->local_url ('xs')->port],

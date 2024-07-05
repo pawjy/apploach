@@ -380,3 +380,59 @@ create table if not exists `alarm_status` (
 
 alter table `alarm_status`
     add column `target_index_nobj_id` bigint unsigned not null;
+
+create table if not exists `request_status` (
+  `app_id` bigint unsigned not null,
+  `request_set_id` bigint unsigned not null,
+  `request_id` bigint unsigned not null,
+  `request_data` mediumblob not null,
+  `response_log` mediumblob not null,
+  `callback_log` mediumblob not null,
+  `status` tinyint unsigned not null,
+      -- 2 waiting
+      -- 4 fetched
+      -- 5 failed
+      -- 6 callbacked, success
+      -- 7 callbacked, failure
+  `created` double not null,
+  `updated` double not null,
+  `expires` double not null,
+  primary key (`app_id`, `request_id`),
+  key (`app_id`, `request_set_id`, `created`),
+  key (`app_id`, `status`, `created`),
+  key (`expires`)
+) default charset=binary engine=innodb;
+
+create table if not exists `request_set` (
+  `app_id` bigint unsigned not null,
+  `request_set_id` bigint unsigned not null,
+  `data` mediumblob not null,
+  `created` double not null,
+  `updated` double not null,
+  `status_2_count` int unsigned not null,
+  `status_3_count` int unsigned not null,
+  `status_4_count` int unsigned not null,
+  `status_5_count` int unsigned not null,
+  `status_6_count` int unsigned not null,
+  `status_7_count` int unsigned not null,
+  `status_8_count` int unsigned not null,
+  `status_9_count` int unsigned not null,
+  primary key (`app_id`, `request_set_id`),
+  key (`app_id`, `created`),
+  key (`created`),
+  key (`updated`)
+) default charset=binary engine=innodb;
+
+create table if not exists `message_routes` (
+  `app_id` bigint unsigned not null,
+  `station_nobj_id` bigint unsigned not null,
+  `data` mediumblob not null,
+  `created` double not null,
+  `updated` double not null,
+  `expires` double not null,
+  primary key (`app_id`, `station_nobj_id`),
+  key (`app_id`, `created`),
+  key (`created`),
+  key (`updated`),
+  key (`expires`)
+) default charset=binary engine=innodb;

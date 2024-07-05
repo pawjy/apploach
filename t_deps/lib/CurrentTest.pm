@@ -68,6 +68,23 @@ sub set_o ($$$) {
   $self->{o}->{$name} = $value;
 } # set_o
 
+sub generate_time ($;$$) {
+  my ($self, $name, $opts) = @_;
+  my $time = time - 15*24*60*60 + rand 5*24*60*60;
+  if ($opts->{past}) {
+    $time -= 60*24*60*60;
+  }
+  if ($opts->{future}) {
+    $time = time + 60*24*60*60 + rand 100*24*60*60;
+  }
+  if ($opts->{after}) {
+    $time = $self->o ($opts->{after});
+    $time += int rand 5*24*60*60;
+  }
+  $time = int $time if $opts->{int};
+  return $self->{o}->{$name // ''} = $time;
+} # generate_time
+
 sub generate_id ($$$) {
   my ($self, $name, $opts) = @_;
   $self->set_o ($name => 1 + int rand 1000000000);
@@ -75,10 +92,10 @@ sub generate_id ($$$) {
 
 sub generate_key ($$$) {
   my ($self, $name, $opts) = @_;
-  my $v = '';
+  my $v = $opts->{prefix} // '';
   my $min = $opts->{min_length} // 10;
   my $max = $opts->{max_length} // 100;
-  my $length = $min + int rand ($max - $min);
+  my $length = $min + int rand ($max - $min) - length $v;
   $v .= pack 'C', [0x20..0x7E]->[rand 95] for 1..$length;
   $self->set_o ($name => $v);
 } # generate_key
@@ -100,6 +117,12 @@ sub generate_push_url ($$$) {
   my ($self, $name, $opts) = @_;
   return $self->set_o ($name => 'http://xs.server.test/push/' . rand);
 } # generate_push_url
+
+sub generate_message_addr ($$$) {
+  my ($self, $name, $opts) = @_;
+  my $addr = ($self->o ('app_id') // '') . ';' . $self->generate_text (rand, {});
+  return $self->set_o ($name => $addr);
+} # generate_message_addr
 
 sub generate_text ($$$) {
   my ($self, $name, $opts) = @_;
@@ -651,6 +674,31 @@ sub wait_for_count ($$$) {
     return $json;
   });
 } # wait_for_count
+
+sub wait_for_messages ($$;$$) {
+  my ($self, $to, $n) = @_;
+  $n //= 1;
+  my $url = Web::URL->parse_string (q<http://xs.server.test/vonage/get>);
+  my $client = $self->client_for ($url);
+  my $json;
+  return Promise->resolve->then (sub {
+    return promised_wait_until {
+      return $client->request (url => $url, headers => {
+        'x-test' => 1,
+      }, params => {
+        to => $to,
+      })->then (sub {
+        my $res = $_[0];
+        die $res unless $res->status == 200;
+        $json = json_bytes2perl $res->body_bytes;
+        return 'done' if @$json >= $n;
+        return not 'done';
+      });
+    } timeout => 64, name => "wait_for_messages ($n)";
+  })->then (sub {
+    return $json;
+  });
+} # wait_for_messages
 
 1;
 
