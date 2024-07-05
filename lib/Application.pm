@@ -3701,7 +3701,7 @@ sub run_notification ($) {
           return $self->run_fetch_job ($self->{app}->http->server_state->data, {
             url => $url,
             options => $options,
-          });
+          }, $self->db);
         }
       } $urls)->then (sub {
         my $now = time;
@@ -4102,6 +4102,311 @@ sub run_alarm ($) {
   return $self->{app}->throw_error (404);
 } # run_alarm
 
+sub run_message ($) {
+  my $self = $_[0];
+
+  if (@{$self->{path}} == 1 and
+      $self->{path}->[0] eq 'callback.json') {
+    ## /{app_id}/message/callback.json - Enqueue Web hook requests.
+    ##
+    ## Parameters.
+    ##
+    ##   |channel| : String    : The messaging channel.  Required.
+    ##   |body| : String       : Received data, Base64 encoded.
+    ##
+    ## Returns nothing.
+    ##
+    my $ch = $self->{app}->text_param ('channel') // '';
+    my $url = Web::URL->parse_string (qq<https://apploach.internal/ch/$ch>);
+    my $job = {
+      url => $url,
+      options => {
+        name => $ch,
+        is_callback => 1,
+        callback_channel => $ch,
+        callback_body => $self->{app}->bare_param ('body') // '',
+      },
+    };
+
+    my $now = time;
+    my $expires = $now + 60*60*10;
+    return $self->insert_fetch_jobs
+        ([$job],
+         now => $now,
+         after => $now,
+         expires => $expires)->then (sub {
+      return $self->json ({});
+    });
+  } # callback
+
+  if (@{$self->{path}} == 1 and
+      $self->{path}->[0] eq 'send.json') {
+    ## /{app_id}/message/send.json - Set a message.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|station|)      : The messaging station.  Required.
+    ##   |to| : String         : An application-specific destination key.
+    ##                           Required unless |broadcast| is true.
+    ##   |broadcast| : Boolean : If true, all destinations are selected.
+    ##   |from_name| : String  : A source name in protocol specific format.
+    ##                           Defaulted to the empty string.
+    ##   |body| : String       : A text message.  Required.
+    ##
+    ## Returns,
+    ##
+    ##   |request_set_id| : ID : The message submission's request set ID.
+    ##
+    return Promise->all ([
+      $self->nobj ('station'),
+    ])->then (sub {
+      my ($station) = @{$_[0]};
+      return $self->throw ({reason => 'Bad |station_nobj_key|'})
+          if $station->is_error;
+
+      my $now = time;
+      return $self->db->select ('message_routes', {
+        ($self->app_id_columns),
+        ($station->to_columns ('station')),
+        expires => {'>', $now},
+      }, fields => ['data', 'expires'], source_name => 'master')->then (sub {
+        my $row = $_[0]->first;
+        my $data = Dongry::Type->parse ('json', $row->{data});
+
+        my $dests = [];
+        if ($self->{app}->bare_param ('broadcast')) {
+          if (defined $self->{app}->text_param ('to')) {
+            return $self->throw ({reason => 'Both |to| and |broacast| are specified'});
+          }
+
+          # XXX exclusions
+          $dests = [values %{$data->{table}}];
+        } else {
+          my $dest = {};
+          if (defined $row) {
+            $dest = $data->{table}->{$self->{app}->text_param ('to') // ''} // {};
+          }
+          return $self->throw ({reason => 'Bad |to|'})
+              unless defined $dest->{addr};
+          push @$dests, $dest;
+        }
+
+        if ($data->{channel} eq 'vonage') { ## Vonage's Messages API for SMS
+          my $key = $self->{config}->{'message_api_key.'.$data->{channel}.'.'.$self->{app_id}} //
+              $self->{config}->{'message_api_key.'.$data->{channel}};
+          my $secret = $self->{config}->{'message_api_secret.'.$data->{channel}.'.'.$self->{app_id}} //
+              $self->{config}->{'message_api_secret.'.$data->{channel}};
+          my $api_u = $self->{config}->{'message_api_url.'.$data->{channel}.'.'.$self->{app_id}} //
+              $self->{config}->{'message_api_url.'.$data->{channel}};
+          return $self->throw ({reason => 'Bad destination type'})
+              unless defined $api_u and defined $key and defined $secret;
+          my $api_url = Web::URL->parse_string ($api_u);
+          return $self->throw ({reason => 'Bad destination type'})
+              unless defined $api_url and $api_url->is_http_s;
+
+          my $from = $self->{app}->text_param ('from_name') // '';
+          my $body = $self->{app}->text_param ('body') // '';
+          my $now = time;
+          my $expires = $row->{expires};
+
+          my $request_set_id;
+          return $self->db->uuid_short (1)->then (sub {
+            my $ids = $_[0];
+            $request_set_id = $ids->[0];
+            return $self->db->insert ('request_set', [{
+              ($self->app_id_columns),
+              request_set_id => $ids->[0],
+              data => Dongry::Type->serialize ('json', {
+                channel => $data->{channel},
+              }),
+              created => $now,
+              updated => $now,
+              status_2_count => 0, status_3_count => 0, status_4_count => 0,
+              status_5_count => 0, status_6_count => 0, status_7_count => 0,
+              status_8_count => 0, status_9_count => 0,
+            }]);
+          })->then (sub {
+            $self->json ({
+              request_set_id => '' . $request_set_id,
+            });
+          })->then (sub {
+            return promised_for {
+              my $dest = shift;
+
+              ## <https://developer.vonage.com/en/api/messages-olympus>
+              my $options = {
+                name => 'message: ' . $self->{app_id} . ': ' . $data->{channel} . ': ' . $request_set_id,
+                url => $api_url,
+                method => 'POST',
+                headers => {'content-type' => 'application/json'},
+                basic_auth => [$key, $secret],
+                json => {
+                  to => $dest->{addr},
+                  from => $from,
+                  text => $body,
+                  channel => 'sms',
+                  #client_ref => 
+                },
+              };
+
+              return $self->db->uuid_short (2)->then (sub {
+                my $ids = $_[0];
+                $options->{json}->{client_ref} = 'r' . $ids->[0];
+                $options->{request_id} = '' . $ids->[0];
+                return $self->db->insert ('request_status', [{
+                  ($self->app_id_columns),
+                  request_set_id => $request_set_id,
+                  request_id => $ids->[0],
+                  request_data => Dongry::Type->serialize ('json', {
+                    job_id => '' . $ids->[1],
+                  }),
+                  response_log => Dongry::Type->serialize ('json', {
+                    items => [],
+                  }),
+                  callback_log => Dongry::Type->serialize ('json', {
+                    items => [],
+                  }),
+                  status => 2, # waiting
+                  created => $now,
+                  updated => $now,
+                  expires => $expires,
+                }])->then (sub {
+                  return $self->db->insert ('fetch_job', [{
+                    ($self->app_id_columns),
+                    job_id => $ids->[1],
+                    origin => Dongry::Type->serialize ('text', $api_url->get_origin->to_ascii), # must be an HTTP(S) URL
+                    options => Dongry::Type->serialize ('json', $options),
+                    running_since => 0,
+                    run_after => 0,
+                    inserted => $now,
+                    expires => $expires,
+                  }]);
+                });
+              });
+            } $dests;
+          });
+        } else { # unknown channel
+          return $self->throw ({reason => 'Bad channel'});
+        }
+      });
+    });
+  } # send.json
+  
+  if (@{$self->{path}} == 1 and
+      $self->{path}->[0] eq 'setroutes.json') {
+    ## /{app_id}/message/setroutes.json - Set message routing table.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|station|)      : The messaging station.  Required.
+    ##   |channel| : String    : The messaging channel.  Required.
+    ##   |table| : Object      : The routing table.  Required.
+    ##     /name/              : An application-specific destination key.
+    ##     /value/ : Object
+    ##       |addr| : String   : The messaging channel-specific destination
+    ##                           address.  Required.
+    ##   |expires| : Timestamp : The expiration time.  Defaulted to 7 days
+    ##                           from now.
+    ##
+    ## Returns,
+    ##
+    ##   |expires| : Timestamp : The expiration time.
+    ##
+    return Promise->all ([
+      $self->new_nobj_list (['station']),
+    ])->then (sub {
+      my $station = $_[0]->[0]->[0];
+      return $self->throw ({reason => 'Bad NObj parameter |station|'})
+          if $station->is_error;
+      my $table = $self->json_object_param ('table');
+      return $self->throw ({reason => 'Bad parameter |table|'})
+          unless defined $table and ref $table eq 'HASH';
+      for (values %$table) {
+        return $self->throw ({reason => 'Bad parameter |table|'})
+            unless defined $_ and ref $_ eq 'HASH';
+      }
+
+      my $channel = $self->{app}->bare_param ('channel') // '';
+      my $api_u = $self->{config}->{'message_api_url.'.$channel.'.'.$self->{app_id}} //
+          $self->{config}->{'message_api_url.'.$channel};
+      return $self->throw ({reason => 'Bad parameter |channel|'})
+          unless defined $api_u;
+
+      my $now = time;
+      my $expires = 0+($self->{app}->bare_param ('expires') || 0);
+      $expires = $now + 7*24*60*60 if $expires < $now + 7*24*60*60;
+
+      return $self->db->insert ('message_routes', [{
+        ($self->app_id_columns),
+        ($station->to_columns ('station')),
+        data => Dongry::Type->serialize ('json', {
+          channel => $channel,
+          table => $table,
+        }),
+        expires => $expires,
+        created => $now,
+        updated => $now,
+      }], duplicate => {
+        data => $self->db->bare_sql_fragment ('VALUES(`data`)'),
+        updated => $self->db->bare_sql_fragment ('VALUES(`updated`)'),
+        expires => $self->db->bare_sql_fragment ('VALUES(`expires`)'),
+      })->then (sub {
+        return $self->json ({
+          expires => $expires,
+        });
+      });
+    });
+  } # setroutes.json
+  
+  if (@{$self->{path}} == 1 and
+      $self->{path}->[0] eq 'status.json') {
+    ## /{app_id}/message/status.json - Set message submission's request set's status.
+    ##
+    ## Parameters.
+    ##
+    ##   |request_set_id| : ID : The request set ID.  Required.
+    ##
+    ## Returns,
+    ##
+    ##   |status_2_count| : Integer : The number of requests whose status
+    ##                           is 2 (waiting).
+    ##   |status_4_count| : Integer : The number of requests whose status
+    ##                           is 4 (fetched).
+    ##   |status_5_count| : Integer : The number of requests whose status
+    ##                           is 5 (failed).
+    ##   |status_6_count| : Integer : The number of requests whose status
+    ##                           is 6 (callbacked, success).
+    ##   |status_7_count| : Integer : The number of requests whose status
+    ##                           is 7 (callbacked, failure).
+    ##
+    my $set_id = $self->{app}->bare_param ('request_set_id') //
+        return $self->throw ({reason => 'Bad |request_set_id|'});
+    return $self->db->select ('request_set', {
+      ($self->app_id_columns),
+      request_set_id => $set_id,
+    }, fields => [
+      'updated', 'status_2_count', 'status_3_count', 'status_4_count',
+      'status_5_count', 'status_6_count', 'status_7_count', 'status_8_count',
+      'status_9_count',
+    ], limit => 1, source_name => 'master')->then (sub {
+      my $row = $_[0]->first || {};
+      return $self->json ({
+        updated => $row->{updated},
+        status_2_count => $row->{status_2_count},
+        status_3_count => $row->{status_3_count},
+        status_4_count => $row->{status_4_count},
+        status_5_count => $row->{status_5_count},
+        status_6_count => $row->{status_6_count},
+        status_7_count => $row->{status_7_count},
+        status_8_count => $row->{status_8_count},
+        status_9_count => $row->{status_9_count},
+      });
+    });
+  } # status.json
+  
+  return $self->{app}->throw_error (404);
+} # run_message
+
 sub insert_fetch_jobs ($$;%) {
   my ($self, $jobs, %args) = @_;
   my $now = $args{now} // die;
@@ -4138,8 +4443,14 @@ sub insert_fetch_jobs ($$;%) {
   });
 } # insert_fetch_jobs
 
-sub run_fetch_job ($$$) {
-  my ($class, $obj, $job) = @_;
+sub run_fetch_job ($$$$) {
+  my ($class, $obj, $job, $db) = @_;
+  if ($job->{options}->{is_callback}) {
+    return $class->run_fetch_callback_job ($obj, $job, $db);
+  }
+
+  my $now = time;
+  my $ret = {};
 
   my $url = $job->{url} || Web::URL->parse_string ($job->{options}->{url});
   my $client = $obj->{clients}->{$url->get_origin->to_ascii}
@@ -4156,8 +4467,13 @@ sub run_fetch_job ($$$) {
     url => $url,
     method => $job->{options}->{method},
     headers => $headers,
+    basic_auth => $job->{options}->{basic_auth}, # or undef
+    (defined $job->{options}->{json} ? (
+      body => (perl2json_bytes $job->{options}->{json}),
+    ) : ()),
   )->then (sub {
     my $res = $_[0];
+    my $result = {status => $res->status};
     if ($res->status != 200 and $res->status != 201) {
       #push @{$nevent_done->{apploach_errors}},
       #          {request => {url => $url->stringify,
@@ -4168,9 +4484,12 @@ sub run_fetch_job ($$$) {
                            $job->{options}->{name} . ': ' . $url->stringify . ' ' . $res);
       }
       #$m++;
+      $result->{error} = 1;
+      $result->{need_retry} = 1 if int ($res->status / 100) == 5;
     } else {
       #$n++;
     }
+    return $result;
   }, sub {
     my $error = $_[0];
     #push @{$nevent_done->{apploach_errors}},
@@ -4180,9 +4499,152 @@ sub run_fetch_job ($$$) {
     $class->error_log ($obj->{config}, (not 'important'),
                        $job->{options}->{name} . ': ' . $url->stringify . ' ' . $error);
     #$m++;
-  });
-  # can't reject
+    return {error => 1, error_message => '' . $error, need_retry => 1};
+  })->then (sub {
+    if (defined $job->{options}->{request_id}) {
+      my $result = $_[0];
+      $result->{time} = $now;
+      return $db->transaction->then (sub {
+        my $tr = $_[0];
+        return $tr->select ('request_status', {
+          app_id => $job->{app_id},
+          request_id => 0+$job->{options}->{request_id},
+        }, lock => 'update', fields => [
+          'request_id', 'request_set_id', 'status', 'response_log',
+        ])->then (sub {
+          my $req = $_[0]->first;
+          die "Bad |request_id|: |$job->{options}->{request_id}|"
+              unless defined $req;
+          my $log = Dongry::Type->parse ('json', $req->{response_log});
+          push @{$log->{items} ||= []}, $result;
+          my $new_status = $req->{status};
+          if ($new_status == 2) { # waiting
+            if ($result->{need_retry}) {
+              if (@{$log->{items}} < 3) {
+                $ret->{retry_after} = 60;
+              } else {
+                $new_status = 5; # failed
+              }
+            } else {
+              if ($result->{error}) {
+                $new_status = 5; # failed
+              } else {
+                $new_status = 4; # fetched
+              }
+            }
+          }
+          return $tr->update ('request_status', {
+            status => $new_status,
+            response_log => Dongry::Type->serialize ('json', $log),
+            updated => $now,
+          }, where => {
+            app_id => $job->{app_id},
+            request_id => $req->{request_id},
+          })->then (sub {
+            return $class->update_request_set_stats
+                ($tr, $job->{app_id}, $req->{request_set_id}, $now);
+          });
+        })->then (sub {
+          return $tr->commit;
+        });
+      });
+    }
+  })->catch (sub {
+    my $error = $_[0];
+    $class->error_log ($obj->{config}, ('important'),
+                       $job->{options}->{name} . ': ' . $url->stringify . ' ' . $error);
+  })->then (sub {
+    return $ret;
+  }); # can't reject
 } # run_fetch_job
+
+sub run_fetch_callback_job ($$$$) {
+  my ($class, $obj, $job, $db) = @_;
+  my $now = time;
+  my $ret = {};
+
+  return Promise->resolve->then (sub {
+    my $ch = $job->{options}->{callback_channel};
+    if ($ch eq 'vonage') {
+      my $body = decode_web_base64 $job->{options}->{callback_body};
+      my $json = json_bytes2perl $body;
+      if (defined $json and ref $json eq 'HASH' and
+          defined $json->{client_ref} and
+          $json->{client_ref} =~ m{^r[0-9]+$}) {
+        my $request_id = $json->{client_ref};
+        $request_id =~ s/^r//;
+        return $db->transaction->then (sub {
+          my $tr = $_[0];
+          return $tr->select ('request_status', {
+            app_id => $job->{app_id},
+            request_id => 0+$request_id,
+          }, lock => 'update', fields => [
+            'request_id', 'request_set_id', 'status', 'callback_log',
+          ])->then (sub {
+            my $req = $_[0]->first;
+            die "Bad vonage callback" unless defined $req;
+            my $log = Dongry::Type->parse ('json', $req->{callback_log});
+            push @{$log->{items} ||= []}, {body => $json};
+            my $new_status = $req->{status};
+            if ($new_status == 4) { # fetched
+              if (defined $json->{status} and
+                  ($json->{status} eq 'submitted' or
+                   $json->{status} eq 'delivered')) {
+                $new_status = 6; # callbacked, success
+              } else {
+                $new_status = 7; # callbacked, failure
+              }
+            } # else, something wrong
+            return $tr->update ('request_status', {
+              status => $new_status,
+              callback_log => Dongry::Type->serialize ('json', $log),
+              updated => $now,
+            }, where => {
+              app_id => $job->{app_id},
+              request_id => $req->{request_id},
+            })->then (sub {
+              return $class->update_request_set_stats
+                  ($tr, $job->{app_id}, $req->{request_set_id}, $now);
+            });
+          })->then (sub {
+            return $tr->commit;
+          });
+        });
+      } else {
+        die "Bad vonage callback";
+      }
+    } else {
+      die "Bad callback channel |$ch|";
+    }
+  })->catch (sub {
+    my $error = $_[0];
+    $class->error_log ($obj->{config}, ('important'),
+                       $job->{options}->{name} . ': ' . $error);
+  })->then (sub {
+    return $ret;
+  }); # can't reject
+} # run_fetch_callback_job
+
+sub update_request_set_stats ($$$$$) {
+  my ($class, $db, $app_id, $request_set_id, $now) = @_;
+  return $db->execute (q{
+    update `request_set` set
+    status_2_count = (select count(*) from request_status where app_id = :app_id and request_set_id = :request_set_id and status = 2),
+    status_3_count = (select count(*) from request_status where app_id = :app_id and request_set_id = :request_set_id and status = 3),
+    status_4_count = (select count(*) from request_status where app_id = :app_id and request_set_id = :request_set_id and status = 4),
+    status_5_count = (select count(*) from request_status where app_id = :app_id and request_set_id = :request_set_id and status = 5),
+    status_6_count = (select count(*) from request_status where app_id = :app_id and request_set_id = :request_set_id and status = 6),
+    status_7_count = (select count(*) from request_status where app_id = :app_id and request_set_id = :request_set_id and status = 7),
+    status_8_count = (select count(*) from request_status where app_id = :app_id and request_set_id = :request_set_id and status = 8),
+    status_9_count = (select count(*) from request_status where app_id = :app_id and request_set_id = :request_set_id and status = 9),
+    updated = :updated
+    where `app_id` = :app_id and request_set_id = :request_set_id
+  }, {
+    app_id => $app_id,
+    request_set_id => $request_set_id,
+    updated => $now,
+  });
+} # update_request_set_stats
 
 sub run_fetch ($) {
   my $self = $_[0];
@@ -5553,6 +6015,7 @@ sub run ($) {
       $self->{type} eq 'tag' or
       $self->{type} eq 'notification' or
       $self->{type} eq 'alarm' or
+      $self->{type} eq 'message' or
       $self->{type} eq 'stats' or
       $self->{type} eq 'nobj' or
       $self->{type} eq 'fetch') {
