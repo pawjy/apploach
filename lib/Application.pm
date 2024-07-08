@@ -4486,7 +4486,7 @@ sub run_fetch_job ($$$$) {
       $result->{headers}->{$_} = $res->header ($_);
       delete $result->{headers}->{$_} if not defined $result->{headers}->{$_};
     }
-    if (($result->{headers}->{'content-type'} // '') =~ m{^application/(?:[0-9a-zA-Z_.-]\+|)json(?:;|$)}) {
+    if (($result->{headers}->{'content-type'} // '') =~ m{^application/(?:[0-9a-zA-Z_.-]+\+|)json(?:;|$)}) {
       $result->{body_json} = json_bytes2perl $res->body_bytes;
     }
     if ($res->status != 200 and $res->status != 201) {
