@@ -62,6 +62,9 @@ return sub {
       if ($message->{text} =~ /RFAILURE/) {
         $http->set_status (400);
         delete $status->{status};
+      } elsif ($message->{text} =~ /R500/) {
+        $http->set_status (500);
+        delete $status->{status};
       } elsif ($message->{text} =~ /CFAILURE/) {
         $status->{status} = 'unknownstatus';
       } else {
