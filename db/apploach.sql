@@ -417,6 +417,7 @@ create table if not exists `request_set` (
   `status_7_count` int unsigned not null,
   `status_8_count` int unsigned not null,
   `status_9_count` int unsigned not null,
+  `size_for_cost` int unsigned not null,
   primary key (`app_id`, `request_set_id`),
   key (`app_id`, `created`),
   key (`created`),
