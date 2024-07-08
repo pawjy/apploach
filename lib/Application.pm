@@ -4204,6 +4204,7 @@ sub run_message ($) {
           return $self->throw ({reason => 'Bad destination type'})
               unless defined $api_url and $api_url->is_http_s;
 
+          ## <https://developer.vonage.com/en/messaging/sms/guides/custom-sender-id>
           my $from = $self->{app}->text_param ('from_name') // '';
           my $body = $self->{app}->text_param ('body') // '';
           $body =~ s/\x0D\x0A/\x0A/g;
@@ -4489,7 +4490,10 @@ sub run_fetch_job ($$$$) {
     if (($result->{headers}->{'content-type'} // '') =~ m{^application/(?:[0-9a-zA-Z_.-]+\+|)json(?:;|$)}) {
       $result->{body_json} = json_bytes2perl $res->body_bytes;
     }
-    if ($res->status != 200 and $res->status != 201) {
+    if (200 <= $res->status and $res->status <= 205) {
+      ## Vonage returns 202.
+      #$n++;
+    } else {
       #push @{$nevent_done->{apploach_errors}},
       #          {request => {url => $url->stringify,
       #                       method => 'POST'},
@@ -4501,8 +4505,6 @@ sub run_fetch_job ($$$$) {
       #$m++;
       $result->{error} = 1;
       $result->{need_retry} = 1 if int ($res->status / 100) == 5;
-    } else {
-      #$n++;
     }
     return $result;
   }, sub {
