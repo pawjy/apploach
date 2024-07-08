@@ -4224,6 +4224,7 @@ sub run_message ($) {
               status_2_count => 0, status_3_count => 0, status_4_count => 0,
               status_5_count => 0, status_6_count => 0, status_7_count => 0,
               status_8_count => 0, status_9_count => 0,
+              size_for_cost => 0, # XXX
             }]);
           })->then (sub {
             $self->json ({
@@ -4378,6 +4379,8 @@ sub run_message ($) {
     ##                           is 6 (callbacked, success).
     ##   |status_7_count| : Integer : The number of requests whose status
     ##                           is 7 (callbacked, failure).
+    ##   |size_for_cost| : Integer : The size of the message for the cost
+    ##                           calculations.
     ##
     my $set_id = $self->{app}->bare_param ('request_set_id') //
         return $self->throw ({reason => 'Bad |request_set_id|'});
@@ -4387,7 +4390,7 @@ sub run_message ($) {
     }, fields => [
       'updated', 'status_2_count', 'status_3_count', 'status_4_count',
       'status_5_count', 'status_6_count', 'status_7_count', 'status_8_count',
-      'status_9_count',
+      'status_9_count', 'size_for_cost',
     ], limit => 1, source_name => 'master')->then (sub {
       my $row = $_[0]->first || {};
       return $self->json ({
@@ -4400,6 +4403,7 @@ sub run_message ($) {
         status_7_count => $row->{status_7_count},
         status_8_count => $row->{status_8_count},
         status_9_count => $row->{status_9_count},
+        size_for_cost => $row->{size_for_cost},
       });
     });
   } # status.json
