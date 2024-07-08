@@ -4494,7 +4494,11 @@ sub run_fetch_job ($$$$) {
       #$m++;
       $result->{error} = 1;
       $result->{need_retry} = 1 if int ($res->status / 100) == 5;
-      if (($res->header ('content-type') // '') =~ m{^application/json(?:;|$)}) {
+      for (qw(content-type)) {
+        $result->{headers}->{$_} = $res->header ($_);
+        delete $result->{headers}->{$_} if not defined $result->{headers}->{$_};
+      }
+      if (($result->{headers}->{'content-type'} // '') =~ m{^application/json(?:;|$)}) {
         $result->{body_json} = json_bytes2perl $res->body_bytes;
       }
     } else {
