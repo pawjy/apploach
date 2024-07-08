@@ -86,6 +86,118 @@ Test {
   });
 } n => 19, name => 'sent';
 
+Test {
+  my $current = shift;
+  return $current->create (
+    [s1 => nobj => {}],
+  )->then (sub {
+    return $current->json (['message', 'setroutes.json'], {
+      station_nobj_key => $current->o ('s1')->{nobj_key},
+      channel => 'vonage',
+      table => (perl2json_chars {
+        $current->generate_text (t1 => {}) => {
+          addr => $current->generate_message_addr (a1 => {}),
+        },
+      }),
+    });
+  })->then (sub {
+    return $current->json (['message', 'send.json'], {
+      station_nobj_key => $current->o ('s1')->{nobj_key},
+      to => $current->o ('t1'),
+      from_name => $current->generate_key (t2 => {}),
+      body => $current->generate_key (t3 => {prefix => "RFAILURE,"}),
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      ok $result->{json}->{request_set_id};
+      like $result->{res}->body_bytes, qr{"request_set_id":"};
+      $current->set_o (rs1 => $result->{json});
+    } $current->c;
+    return promised_wait_until {
+      return $current->json (['message', 'status.json'], {
+        request_set_id => $current->o ('rs1')->{request_set_id},
+      })->then (sub {
+        my $result = $_[0];
+        return $result->{json}->{status_5_count};
+      });
+    } timeout => 60;
+  })->then (sub {
+    return $current->json (['message', 'status.json'], {
+      request_set_id => $current->o ('rs1')->{request_set_id},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      ok $result->{json}->{updated};
+      is $result->{json}->{status_2_count}, 0;
+      is $result->{json}->{status_3_count}, 0;
+      is $result->{json}->{status_4_count}, 0;
+      is $result->{json}->{status_5_count}, 1;
+      is $result->{json}->{status_6_count}, 0;
+      is $result->{json}->{status_7_count}, 0;
+      is $result->{json}->{status_8_count}, 0;
+      is $result->{json}->{status_9_count}, 0;
+    } $current->c;
+  });
+} n => 11, name => 'response error (400)';
+
+Test {
+  my $current = shift;
+  return $current->create (
+    [s1 => nobj => {}],
+  )->then (sub {
+    return $current->json (['message', 'setroutes.json'], {
+      station_nobj_key => $current->o ('s1')->{nobj_key},
+      channel => 'vonage',
+      table => (perl2json_chars {
+        $current->generate_text (t1 => {}) => {
+          addr => $current->generate_message_addr (a1 => {}),
+        },
+      }),
+    });
+  })->then (sub {
+    return $current->json (['message', 'send.json'], {
+      station_nobj_key => $current->o ('s1')->{nobj_key},
+      to => $current->o ('t1'),
+      from_name => $current->generate_key (t2 => {}),
+      body => $current->generate_key (t3 => {prefix => "R500,"}),
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      ok $result->{json}->{request_set_id};
+      like $result->{res}->body_bytes, qr{"request_set_id":"};
+      $current->set_o (rs1 => $result->{json});
+    } $current->c;
+    return promised_wait_until {
+      return $current->json (['message', 'status.json'], {
+        request_set_id => $current->o ('rs1')->{request_set_id},
+      })->then (sub {
+        my $result = $_[0];
+        return $result->{json}->{status_5_count};
+      });
+    } timeout => 60*5;
+  })->then (sub {
+    return $current->json (['message', 'status.json'], {
+      request_set_id => $current->o ('rs1')->{request_set_id},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      ok $result->{json}->{updated};
+      is $result->{json}->{status_2_count}, 0;
+      is $result->{json}->{status_3_count}, 0;
+      is $result->{json}->{status_4_count}, 0;
+      is $result->{json}->{status_5_count}, 1;
+      is $result->{json}->{status_6_count}, 0;
+      is $result->{json}->{status_7_count}, 0;
+      is $result->{json}->{status_8_count}, 0;
+      is $result->{json}->{status_9_count}, 0;
+    } $current->c;
+  });
+} n => 11, name => 'response error (500)', timeout => 60*5;
+
 RUN;
 
 =head1 LICENSE
