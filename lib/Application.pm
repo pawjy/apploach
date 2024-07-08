@@ -4206,6 +4206,9 @@ sub run_message ($) {
 
           my $from = $self->{app}->text_param ('from_name') // '';
           my $body = $self->{app}->text_param ('body') // '';
+          $body =~ s/\x0D\x0A/\x0A/g;
+          $body =~ s/\x0D/\x0A/g;
+          
           my $now = time;
           my $expires = $row->{expires};
 
@@ -4246,7 +4249,8 @@ sub run_message ($) {
                   from => $from,
                   text => $body,
                   channel => 'sms',
-                  #client_ref => 
+                  #client_ref =>
+                  message_type => 'text',
                 },
               };
 
@@ -4490,6 +4494,9 @@ sub run_fetch_job ($$$$) {
       #$m++;
       $result->{error} = 1;
       $result->{need_retry} = 1 if int ($res->status / 100) == 5;
+      if (($res->header ('content-type') // '') =~ m{^application/json(?:;|$)}) {
+        $result->{body_json} = json_bytes2perl $res->body_bytes;
+      }
     } else {
       #$n++;
     }
