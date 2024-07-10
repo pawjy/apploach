@@ -126,7 +126,7 @@ sub generate_message_addr ($$$) {
 
 sub generate_text ($$$) {
   my ($self, $name, $opts) = @_;
-  my $v = rand;
+  my $v = ($opts->{prefix} // '') . rand;
   $v .= chr int rand 0x10FFFF for 1..rand 10;
   $self->set_o ($name => _sn to_nfkc decode_web_utf8 encode_web_utf8 $v);
 } # generate_text

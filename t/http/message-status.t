@@ -8,9 +8,16 @@ Test {
   my $current = shift;
   return $current->create (
     [s1 => nobj => {}],
+    [s10 => nobj => {}],
+    [s11 => nobj => {}],
+    [s20 => nobj => {}],
+    [s21 => nobj => {}],
+    [s22 => nobj => {}],
   )->then (sub {
     return $current->json (['message', 'setroutes.json'], {
       station_nobj_key => $current->o ('s1')->{nobj_key},
+      operator_nobj_key => $current->o ('s10')->{nobj_key},
+      verb_nobj_key => $current->o ('s11')->{nobj_key},
       channel => 'vonage',
       table => (perl2json_chars {
         $current->generate_text (t1 => {}) => {
@@ -23,7 +30,10 @@ Test {
       station_nobj_key => $current->o ('s1')->{nobj_key},
       to => $current->o ('t1'),
       from_name => $current->generate_key (t2 => {}),
-      body => $current->generate_key (t3 => {}),
+      body => $current->generate_text (t3 => {}),
+      operator_nobj_key => $current->o ('s20')->{nobj_key},
+      verb_nobj_key => $current->o ('s21')->{nobj_key},
+      status_verb_nobj_key => $current->o ('s21')->{nobj_key},
     });
   })->then (sub {
     my $result = $_[0];
@@ -59,6 +69,7 @@ Test {
       is $item->{status_8_count}, 0;
       is $item->{status_9_count}, 0;
       is $item->{request_set_id}, $current->o ('rs1')->{request_set_id};
+      is $item->{size_for_cost}, 1;
       like $result->{res}->body_bytes, qr{"request_set_id":"};
     } $current->c;
     return $current->are_errors (
@@ -80,16 +91,23 @@ Test {
       is 0+@{$result->{json}->{items}}, 0;
     } $current->c;
   });
-} n => 16, name => 'success';
+} n => 17, name => 'success';
 
 Test {
   my $current = shift;
   return $current->create (
     [s1 => nobj => {}],
     [s2 => nobj => {}],
+    [s10 => nobj => {}],
+    [s11 => nobj => {}],
+    [s20 => nobj => {}],
+    [s21 => nobj => {}],
+    [s22 => nobj => {}],
   )->then (sub {
     return $current->json (['message', 'setroutes.json'], {
       station_nobj_key => $current->o ('s1')->{nobj_key},
+      operator_nobj_key => $current->o ('s10')->{nobj_key},
+      verb_nobj_key => $current->o ('s11')->{nobj_key},
       channel => 'vonage',
       table => (perl2json_chars {
         $current->generate_text (t1 => {}) => {
@@ -102,7 +120,10 @@ Test {
       station_nobj_key => $current->o ('s1')->{nobj_key},
       to => $current->o ('t1'),
       from_name => $current->generate_key (t2 => {}),
-      body => $current->generate_key (t3 => {prefix => "CFAILURE"}),
+      body => $current->generate_text (t3 => {prefix => "CFAILURE"}),
+      operator_nobj_key => $current->o ('s20')->{nobj_key},
+      verb_nobj_key => $current->o ('s21')->{nobj_key},
+      status_verb_nobj_key => $current->o ('s21')->{nobj_key},
     });
   })->then (sub {
     my $result = $_[0];
@@ -142,6 +163,8 @@ Test {
       channel => 'vonage',
       table => (perl2json_chars {
       }),
+      operator_nobj_key => $current->o ('s10')->{nobj_key},
+      verb_nobj_key => $current->o ('s11')->{nobj_key},
     });
   })->then (sub {
     return $current->json (['message', 'status.json'], {
@@ -160,9 +183,16 @@ Test {
   my $current = shift;
   return $current->create (
     [s1 => nobj => {}],
+    [s10 => nobj => {}],
+    [s11 => nobj => {}],
+    [s20 => nobj => {}],
+    [s21 => nobj => {}],
+    [s22 => nobj => {}],
   )->then (sub {
     return $current->json (['message', 'setroutes.json'], {
       station_nobj_key => $current->o ('s1')->{nobj_key},
+      operator_nobj_key => $current->o ('s10')->{nobj_key},
+      verb_nobj_key => $current->o ('s11')->{nobj_key},
       channel => 'vonage',
       table => (perl2json_chars {
         $current->generate_text (t1 => {}) => {
@@ -176,6 +206,9 @@ Test {
       to => $current->o ('t1'),
       from_name => $current->generate_key (t2 => {}),
       body => $current->generate_key (t3 => {prefix => "RFAILURE"}),
+      operator_nobj_key => $current->o ('s20')->{nobj_key},
+      verb_nobj_key => $current->o ('s21')->{nobj_key},
+      status_verb_nobj_key => $current->o ('s21')->{nobj_key},
     });
   })->then (sub {
     my $result = $_[0];
@@ -217,9 +250,16 @@ Test {
   my $current = shift;
   return $current->create (
     [s1 => nobj => {}],
+    [s10 => nobj => {}],
+    [s11 => nobj => {}],
+    [s20 => nobj => {}],
+    [s21 => nobj => {}],
+    [s22 => nobj => {}],
   )->then (sub {
     return $current->json (['message', 'setroutes.json'], {
       station_nobj_key => $current->o ('s1')->{nobj_key},
+      operator_nobj_key => $current->o ('s10')->{nobj_key},
+      verb_nobj_key => $current->o ('s11')->{nobj_key},
       channel => 'vonage',
       table => (perl2json_chars {
         $current->generate_text (t1 => {}) => {
@@ -236,6 +276,9 @@ Test {
       to => $current->o ('t1'),
       from_name => $current->generate_key (t2 => {}),
       body => $current->generate_key (t3 => {}),
+      operator_nobj_key => $current->o ('s20')->{nobj_key},
+      verb_nobj_key => $current->o ('s21')->{nobj_key},
+      status_verb_nobj_key => $current->o ('s21')->{nobj_key},
     });
   })->then (sub {
     my $result = $_[0];
@@ -245,6 +288,9 @@ Test {
       to => $current->o ('to2'),
       from_name => $current->generate_key (t4 => {}),
       body => $current->generate_key (t5 => {}),
+      operator_nobj_key => $current->o ('s20')->{nobj_key},
+      verb_nobj_key => $current->o ('s21')->{nobj_key},
+      status_verb_nobj_key => $current->o ('s21')->{nobj_key},
     });
   })->then (sub {
     my $result = $_[0];
@@ -297,9 +343,16 @@ Test {
   my $current = shift;
   return $current->create (
     [s1 => nobj => {}],
+    [s10 => nobj => {}],
+    [s11 => nobj => {}],
+    [s20 => nobj => {}],
+    [s21 => nobj => {}],
+    [s22 => nobj => {}],
   )->then (sub {
     return $current->json (['message', 'setroutes.json'], {
       station_nobj_key => $current->o ('s1')->{nobj_key},
+      operator_nobj_key => $current->o ('s10')->{nobj_key},
+      verb_nobj_key => $current->o ('s11')->{nobj_key},
       channel => 'vonage',
       table => (perl2json_chars {
         $current->generate_text (t1 => {}) => {
@@ -315,6 +368,9 @@ Test {
         to => $current->o ('t1'),
         from_name => "x",
         body => "y",
+        operator_nobj_key => $current->o ('s20')->{nobj_key},
+        verb_nobj_key => $current->o ('s21')->{nobj_key},
+        status_verb_nobj_key => $current->o ('s21')->{nobj_key},
       })->then (sub {
         my $result = $_[0];
         $current->set_o ($key => $result->{json});

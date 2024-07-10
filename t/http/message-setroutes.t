@@ -8,9 +8,16 @@ Test {
   my $current = shift;
   return $current->create (
     [s1 => nobj => {}],
+    [s10 => nobj => {}],
+    [s11 => nobj => {}],
+    [s20 => nobj => {}],
+    [s21 => nobj => {}],
+    [s22 => nobj => {}],
   )->then (sub {
     return $current->json (['message', 'setroutes.json'], {
       station_nobj_key => $current->o ('s1')->{nobj_key},
+      operator_nobj_key => $current->o ('s10')->{nobj_key},
+      verb_nobj_key => $current->o ('s11')->{nobj_key},
       channel => 'vonage',
       table => (perl2json_chars {
         $current->generate_text (t1 => {}) => {
@@ -26,6 +33,8 @@ Test {
     return $current->are_errors (
       [['message', 'setroutes.json'], {
         station_nobj_key => $current->o ('s1')->{nobj_key},
+        operator_nobj_key => $current->o ('s10')->{nobj_key},
+        verb_nobj_key => $current->o ('s11')->{nobj_key},
         channel => 'vonage',
         table => (perl2json_chars {
           $current->o ('t1') => {
@@ -35,6 +44,8 @@ Test {
       }],
       [
         ['new_nobj', 'station'],
+        ['new_nobj', 'operator'],
+        ['new_nobj', 'verb'],
         ['json', 'table'],
         {p => {channel => rand}, status => 400},
         {p => {table => (perl2json_chars [])}, status => 400},
@@ -55,6 +66,9 @@ Test {
       to => $current->o ('t1'),
       from_name => $current->generate_key (t2 => {}),
       body => $current->generate_key (t3 => {}),
+      operator_nobj_key => $current->o ('s20')->{nobj_key},
+      verb_nobj_key => $current->o ('s21')->{nobj_key},
+      status_verb_nobj_key => $current->o ('s21')->{nobj_key},
     });
   })->then (sub {
     my $result = $_[0];
@@ -78,9 +92,13 @@ Test {
   my $current = shift;
   return $current->create (
     [s1 => nobj => {}],
+    [s10 => nobj => {}],
+    [s11 => nobj => {}],
   )->then (sub {
     return $current->json (['message', 'setroutes.json'], {
       station_nobj_key => $current->o ('s1')->{nobj_key},
+      operator_nobj_key => $current->o ('s10')->{nobj_key},
+      verb_nobj_key => $current->o ('s11')->{nobj_key},
       channel => 'vonage',
       table => (perl2json_chars {
         $current->generate_text (t1 => {}) => {
@@ -101,9 +119,13 @@ Test {
   my $current = shift;
   return $current->create (
     [s1 => nobj => {}],
+    [s10 => nobj => {}],
+    [s11 => nobj => {}],
   )->then (sub {
     return $current->json (['message', 'setroutes.json'], {
       station_nobj_key => $current->o ('s1')->{nobj_key},
+      operator_nobj_key => $current->o ('s10')->{nobj_key},
+      verb_nobj_key => $current->o ('s11')->{nobj_key},
       channel => 'vonage',
       table => (perl2json_chars {
         $current->generate_text (t1 => {}) => {
@@ -117,8 +139,26 @@ Test {
     test {
       ok $result->{json}->{expires} > time + 24*60*60;
     } $current->c;
+    return $current->json (['nobj', 'logs.json'], {
+      verb_nobj_key => $current->o ('s11')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $v = $result->{json}->{items}->[0];
+      is $v->{operator_nobj_key}, $current->o ('s10')->{nobj_key};
+      is $v->{target_nobj_key}, $current->o ('s1')->{nobj_key};
+      is $v->{verb_nobj_key}, $current->o ('s11')->{nobj_key};
+      ok $v->{data}->{timestamp};
+      ok $v->{data}->{expires} > $v->{data}->{timestamp};
+      is $v->{data}->{channel}, 'vonage';
+      is 0+keys %{$v->{data}->{table_summary}}, 1;
+      is 0+keys %{$v->{data}->{table_summary}->{$current->o ('t1')}}, 1;
+      ok $v->{data}->{table_summary}->{$current->o ('t1')}->{has_addr};
+    } $current->c, name => 's & v';
   });
-} n => 1, name => 'past expires specified';
+} n => 11, name => 'past expires specified';
 
 RUN;
 
