@@ -424,6 +424,10 @@ create table if not exists `request_set` (
   key (`updated`)
 ) default charset=binary engine=innodb;
 
+alter table `request_set`
+  add column `station_nobj_id` bigint unsigned not null,
+  add key (`app_id`, `station_nobj_id`, `created`);
+
 create table if not exists `message_routes` (
   `app_id` bigint unsigned not null,
   `station_nobj_id` bigint unsigned not null,

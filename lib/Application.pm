@@ -4219,6 +4219,7 @@ sub run_message ($) {
             $request_set_id = $ids->[0];
             return $self->db->insert ('request_set', [{
               ($self->app_id_columns),
+              ($station->to_columns ('station')),
               request_set_id => $ids->[0],
               data => Dongry::Type->serialize ('json', {
                 channel => $data->{channel},
@@ -4370,10 +4371,16 @@ sub run_message ($) {
     ##
     ## Parameters.
     ##
-    ##   |request_set_id| : ID : The request set ID.  Required.
+    ##   NObj (|station|) :      The request's station.
+    ##   |request_set_id| : ID : The request set ID.
+    ##                           Either or both of NObj (|station|) and
+    ##                           |request_set_id| is required.
+    ##   Pages.
     ##
-    ## Returns,
+    ## List response of:
     ##
+    ##   NObj (|station|) :      The request's station.
+    ##   |request_set_id| : ID : The request set ID.
     ##   |status_2_count| : Integer : The number of requests whose status
     ##                           is 2 (waiting).
     ##   |status_4_count| : Integer : The number of requests whose status
@@ -4387,28 +4394,40 @@ sub run_message ($) {
     ##   |size_for_cost| : Integer : The size of the message for the cost
     ##                           calculations.
     ##
-    my $set_id = $self->{app}->bare_param ('request_set_id') //
-        return $self->throw ({reason => 'Bad |request_set_id|'});
-    return $self->db->select ('request_set', {
-      ($self->app_id_columns),
-      request_set_id => $set_id,
-    }, fields => [
-      'updated', 'status_2_count', 'status_3_count', 'status_4_count',
-      'status_5_count', 'status_6_count', 'status_7_count', 'status_8_count',
-      'status_9_count', 'size_for_cost',
-    ], limit => 1, source_name => 'master')->then (sub {
-      my $row = $_[0]->first || {};
-      return $self->json ({
-        updated => $row->{updated},
-        status_2_count => $row->{status_2_count},
-        status_3_count => $row->{status_3_count},
-        status_4_count => $row->{status_4_count},
-        status_5_count => $row->{status_5_count},
-        status_6_count => $row->{status_6_count},
-        status_7_count => $row->{status_7_count},
-        status_8_count => $row->{status_8_count},
-        status_9_count => $row->{status_9_count},
-        size_for_cost => $row->{size_for_cost},
+    my $page = Pager::this_page ($self, limit => 100, max_limit => 10000);
+    return Promise->all ([
+      $self->nobj ('station'),
+    ])->then (sub {
+      my ($station) = @{$_[0]};
+      my $where = {
+        ($self->app_id_columns),
+      };
+      if (not $station->missing) {
+        return $self->throw ({reason => 'Bad |station_nobj_key|'})
+            if $station->is_error;
+        $where->{station_nobj_id} = $station->nobj_id;
+      }
+      my $set_id = $self->{app}->bare_param ('request_set_id');
+      return $self->throw ({reason => 'Bad |request_set_id|'})
+          if not defined $set_id and $station->missing;
+      $where->{request_set_id} = $set_id if defined $set_id;
+      $where->{created} = $page->{value} if defined $page->{value};
+      return $self->db->select ('request_set', $where, fields => [
+        'updated', 'status_2_count', 'status_3_count', 'status_4_count',
+        'status_5_count', 'status_6_count', 'status_7_count', 'status_8_count',
+        'status_9_count', 'size_for_cost',
+        'station_nobj_id', 'created', 'request_set_id',
+      ], source_name => 'master',
+      offset => $page->{offset}, limit => $page->{limit},
+      order => ['created', $page->{order_direction}])->then (sub {
+        my $items = $_[0]->all->to_a;
+        return $self->replace_nobj_ids ($items, ['station'])->then (sub {
+          my $next_page = Pager::next_page $page, $items, 'created';
+          for (@$items) {
+            $_->{request_set_id} .= '';
+          }
+          return $self->json ({items => $items, %$next_page});
+        });
       });
     });
   } # status.json
