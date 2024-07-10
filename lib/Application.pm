@@ -4,6 +4,7 @@ use warnings;
 use Time::HiRes qw(time);
 use JSON::PS;
 use Digest::SHA qw(sha1_hex);
+use POSIX qw(ceil);
 use Dongry::Type;
 use Dongry::Type::JSONPS;
 use Promise;
@@ -4152,6 +4153,10 @@ sub run_message ($) {
     ##   |from_name| : String  : A source name in protocol specific format.
     ##                           Defaulted to the empty string.
     ##   |body| : String       : A text message.  Required.
+    ##   NObj (|operator|)     : The operator.  Required.
+    ##   NObj (|verb|)         : The verb for the log.  Required.
+    ##   NObj (|status_verb|)  : The verb for the log of the status changes.
+    ##                           Required.
     ##
     ## Returns,
     ##
@@ -4159,10 +4164,20 @@ sub run_message ($) {
     ##
     return Promise->all ([
       $self->nobj ('station'),
+      $self->new_nobj_list (['operator', 'verb', 'status_verb']),
     ])->then (sub {
       my ($station) = @{$_[0]};
       return $self->throw ({reason => 'Bad |station_nobj_key|'})
           if $station->is_error;
+      my $operator = $_[0]->[1]->[0];
+      return $self->throw ({reason => 'Bad NObj parameter |operator|'})
+          if $operator->is_error;
+      my $verb = $_[0]->[1]->[1];
+      return $self->throw ({reason => 'Bad NObj parameter |verb|'})
+          if $verb->is_error;
+      my $verb2 = $_[0]->[1]->[2];
+      return $self->throw ({reason => 'Bad NObj parameter |status_verb|'})
+          if $verb2->is_error;
 
       my $now = time;
       return $self->db->select ('message_routes', {
@@ -4209,6 +4224,10 @@ sub run_message ($) {
           my $body = $self->{app}->text_param ('body') // '';
           $body =~ s/\x0D\x0A/\x0A/g;
           $body =~ s/\x0D/\x0A/g;
+
+          my $size = length $body;
+          $size += $body =~ /[^\x{0000}-\x{FFFF}]/g;
+          $size = ceil ($size / 70);
           
           my $now = time;
           my $expires = $row->{expires};
@@ -4229,8 +4248,17 @@ sub run_message ($) {
               status_2_count => 0, status_3_count => 0, status_4_count => 0,
               status_5_count => 0, status_6_count => 0, status_7_count => 0,
               status_8_count => 0, status_9_count => 0,
-              size_for_cost => 0, # XXX
+              size_for_cost => $size,
             }]);
+          })->then (sub {
+            return $self->write_log ($self->db, $operator, $station, $station, $verb, {
+              timestamp => $now,
+              expires => $expires,
+              channel => $data->{channel},
+              request_set_id => '' . $request_set_id,
+              size_for_cost => $size,
+              dest_count => 0+@$dests,
+            });
           })->then (sub {
             $self->json ({
               request_set_id => '' . $request_set_id,
@@ -4254,6 +4282,7 @@ sub run_message ($) {
                   #client_ref =>
                   message_type => 'text',
                 },
+                ($verb2->to_columns ('status_verb')),
               };
 
               return $self->db->uuid_short (2)->then (sub {
@@ -4314,17 +4343,25 @@ sub run_message ($) {
     ##                           address.  Required.
     ##   |expires| : Timestamp : The expiration time.  Defaulted to 7 days
     ##                           from now.
+    ##   NObj (|operator|)     : The operator.  Required.
+    ##   NObj (|verb|)         : The verb for the log.  Required.
     ##
     ## Returns,
     ##
     ##   |expires| : Timestamp : The expiration time.
     ##
     return Promise->all ([
-      $self->new_nobj_list (['station']),
+      $self->new_nobj_list (['station', 'operator', 'verb']),
     ])->then (sub {
       my $station = $_[0]->[0]->[0];
       return $self->throw ({reason => 'Bad NObj parameter |station|'})
           if $station->is_error;
+      my $operator = $_[0]->[0]->[1];
+      return $self->throw ({reason => 'Bad NObj parameter |operator|'})
+          if $operator->is_error;
+      my $verb = $_[0]->[0]->[2];
+      return $self->throw ({reason => 'Bad NObj parameter |verb|'})
+          if $verb->is_error;
       my $table = $self->json_object_param ('table');
       return $self->throw ({reason => 'Bad parameter |table|'})
           unless defined $table and ref $table eq 'HASH';
@@ -4338,7 +4375,7 @@ sub run_message ($) {
           $self->{config}->{'message_api_url.'.$channel};
       return $self->throw ({reason => 'Bad parameter |channel|'})
           unless defined $api_u;
-
+      
       my $now = time;
       my $expires = 0+($self->{app}->bare_param ('expires') || 0);
       $expires = $now + 7*24*60*60 if $expires < $now + 7*24*60*60;
@@ -4357,6 +4394,15 @@ sub run_message ($) {
         data => $self->db->bare_sql_fragment ('VALUES(`data`)'),
         updated => $self->db->bare_sql_fragment ('VALUES(`updated`)'),
         expires => $self->db->bare_sql_fragment ('VALUES(`expires`)'),
+      })->then (sub {
+        return $self->write_log ($self->db, $operator, $station, $station, $verb, {
+          timestamp => $now,
+          expires => $expires,
+          channel => $channel,
+          table_summary => {map {
+            ($_ => {has_addr => defined $table->{$_}->{addr}});
+          } keys %$table},
+        });
       })->then (sub {
         return $self->json ({
           expires => $expires,
