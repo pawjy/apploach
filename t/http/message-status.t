@@ -37,7 +37,7 @@ Test {
         request_set_id => $current->o ('rs1')->{request_set_id},
       })->then (sub {
         my $result = $_[0];
-        return $result->{json}->{status_6_count};
+        return $result->{json}->{items}->[0]->{status_6_count};
       });
     } timeout => 60;
   })->then (sub {
@@ -47,15 +47,19 @@ Test {
   })->then (sub {
     my $result = $_[0];
     test {
-      ok $result->{json}->{updated};
-      is $result->{json}->{status_2_count}, 0;
-      is $result->{json}->{status_3_count}, 0;
-      is $result->{json}->{status_4_count}, 0;
-      is $result->{json}->{status_5_count}, 0;
-      is $result->{json}->{status_6_count}, 1;
-      is $result->{json}->{status_7_count}, 0;
-      is $result->{json}->{status_8_count}, 0;
-      is $result->{json}->{status_9_count}, 0;
+      is 0+@{$result->{json}->{items}}, 1;
+      my $item = $result->{json}->{items}->[0];
+      ok $item->{updated};
+      is $item->{status_2_count}, 0;
+      is $item->{status_3_count}, 0;
+      is $item->{status_4_count}, 0;
+      is $item->{status_5_count}, 0;
+      is $item->{status_6_count}, 1;
+      is $item->{status_7_count}, 0;
+      is $item->{status_8_count}, 0;
+      is $item->{status_9_count}, 0;
+      is $item->{request_set_id}, $current->o ('rs1')->{request_set_id};
+      like $result->{res}->body_bytes, qr{"request_set_id":"};
     } $current->c;
     return $current->are_errors (
       [['message', 'status.json'], {
@@ -63,6 +67,7 @@ Test {
       }],
       [
         {params => {}, status => 400},
+        {params => {station_nobj_key => rand}, status => 400},
       ],
     );
   })->then (sub {
@@ -72,23 +77,16 @@ Test {
   })->then (sub {
     my $result = $_[0];
     test {
-      is $result->{json}->{updated}, undef;
-      is $result->{json}->{status_2_count}, undef;
-      is $result->{json}->{status_3_count}, undef;
-      is $result->{json}->{status_4_count}, undef;
-      is $result->{json}->{status_5_count}, undef;
-      is $result->{json}->{status_6_count}, undef;
-      is $result->{json}->{status_7_count}, undef;
-      is $result->{json}->{status_8_count}, undef;
-      is $result->{json}->{status_9_count}, undef;
+      is 0+@{$result->{json}->{items}}, 0;
     } $current->c;
   });
-} n => 21, name => 'success';
+} n => 16, name => 'success';
 
 Test {
   my $current = shift;
   return $current->create (
     [s1 => nobj => {}],
+    [s2 => nobj => {}],
   )->then (sub {
     return $current->json (['message', 'setroutes.json'], {
       station_nobj_key => $current->o ('s1')->{nobj_key},
@@ -117,7 +115,7 @@ Test {
         request_set_id => $current->o ('rs1')->{request_set_id},
       })->then (sub {
         my $result = $_[0];
-        return $result->{json}->{status_7_count};
+        return $result->{json}->{items}->[0]->{status_7_count};
       });
     } timeout => 60;
   })->then (sub {
@@ -127,18 +125,36 @@ Test {
   })->then (sub {
     my $result = $_[0];
     test {
-      ok $result->{json}->{updated};
-      is $result->{json}->{status_2_count}, 0;
-      is $result->{json}->{status_3_count}, 0;
-      is $result->{json}->{status_4_count}, 0;
-      is $result->{json}->{status_5_count}, 0;
-      is $result->{json}->{status_6_count}, 0;
-      is $result->{json}->{status_7_count}, 1;
-      is $result->{json}->{status_8_count}, 0;
-      is $result->{json}->{status_9_count}, 0;
+      is 0+@{$result->{json}->{items}}, 1;
+      my $item = $result->{json}->{items}->[0];
+      ok $item->{updated};
+      is $item->{status_2_count}, 0;
+      is $item->{status_3_count}, 0;
+      is $item->{status_4_count}, 0;
+      is $item->{status_5_count}, 0;
+      is $item->{status_6_count}, 0;
+      is $item->{status_7_count}, 1;
+      is $item->{status_8_count}, 0;
+      is $item->{status_9_count}, 0;
+    } $current->c;
+    return $current->json (['message', 'setroutes.json'], {
+      station_nobj_key => $current->o ('s2')->{nobj_key},
+      channel => 'vonage',
+      table => (perl2json_chars {
+      }),
+    });
+  })->then (sub {
+    return $current->json (['message', 'status.json'], {
+      station_nobj_key => $current->o ('s2')->{nobj_key},
+      request_set_id => $current->o ('rs1')->{request_set_id},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 0;
     } $current->c;
   });
-} n => 10, name => 'callback reports failure';
+} n => 12, name => 'callback reports failure';
 
 Test {
   my $current = shift;
@@ -172,7 +188,7 @@ Test {
         request_set_id => $current->o ('rs1')->{request_set_id},
       })->then (sub {
         my $result = $_[0];
-        return $result->{json}->{status_5_count};
+        return $result->{json}->{items}->[0]->{status_5_count};
       });
     } timeout => 60;
   })->then (sub {
@@ -182,18 +198,134 @@ Test {
   })->then (sub {
     my $result = $_[0];
     test {
-      ok $result->{json}->{updated};
-      is $result->{json}->{status_2_count}, 0;
-      is $result->{json}->{status_3_count}, 0;
-      is $result->{json}->{status_4_count}, 0;
-      is $result->{json}->{status_5_count}, 1;
-      is $result->{json}->{status_6_count}, 0;
-      is $result->{json}->{status_7_count}, 0;
-      is $result->{json}->{status_8_count}, 0;
-      is $result->{json}->{status_9_count}, 0;
+      is 0+@{$result->{json}->{items}}, 1;
+      my $item = $result->{json}->{items}->[0];
+      ok $item->{updated};
+      is $item->{status_2_count}, 0;
+      is $item->{status_3_count}, 0;
+      is $item->{status_4_count}, 0;
+      is $item->{status_5_count}, 1;
+      is $item->{status_6_count}, 0;
+      is $item->{status_7_count}, 0;
+      is $item->{status_8_count}, 0;
+      is $item->{status_9_count}, 0;
     } $current->c;
   });
-} n => 10, name => 'response failure';
+} n => 11, name => 'response failure';
+
+Test {
+  my $current = shift;
+  return $current->create (
+    [s1 => nobj => {}],
+  )->then (sub {
+    return $current->json (['message', 'setroutes.json'], {
+      station_nobj_key => $current->o ('s1')->{nobj_key},
+      channel => 'vonage',
+      table => (perl2json_chars {
+        $current->generate_text (t1 => {}) => {
+          addr => $current->generate_message_addr (a1 => {}),
+        },
+        $current->generate_text (to2 => {}) => {
+          addr => $current->generate_message_addr (a2 => {}),
+        },
+      }),
+    });
+  })->then (sub {
+    return $current->json (['message', 'send.json'], {
+      station_nobj_key => $current->o ('s1')->{nobj_key},
+      to => $current->o ('t1'),
+      from_name => $current->generate_key (t2 => {}),
+      body => $current->generate_key (t3 => {}),
+    });
+  })->then (sub {
+    my $result = $_[0];
+    $current->set_o (rs1 => $result->{json});
+    return $current->json (['message', 'send.json'], {
+      station_nobj_key => $current->o ('s1')->{nobj_key},
+      to => $current->o ('to2'),
+      from_name => $current->generate_key (t4 => {}),
+      body => $current->generate_key (t5 => {}),
+    });
+  })->then (sub {
+    my $result = $_[0];
+    $current->set_o (rs2 => $result->{json});
+    return promised_wait_until {
+      return $current->json (['message', 'status.json'], {
+        request_set_id => $current->o ('rs2')->{request_set_id},
+      })->then (sub {
+        my $result = $_[0];
+        return $result->{json}->{items}->[0]->{status_6_count};
+      });
+    } timeout => 60;
+  })->then (sub {
+    return $current->json (['message', 'status.json'], {
+      station_nobj_key => $current->o ('s1')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 2;
+      {
+        my $item = $result->{json}->{items}->[0];
+        ok $item->{updated};
+        is $item->{status_2_count}, 0;
+        is $item->{status_3_count}, 0;
+        is $item->{status_4_count}, 0;
+        is $item->{status_5_count}, 0;
+        is $item->{status_6_count}, 1;
+        is $item->{status_7_count}, 0;
+        is $item->{status_8_count}, 0;
+        is $item->{status_9_count}, 0;
+      }
+      {
+        my $item = $result->{json}->{items}->[1];
+        ok $item->{updated};
+        is $item->{status_2_count}, 0;
+        is $item->{status_3_count}, 0;
+        is $item->{status_4_count}, 0;
+        is $item->{status_5_count}, 0;
+        is $item->{status_6_count}, 1;
+        is $item->{status_7_count}, 0;
+        is $item->{status_8_count}, 0;
+        is $item->{status_9_count}, 0;
+      }
+    } $current->c;
+  });
+} n => 19, name => 'pages 1';
+
+Test {
+  my $current = shift;
+  return $current->create (
+    [s1 => nobj => {}],
+  )->then (sub {
+    return $current->json (['message', 'setroutes.json'], {
+      station_nobj_key => $current->o ('s1')->{nobj_key},
+      channel => 'vonage',
+      table => (perl2json_chars {
+        $current->generate_text (t1 => {}) => {
+          addr => $current->generate_message_addr (a1 => {}),
+        },
+      }),
+    });
+  })->then (sub {
+    return promised_for {
+      my $key = shift;
+      return $current->json (['message', 'send.json'], {
+        station_nobj_key => $current->o ('s1')->{nobj_key},
+        to => $current->o ('t1'),
+        from_name => "x",
+        body => "y",
+      })->then (sub {
+        my $result = $_[0];
+        $current->set_o ($key => $result->{json});
+      });
+    } [qw(rs1 rs2 rs3 rs4 rs5)];
+  })->then (sub {
+    return $current->pages_ok ([['message', 'status.json'], {
+      station_nobj_key => $current->o ('s1')->{nobj_key},
+    }] => ['rs1', 'rs2', 'rs3', 'rs4', 'rs5'], 'request_set_id');
+  });
+} n => 1, name => 'pager paging';
 
 RUN;
 

@@ -63,7 +63,7 @@ Test {
         request_set_id => $current->o ('rs1')->{request_set_id},
       })->then (sub {
         my $result = $_[0];
-        return $result->{json}->{status_6_count};
+        return $result->{json}->{items}->[0]->{status_6_count};
       });
     } timeout => 60;
   })->then (sub {
@@ -73,15 +73,16 @@ Test {
   })->then (sub {
     my $result = $_[0];
     test {
-      ok $result->{json}->{updated};
-      is $result->{json}->{status_2_count}, 0;
-      is $result->{json}->{status_3_count}, 0;
-      is $result->{json}->{status_4_count}, 0;
-      is $result->{json}->{status_5_count}, 0;
-      is $result->{json}->{status_6_count}, 1;
-      is $result->{json}->{status_7_count}, 0;
-      is $result->{json}->{status_8_count}, 0;
-      is $result->{json}->{status_9_count}, 0;
+      my $item = $result->{json}->{items}->[0];
+      ok $item->{updated};
+      is $item->{status_2_count}, 0;
+      is $item->{status_3_count}, 0;
+      is $item->{status_4_count}, 0;
+      is $item->{status_5_count}, 0;
+      is $item->{status_6_count}, 1;
+      is $item->{status_7_count}, 0;
+      is $item->{status_8_count}, 0;
+      is $item->{status_9_count}, 0;
     } $current->c;
   });
 } n => 19, name => 'sent';
@@ -119,7 +120,7 @@ Test {
         request_set_id => $current->o ('rs1')->{request_set_id},
       })->then (sub {
         my $result = $_[0];
-        return $result->{json}->{status_5_count};
+        return $result->{json}->{items}->[0]->{status_5_count};
       });
     } timeout => 60;
   })->then (sub {
@@ -129,15 +130,16 @@ Test {
   })->then (sub {
     my $result = $_[0];
     test {
-      ok $result->{json}->{updated};
-      is $result->{json}->{status_2_count}, 0;
-      is $result->{json}->{status_3_count}, 0;
-      is $result->{json}->{status_4_count}, 0;
-      is $result->{json}->{status_5_count}, 1;
-      is $result->{json}->{status_6_count}, 0;
-      is $result->{json}->{status_7_count}, 0;
-      is $result->{json}->{status_8_count}, 0;
-      is $result->{json}->{status_9_count}, 0;
+      my $item = $result->{json}->{items}->[0];
+      ok $item->{updated};
+      is $item->{status_2_count}, 0;
+      is $item->{status_3_count}, 0;
+      is $item->{status_4_count}, 0;
+      is $item->{status_5_count}, 1;
+      is $item->{status_6_count}, 0;
+      is $item->{status_7_count}, 0;
+      is $item->{status_8_count}, 0;
+      is $item->{status_9_count}, 0;
     } $current->c;
   });
 } n => 11, name => 'response error (400)';
@@ -175,7 +177,7 @@ Test {
         request_set_id => $current->o ('rs1')->{request_set_id},
       })->then (sub {
         my $result = $_[0];
-        return $result->{json}->{status_5_count};
+        return $result->{json}->{items}->[0]->{status_5_count};
       });
     } timeout => 60*5;
   })->then (sub {
@@ -185,15 +187,16 @@ Test {
   })->then (sub {
     my $result = $_[0];
     test {
-      ok $result->{json}->{updated};
-      is $result->{json}->{status_2_count}, 0;
-      is $result->{json}->{status_3_count}, 0;
-      is $result->{json}->{status_4_count}, 0;
-      is $result->{json}->{status_5_count}, 1;
-      is $result->{json}->{status_6_count}, 0;
-      is $result->{json}->{status_7_count}, 0;
-      is $result->{json}->{status_8_count}, 0;
-      is $result->{json}->{status_9_count}, 0;
+      my $item = $result->{json}->{items}->[0];
+      ok $item->{updated};
+      is $item->{status_2_count}, 0;
+      is $item->{status_3_count}, 0;
+      is $item->{status_4_count}, 0;
+      is $item->{status_5_count}, 1;
+      is $item->{status_6_count}, 0;
+      is $item->{status_7_count}, 0;
+      is $item->{status_8_count}, 0;
+      is $item->{status_9_count}, 0;
     } $current->c;
   });
 } n => 11, name => 'response error (500)', timeout => 60*5;
