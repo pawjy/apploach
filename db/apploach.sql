@@ -403,6 +403,10 @@ create table if not exists `request_status` (
   key (`expires`)
 ) default charset=binary engine=innodb;
 
+alter table `request_status`
+  add column `station_nobj_id` bigint unsigned not null,
+  add key (`app_id`, `station_nobj_id`, `created`);
+
 create table if not exists `request_set` (
   `app_id` bigint unsigned not null,
   `request_set_id` bigint unsigned not null,

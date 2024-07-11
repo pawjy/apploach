@@ -4291,6 +4291,7 @@ sub run_message ($) {
                 $options->{request_id} = '' . $ids->[0];
                 return $self->db->insert ('request_status', [{
                   ($self->app_id_columns),
+                  ($station->to_columns ('station')),
                   request_set_id => $request_set_id,
                   request_id => $ids->[0],
                   request_data => Dongry::Type->serialize ('json', {
@@ -4340,7 +4341,9 @@ sub run_message ($) {
     ##     /name/              : An application-specific destination key.
     ##     /value/ : Object
     ##       |addr| : String   : The messaging channel-specific destination
-    ##                           address.  Required.
+    ##                           address.
+    ##   |no_new_table| : Boolean : If true, |table| is ignored.
+    ##                           Either |table| or |no_new_table| is required.
     ##   |expires| : Timestamp : The expiration time.  Defaulted to 7 days
     ##                           from now.
     ##   NObj (|operator|)     : The operator.  Required.
@@ -4362,12 +4365,19 @@ sub run_message ($) {
       my $verb = $_[0]->[0]->[2];
       return $self->throw ({reason => 'Bad NObj parameter |verb|'})
           if $verb->is_error;
-      my $table = $self->json_object_param ('table');
-      return $self->throw ({reason => 'Bad parameter |table|'})
-          unless defined $table and ref $table eq 'HASH';
-      for (values %$table) {
+      my $table = undef;
+      my $channel = undef;
+      if ($self->{app}->bare_param ('no_new_table')) {
         return $self->throw ({reason => 'Bad parameter |table|'})
-            unless defined $_ and ref $_ eq 'HASH';
+            if defined $self->{app}->bare_param ('table');
+      } else {
+        $table = $self->json_object_param ('table');
+        return $self->throw ({reason => 'Bad parameter |table|'})
+            unless defined $table and ref $table eq 'HASH';
+        for (values %$table) {
+          return $self->throw ({reason => 'Bad parameter |table|'})
+              unless defined $_ and ref $_ eq 'HASH';
+        }
       }
 
       my $channel = $self->{app}->bare_param ('channel') // '';
@@ -4383,15 +4393,15 @@ sub run_message ($) {
       return $self->db->insert ('message_routes', [{
         ($self->app_id_columns),
         ($station->to_columns ('station')),
-        data => Dongry::Type->serialize ('json', {
+        data => (defined $table ? Dongry::Type->serialize ('json', {
           channel => $channel,
           table => $table,
-        }),
+        }) : '{}'),
         expires => $expires,
         created => $now,
         updated => $now,
       }], duplicate => {
-        data => $self->db->bare_sql_fragment ('VALUES(`data`)'),
+        (defined $table ? (data => $self->db->bare_sql_fragment ('VALUES(`data`)')) : ()),
         updated => $self->db->bare_sql_fragment ('VALUES(`updated`)'),
         expires => $self->db->bare_sql_fragment ('VALUES(`expires`)'),
       })->then (sub {
@@ -4399,10 +4409,19 @@ sub run_message ($) {
           timestamp => $now,
           expires => $expires,
           channel => $channel,
-          table_summary => {map {
+          (defined $table ? (table_summary => {map {
             ($_ => {has_addr => defined $table->{$_}->{addr}});
-          } keys %$table},
+          } keys %$table}) : ()),
         });
+      })->then (sub {
+        return $self->db->update ('request_status', {
+          expires => $expires,
+          updated => $now,
+        }, where => {
+          ($self->app_id_columns),
+          ($station->to_columns ('station')),
+        });
+        # fetch_job's expires is left unchanged
       })->then (sub {
         return $self->json ({
           expires => $expires,
@@ -4477,6 +4496,8 @@ sub run_message ($) {
       });
     });
   } # status.json
+
+  # XXX failure list API
   
   return $self->{app}->throw_error (404);
 } # run_message
@@ -4622,7 +4643,7 @@ sub run_fetch_job ($$$$) {
           }, where => {
             app_id => $job->{app_id},
             request_id => $req->{request_id},
-          })->then (sub {
+          })->then (sub { # XXX permanent log
             return $class->update_request_set_stats
                 ($tr, $job->{app_id}, $req->{request_set_id}, $now);
           });
@@ -4684,7 +4705,7 @@ sub run_fetch_callback_job ($$$$) {
             }, where => {
               app_id => $job->{app_id},
               request_id => $req->{request_id},
-            })->then (sub {
+            })->then (sub { # XXX permanent log
               return $class->update_request_set_stats
                   ($tr, $job->{app_id}, $req->{request_set_id}, $now);
             });
