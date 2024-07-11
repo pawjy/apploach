@@ -2,3 +2,4 @@ Data::Dumper
 Digest::SHA
 Path::Tiny
 Time::HiRes
+POSIX

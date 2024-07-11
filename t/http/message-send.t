@@ -54,6 +54,9 @@ Test {
       }],
       [
         ['get_nobj', 'station'],
+        ['new_nobj', 'operator'],
+        ['new_nobj', 'verb'],
+        ['new_nobj', 'status_verb'],
         {p => {to => rand}, status => 400},
       ],
     );
