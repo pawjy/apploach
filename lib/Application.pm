@@ -4189,23 +4189,31 @@ sub run_message ($) {
         my $data = Dongry::Type->parse ('json', $row->{data});
 
         my $dests = [];
+        my $dest_info = {};
         if ($self->{app}->bare_param ('broadcast')) {
           if (defined $self->{app}->text_param ('to')) {
             return $self->throw ({reason => 'Both |to| and |broacast| are specified'});
           }
 
           # XXX exclusions
+          for my $dest (values %{$data->{table}}) {
+            push @$dests, $dest->{addr} if defined $dest->{addr};
+            push @$dests, $_ for @{$dest->{cc_addrs} or []};
+          }
           $dests = [values %{$data->{table}}];
+          $dest_info->{broadcast} = 1;
         } else {
           my $dest = {};
-          if (defined $row) {
-            $dest = $data->{table}->{$self->{app}->text_param ('to') // ''} // {};
-          }
+          my $to = $self->{app}->text_param ('to') // '';
+          $dest = $data->{table}->{$to} // {} if defined $row;
           return $self->throw ({reason => 'Bad |to|'})
-              unless defined $dest->{addr};
-          push @$dests, $dest;
+              unless defined $dest->{addr} or @{$dest->{cc_addrs} or []};
+          push @$dests, $dest->{addr} if defined $dest->{addr};
+          push @$dests, $_ for @{$dest->{cc_addrs} or []};
+          $dest_info->{to} = $to;
         }
-
+        $dest_info->{count} = 0+@$dests;
+        
         if ($data->{channel} eq 'vonage') { ## Vonage's Messages API for SMS
           my $key = $self->{config}->{'message_api_key.'.$data->{channel}.'.'.$self->{app_id}} //
               $self->{config}->{'message_api_key.'.$data->{channel}};
@@ -4242,6 +4250,7 @@ sub run_message ($) {
               request_set_id => $ids->[0],
               data => Dongry::Type->serialize ('json', {
                 channel => $data->{channel},
+                destination => $dest_info,
               }),
               created => $now,
               updated => $now,
@@ -4257,16 +4266,18 @@ sub run_message ($) {
               channel => $data->{channel},
               request_set_id => '' . $request_set_id,
               size_for_cost => $size,
-              dest_count => 0+@$dests,
+              destination => $dest_info,
             });
           })->then (sub {
             $self->json ({
               request_set_id => '' . $request_set_id,
             });
           })->then (sub {
+            my $found = {};
             return promised_for {
-              my $dest = shift;
-
+              my $dest_addr = shift;
+              next if $found->{$dest_addr}++;
+              
               ## <https://developer.vonage.com/en/api/messages-olympus>
               my $options = {
                 name => 'message: ' . $self->{app_id} . ': ' . $data->{channel} . ': ' . $request_set_id,
@@ -4275,7 +4286,7 @@ sub run_message ($) {
                 headers => {'content-type' => 'application/json'},
                 basic_auth => [$key, $secret],
                 json => {
-                  to => $dest->{addr},
+                  to => $dest_addr,
                   from => $from,
                   text => $body,
                   channel => 'sms',
@@ -4339,9 +4350,12 @@ sub run_message ($) {
     ##   |channel| : String    : The messaging channel.  Required.
     ##   |table| : Object      : The routing table.  Required.
     ##     /name/              : An application-specific destination key.
-    ##     /value/ : Object
+    ##     /value/ : Object :
     ##       |addr| : String   : The messaging channel-specific destination
     ##                           address.
+    ##       |cc_addrs| : Array? :
+    ##         String          : The messaging-channel specific destination
+    ##                           addresses.
     ##   |no_new_table| : Boolean : If true, |table| is ignored.
     ##                           Either |table| or |no_new_table| is required.
     ##   |expires| : Timestamp : The expiration time.  Defaulted to 7 days
@@ -4377,6 +4391,11 @@ sub run_message ($) {
         for (values %$table) {
           return $self->throw ({reason => 'Bad parameter |table|'})
               unless defined $_ and ref $_ eq 'HASH';
+          if (defined $_->{cc_addrs}) {
+            return $self->throw ({reason => 'Bad parameter |table|'})
+                unless ref $_->{cc_addrs} eq 'ARRAY' and
+                       not grep { not defined $_ } @{$_->{cc_addrs}};
+          }
         }
       }
 
@@ -4410,7 +4429,8 @@ sub run_message ($) {
           expires => $expires,
           channel => $channel,
           (defined $table ? (table_summary => {map {
-            ($_ => {has_addr => defined $table->{$_}->{addr}});
+            ($_ => {has_addr => defined $table->{$_}->{addr},
+                    cc_addr_count => 0+@{$table->{$_}->{cc_addrs} or []}});
           } keys %$table}) : ()),
         });
       })->then (sub {
@@ -4458,6 +4478,12 @@ sub run_message ($) {
     ##                           is 7 (callbacked, failure).
     ##   |size_for_cost| : Integer : The size of the message for the cost
     ##                           calculations.
+    ##   |created| : Timestamp : The request's created time.
+    ##   |updated| : Timestamp : The request's updated time.
+    ##   |data| : Object :
+    ##     |channel| : String  : The request's destination channel.
+    ##     |broadcast| : Boolean : Whether the request is a broadcast.
+    ##     |to| : String       : The request's destination identifier.
     ##
     my $page = Pager::this_page ($self, limit => 100, max_limit => 10000);
     return Promise->all ([
@@ -4482,6 +4508,7 @@ sub run_message ($) {
         'status_5_count', 'status_6_count', 'status_7_count', 'status_8_count',
         'status_9_count', 'size_for_cost',
         'station_nobj_id', 'created', 'request_set_id',
+        'data',
       ], source_name => 'master',
       offset => $page->{offset}, limit => $page->{limit},
       order => ['created', $page->{order_direction}])->then (sub {
@@ -4490,6 +4517,7 @@ sub run_message ($) {
           my $next_page = Pager::next_page $page, $items, 'created';
           for (@$items) {
             $_->{request_set_id} .= '';
+            $_->{data} = Dongry::Type->parse ('json', $_->{data});
           }
           return $self->json ({items => $items, %$next_page});
         });
