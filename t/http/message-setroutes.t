@@ -58,6 +58,15 @@ Test {
         {p => {table => (perl2json_chars [{
           hoge => undef,
         }])}, status => 400},
+        {p => {table => (perl2json_chars [{
+          hoge => {cc_addrs => rand},
+        }])}, status => 400},
+        {p => {table => (perl2json_chars [{
+          hoge => {cc_addrs => {}},
+        }])}, status => 400},
+        {p => {table => (perl2json_chars [{
+          hoge => {cc_addrs => ["a", "b", undef]},
+        }])}, status => 400},
       ],
     );
   })->then (sub {
@@ -154,7 +163,7 @@ Test {
       ok $v->{data}->{expires} > $v->{data}->{timestamp};
       is $v->{data}->{channel}, 'vonage';
       is 0+keys %{$v->{data}->{table_summary}}, 1;
-      is 0+keys %{$v->{data}->{table_summary}->{$current->o ('t1')}}, 1;
+      is 0+keys %{$v->{data}->{table_summary}->{$current->o ('t1')}}, 2;
       ok $v->{data}->{table_summary}->{$current->o ('t1')}->{has_addr};
     } $current->c, name => 's & v';
   });
@@ -232,11 +241,12 @@ Test {
       is $v->{data}->{expires}, $current->o ('time2');
       is $v->{data}->{channel}, 'vonage';
       is 0+keys %{$v->{data}->{table_summary}}, 1;
-      is 0+keys %{$v->{data}->{table_summary}->{$current->o ('t1')}}, 1;
+      is 0+keys %{$v->{data}->{table_summary}->{$current->o ('t1')}}, 2;
       ok $v->{data}->{table_summary}->{$current->o ('t1')}->{has_addr};
+      is $v->{data}->{table_summary}->{$current->o ('t1')}->{cc_addr_count}, 0;
     } $current->c, name => 's & v';
   });
-} n => 12, name => 'table changed';
+} n => 13, name => 'table changed';
 
 Test {
   my $current = shift;
