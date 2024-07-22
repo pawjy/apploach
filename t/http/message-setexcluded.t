@@ -131,8 +131,38 @@ Test {
     test {
       is $count, 2;
     } $current->c;
+    return $current->json (['message', 'setexcluded.json'], {
+      station_nobj_key => $current->o ('s1')->{nobj_key},
+      operator_nobj_key => $current->o ('s10')->{nobj_key},
+      verb_nobj_key => $current->o ('s11')->{nobj_key},
+      to => [$current->o ('to1')],
+    });
+  })->then (sub {
+    return $current->json (['nobj', 'logs.json'], {
+      verb_nobj_key => $current->o ('s11')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 3;
+    } $current->c;
+    return $current->json (['message', 'setexcluded.json'], {
+      station_nobj_key => $current->o ('s1')->{nobj_key},
+      operator_nobj_key => $current->o ('s10')->{nobj_key},
+      verb_nobj_key => $current->o ('s11')->{nobj_key},
+      to => [$current->generate_key (to12 => {})],
+    });
+  })->then (sub {
+    return $current->json (['nobj', 'logs.json'], {
+      verb_nobj_key => $current->o ('s11')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 4;
+    } $current->c;
   });
-} n => 20, name => 'exs';
+} n => 22, name => 'exs';
 
 RUN;
 

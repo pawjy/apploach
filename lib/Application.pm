@@ -4488,21 +4488,31 @@ sub run_message ($) {
       
       my $now = time;
       my $tos = $self->{app}->text_param_list ('to');
-      return $self->db->insert ('message_routes_excluded', [{
+      $tos = [sort { $a cmp $b } @$tos];
+      return $self->db->select ('message_routes_excluded', {
         ($self->app_id_columns),
         ($station->to_columns ('station')),
-        data => Dongry::Type->serialize ('json', {
-          tos => [@$tos],
-        }),
-        created => $now,
-        updated => $now,
-      }], duplicate => {
-        updated => $self->db->bare_sql_fragment ('VALUES(`updated`)'),
-        data => $self->db->bare_sql_fragment ('VALUES(`data`)'),
-      })->then (sub {
-        return $self->write_log ($self->db, $operator, $station, $station, $verb, {
-          timestamp => $now,
-          tos => $tos,
+      }, field => 'data', source_name => 'master')->then (sub {
+        my $v = $_[0]->first;
+        my $data = defined $v ? Dongry::Type->parse ('json', $v->{data}) : {};
+        my $old_tos = $data->{tos} || [];
+        return if @$tos == @$old_tos and (join $;, @$tos) eq (join $;, @$old_tos);
+        return $self->db->insert ('message_routes_excluded', [{
+          ($self->app_id_columns),
+          ($station->to_columns ('station')),
+          data => Dongry::Type->serialize ('json', {
+            tos => $tos,
+          }),
+          created => $now,
+          updated => $now,
+        }], duplicate => {
+          updated => $self->db->bare_sql_fragment ('VALUES(`updated`)'),
+          data => $self->db->bare_sql_fragment ('VALUES(`data`)'),
+        })->then (sub {
+          return $self->write_log ($self->db, $operator, $station, $station, $verb, {
+            timestamp => $now,
+            tos => $tos,
+          });
         });
       })->then (sub {
         return $self->json ({
