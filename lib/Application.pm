@@ -4179,28 +4179,38 @@ sub run_message ($) {
       return $self->throw ({reason => 'Bad NObj parameter |status_verb|'})
           if $verb2->is_error;
 
+      my $broadcast = $self->{app}->bare_param ('broadcast');
       my $now = time;
-      return $self->db->select ('message_routes', {
-        ($self->app_id_columns),
-        ($station->to_columns ('station')),
-        expires => {'>', $now},
-      }, fields => ['data', 'expires'], source_name => 'master')->then (sub {
-        my $row = $_[0]->first;
-        my $data = Dongry::Type->parse ('json', $row->{data});
+      return Promise->all ([
+        $self->db->select ('message_routes', {
+          ($self->app_id_columns),
+          ($station->to_columns ('station')),
+          expires => {'>', $now},
+        }, fields => ['data', 'expires'], source_name => 'master'),
+        ($broadcast ? $self->db->select ('message_routes_excluded', {
+          ($self->app_id_columns),
+          ($station->to_columns ('station')),
+        }, fields => ['data'], source_name => 'master') : undef),
+      ])->then (sub {
+        my $row = $_[0]->[0]->first;
+        my $xrow = defined $_[0]->[1] ? $_[0]->[1]->first : undef;
+        my $data = defined $row ? Dongry::Type->parse ('json', $row->{data}) : {};
+        my $xdata = defined $xrow ? Dongry::Type->parse ('json', $xrow->{data}) : {};
+        my $xtos = {map { $_ => 1 } @{$xdata->{tos} or []}};
 
         my $dests = [];
         my $dest_info = {};
-        if ($self->{app}->bare_param ('broadcast')) {
+        if ($broadcast) {
           if (defined $self->{app}->text_param ('to')) {
             return $self->throw ({reason => 'Both |to| and |broacast| are specified'});
           }
 
-          # XXX exclusions
-          for my $dest (values %{$data->{table}}) {
+          for my $to (keys %{$data->{table}}) {
+            next if $xtos->{$to};
+            my $dest = $data->{table}->{$to};
             push @$dests, $dest->{addr} if defined $dest->{addr};
             push @$dests, $_ for @{$dest->{cc_addrs} or []};
           }
-          $dests = [values %{$data->{table}}];
           $dest_info->{broadcast} = 1;
         } else {
           my $dest = {};
@@ -4380,7 +4390,6 @@ sub run_message ($) {
       return $self->throw ({reason => 'Bad NObj parameter |verb|'})
           if $verb->is_error;
       my $table = undef;
-      my $channel = undef;
       if ($self->{app}->bare_param ('no_new_table')) {
         return $self->throw ({reason => 'Bad parameter |table|'})
             if defined $self->{app}->bare_param ('table');
@@ -4449,7 +4458,59 @@ sub run_message ($) {
       });
     });
   } # setroutes.json
-  
+
+  if (@{$self->{path}} == 1 and
+      $self->{path}->[0] eq 'setexcluded.json') {
+    ## /{app_id}/message/setexcluded.json - Set destination excluded list.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|station|)      : The messaging station.  Required.
+    ##   |to| : String         : The destination.  Zero or more paramaters
+    ##                           can be sepcified.
+    ##   NObj (|operator|)     : The operator.  Required.
+    ##   NObj (|verb|)         : The verb for the log.  Required.
+    ##
+    ## Returns nothing.
+    ##
+    return Promise->all ([
+      $self->new_nobj_list (['station', 'operator', 'verb']),
+    ])->then (sub {
+      my $station = $_[0]->[0]->[0];
+      return $self->throw ({reason => 'Bad NObj parameter |station|'})
+          if $station->is_error;
+      my $operator = $_[0]->[0]->[1];
+      return $self->throw ({reason => 'Bad NObj parameter |operator|'})
+          if $operator->is_error;
+      my $verb = $_[0]->[0]->[2];
+      return $self->throw ({reason => 'Bad NObj parameter |verb|'})
+          if $verb->is_error;
+      
+      my $now = time;
+      my $tos = $self->{app}->text_param_list ('to');
+      return $self->db->insert ('message_routes_excluded', [{
+        ($self->app_id_columns),
+        ($station->to_columns ('station')),
+        data => Dongry::Type->serialize ('json', {
+          tos => [@$tos],
+        }),
+        created => $now,
+        updated => $now,
+      }], duplicate => {
+        updated => $self->db->bare_sql_fragment ('VALUES(`updated`)'),
+        data => $self->db->bare_sql_fragment ('VALUES(`data`)'),
+      })->then (sub {
+        return $self->write_log ($self->db, $operator, $station, $station, $verb, {
+          timestamp => $now,
+          tos => $tos,
+        });
+      })->then (sub {
+        return $self->json ({
+        });
+      });
+    });
+  } # setexcluded.json
+
   if (@{$self->{path}} == 1 and
       $self->{path}->[0] eq 'status.json') {
     ## /{app_id}/message/status.json - Set message submission's request set's status.
