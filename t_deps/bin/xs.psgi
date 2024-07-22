@@ -71,6 +71,7 @@ return sub {
         $status->{status} = 'submitted';
       }
       $status->{client_ref} = $message->{client_ref};
+      warn "SMS To: |$message->{to}|\n";
       $message->{to} =~ /^([0-9]*)/;
       my $app_id = $1;
       $http->send_response_body_as_ref (\perl2json_bytes $json);

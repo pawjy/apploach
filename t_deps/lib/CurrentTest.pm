@@ -675,6 +675,22 @@ sub wait_for_count ($$$) {
   });
 } # wait_for_count
 
+sub get_message_count ($$) {
+  my ($self, $to) = @_;
+  my $url = Web::URL->parse_string (q<http://xs.server.test/vonage/get>);
+  my $client = $self->client_for ($url);
+  return $client->request (url => $url, headers => {
+    'x-test' => 1,
+  }, params => {
+    to => $to,
+  })->then (sub {
+    my $res = $_[0];
+    die $res unless $res->status == 200;
+    my $json = json_bytes2perl $res->body_bytes;
+    return 0+@$json;
+  });
+} # get_message_count
+
 sub wait_for_messages ($$;$$) {
   my ($self, $to, $n) = @_;
   $n //= 1;
