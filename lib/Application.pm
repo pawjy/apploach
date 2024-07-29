@@ -5156,6 +5156,12 @@ sub expire_old_nevents ($) {
     $self->db->delete ('hook', {
       expires => {'<=', $now},
     }, source_name => 'master'),
+    $self->db->delete ('request_status', {
+      expires => {'<=', $now},
+    }, source_name => 'master'),
+    $self->db->delete ('message_routes', {
+      expires => {'<=', $now},
+    }, source_name => 'master'),
   ]);
 } # expire_old_nevents
 
