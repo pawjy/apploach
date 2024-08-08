@@ -22,6 +22,7 @@ use Web::DateTime::Clock;
 use Web::DateTime::Parser;
 use Web::Transport::BasicClient;
 use Crypt::Perl::ECDSA::Parse;
+use Crypt::OpenSSL::RSA;
 
 use NObj;
 use Pager;
@@ -4229,10 +4230,16 @@ sub run_message ($) {
               $self->{config}->{'message_api_key.'.$data->{channel}};
           my $secret = $self->{config}->{'message_api_secret.'.$data->{channel}.'.'.$self->{app_id}} //
               $self->{config}->{'message_api_secret.'.$data->{channel}};
+          my $aid = $self->{config}->{'message_api_application_id.'.$data->{channel}.'.'.$self->{app_id}} //
+              $self->{config}->{'message_api_application_id.'.$data->{channel}};
+          my $pk = $self->{config}->{'message_api_private_key.'.$data->{channel}.'.'.$self->{app_id}} //
+              $self->{config}->{'message_api_private_key.'.$data->{channel}};
           my $api_u = $self->{config}->{'message_api_url.'.$data->{channel}.'.'.$self->{app_id}} //
               $self->{config}->{'message_api_url.'.$data->{channel}};
           return $self->throw ({reason => 'Bad destination type'})
-              unless defined $api_u and defined $key and defined $secret;
+              unless defined $api_u and
+                     ((defined $key and defined $secret) or
+                      (defined $aid and defined $pk));
           my $api_url = Web::URL->parse_string ($api_u);
           return $self->throw ({reason => 'Bad destination type'})
               unless defined $api_url and $api_url->is_http_s;
@@ -4294,7 +4301,6 @@ sub run_message ($) {
                 url => $api_url,
                 method => 'POST',
                 headers => {'content-type' => 'application/json'},
-                basic_auth => [$key, $secret],
                 json => {
                   to => $dest_addr,
                   from => $from,
@@ -4305,6 +4311,31 @@ sub run_message ($) {
                 },
                 ($verb2->to_columns ('status_verb')),
               };
+              if (defined $aid and defined $pk) {
+                my $header = {
+                  alg => 'RS256',
+                  typ => 'JWT'
+                };
+                my $payload = {
+                  application_id => $aid,
+                  exp => $expires + 600,
+                  iat => $now,
+                  nbf => $now,
+                  jti => '' . rand,
+                };
+                my $token = 
+                    (encode_web_base64url perl2json_bytes $header) . '.' .
+                    (encode_web_base64url perl2json_bytes $payload);
+                
+                my $key = Crypt::OpenSSL::RSA->new_private_key ($pk);
+                $key->use_sha256_hash;
+
+                my $sig = $key->sign ($token);
+                my $jwt = $token . "." . encode_web_base64url $sig;
+                $options->{headers}->{authorization} = 'Bearer ' . $jwt;
+              } else {
+                $options->{basic_auth} = [$key, $secret];
+              }
 
               return $self->db->uuid_short (2)->then (sub {
                 my $ids = $_[0];
