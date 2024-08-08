@@ -66,8 +66,13 @@ Test {
     my $messages = $_[0];
     test {
       my $m = $messages->[0];
-      ok $m->{api_key};
-      ok $m->{api_secret};
+      if (defined $m->{api_key}) {
+        ok $m->{api_key};
+        ok $m->{api_secret};
+      } else {
+        ok $m->{jwt};
+        ok 1;
+      }
       is $m->{channel}, 'sms';
       ok $m->{client_ref};
       is $m->{to}, $current->o ('a1');
@@ -305,8 +310,13 @@ Test {
     my $messages = $_[0];
     test {
       my $m = $messages->[0];
-      ok $m->{api_key};
-      ok $m->{api_secret};
+      if (defined $m->{api_key}) {
+        ok $m->{api_key};
+        ok $m->{api_secret};
+      } else {
+        ok $m->{jwt};
+        ok 1;
+      }
       is $m->{channel}, 'sms';
       ok $m->{client_ref};
       is $m->{to}, $current->o ('a1');
@@ -318,8 +328,13 @@ Test {
     my $messages = $_[0];
     test {
       my $m = $messages->[0];
-      ok $m->{api_key};
-      ok $m->{api_secret};
+      if (defined $m->{api_key}) {
+        ok $m->{api_key};
+        ok $m->{api_secret};
+      } else {
+        ok $m->{jwt};
+        ok 1;
+      }
       is $m->{channel}, 'sms';
       ok $m->{client_ref};
       is $m->{to}, $current->o ('a2');
@@ -331,8 +346,13 @@ Test {
     my $messages = $_[0];
     test {
       my $m = $messages->[0];
-      ok $m->{api_key};
-      ok $m->{api_secret};
+      if (defined $m->{api_key}) {
+        ok $m->{api_key};
+        ok $m->{api_secret};
+      } else {
+        ok $m->{jwt};
+        ok 1;
+      }
       is $m->{channel}, 'sms';
       ok $m->{client_ref};
       is $m->{to}, $current->o ('a3');
@@ -344,8 +364,13 @@ Test {
     my $messages = $_[0];
     test {
       my $m = $messages->[0];
-      ok $m->{api_key};
-      ok $m->{api_secret};
+      if (defined $m->{api_key}) {
+        ok $m->{api_key};
+        ok $m->{api_secret};
+      } else {
+        ok $m->{jwt};
+        ok 1;
+      }
       is $m->{channel}, 'sms';
       ok $m->{client_ref};
       is $m->{to}, $current->o ('a4');

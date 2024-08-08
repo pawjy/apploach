@@ -59,6 +59,9 @@ return sub {
         api_key => $http->request_auth->{userid},
         api_secret => $http->request_auth->{password},
       };
+      if (($http->get_request_header ('authorization') // '') =~ /^Bearer (.+)$/) {
+        $message->{jwt} = $1;
+      }
       if ($message->{text} =~ /RFAILURE/) {
         $http->set_status (400);
         delete $status->{status};
