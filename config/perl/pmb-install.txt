@@ -45,7 +45,7 @@ Test::Class~0.52
 Test::Deep~1.204
 Test::Exception~0.43
 Test::FailWarnings~0.008
-Test::More~1.302202
+Test::More~1.302203
 Time::HiRes~1.9764
 Time::Local~1.35
 Try::Tiny~0.32
