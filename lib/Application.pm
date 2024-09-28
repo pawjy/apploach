@@ -4818,18 +4818,20 @@ sub run_fetch_callback_job ($$$$) {
             die "Bad vonage callback" unless defined $req;
             my $log = Dongry::Type->parse ('json', $req->{callback_log});
             push @{$log->{items} ||= []}, {body => $json};
-            my $new_status = $req->{status};
+            my $new_status;
             if ($new_status == 4) { # fetched
               if (defined $json->{status} and
-                  ($json->{status} eq 'submitted' or
-                   $json->{status} eq 'delivered')) {
+                  $json->{status} eq 'delivered') {
                 $new_status = 6; # callbacked, success
+              } elsif (defined $json->{status} and
+                       $json->{status} eq 'submitted') {
+                #
               } else {
                 $new_status = 7; # callbacked, failure
               }
             } # else, something wrong
             return $tr->update ('request_status', {
-              status => $new_status,
+              (defined $new_status ? (status => $new_status) : ()),
               callback_log => Dongry::Type->serialize ('json', $log),
               updated => $now,
             }, where => {
