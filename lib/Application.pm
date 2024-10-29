@@ -2741,6 +2741,9 @@ sub run_tag ($) {
     ##   |tag| : String : The tag item's tag name.  Zero or more
     ##   parameters can be specified.
     ##
+    ##   |timestamp| : Timestamp? : The tag item's timestamp.  Defaulted
+    ##                              to now.
+    ##
     ## Response.  No additional data.
     return Promise->all ([
       $self->new_nobj_list (['context', 'item']),
@@ -2748,7 +2751,7 @@ sub run_tag ($) {
       my ($context, $item) = @{$_[0]->[0]};
       my $tags = $self->{app}->text_param_list ('tag');
       my $score = $self->{app}->bare_param ('score');
-      my $time = time;
+      my $time = 0+($self->{app}->bare_param ('timestamp') || time);
       return $self->publish_tags ($self->db, $context, $item, $tags, $score, $time);
     })->then (sub {
       return $self->json ({});

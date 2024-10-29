@@ -375,11 +375,88 @@ Test {
   });
 } n => 13, name => 'tag delete';
 
+Test {
+  my $current = shift;
+  return $current->create (
+    [t1 => nobj => {}],
+    [i1 => nobj => {}],
+  )->then (sub {
+    return $current->json (['tag', 'publish.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      tag => [
+        $current->generate_text ('name1' => {}),
+        $current->generate_text ('name2' => {}),
+      ],
+      item_nobj_key => $current->o ('i1')->{nobj_key},
+      timestamp => $current->generate_time (time1 => {}),
+    });
+  })->then (sub {
+    return $current->json (['tag', 'items.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      tag_name => $current->o ('name1'),
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $item = $result->{json}->{items}->[0];
+      is $item->{item_nobj_key}, $current->o ('i1')->{nobj_key};
+      is $item->{timestamp}, $current->o ('time1');
+      is $item->{score}, 0;
+    } $current->c;
+    return $current->json (['tag', 'items.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      tag_name => $current->o ('name2'),
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $item = $result->{json}->{items}->[0];
+      is $item->{item_nobj_key}, $current->o ('i1')->{nobj_key};
+      is $item->{timestamp}, $current->o ('time1');
+      is $item->{score}, 0;
+    } $current->c;
+    return $current->json (['tag', 'publish.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      tag => [
+        $current->o ('name1'),
+        $current->o ('name2'),
+      ],
+      item_nobj_key => $current->o ('i1')->{nobj_key},
+      timestamp => $current->generate_time (time2 => {}),
+    });
+  })->then (sub {
+    return $current->json (['tag', 'items.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      tag_name => $current->o ('name1'),
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $item = $result->{json}->{items}->[0];
+      is $item->{timestamp}, $current->o ('time2');
+    } $current->c;
+    return $current->json (['tag', 'items.json'], {
+      context_nobj_key => $current->o ('t1')->{nobj_key},
+      tag_name => $current->o ('name2'),
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $item = $result->{json}->{items}->[0];
+      is $item->{timestamp}, $current->o ('time2');
+    } $current->c;
+  });
+} n => 12, name => 'timestamp';
+
 RUN;
 
 =head1 LICENSE
 
-Copyright 2018 Wakaba <wakaba@suikawiki.org>.
+Copyright 2018-2024 Wakaba <wakaba@suikawiki.org>.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as
