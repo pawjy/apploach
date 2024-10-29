@@ -13,7 +13,6 @@ Sarze->run (
   psgi_file_name => path (__FILE__)->parent->child ('server.psgi'),
   worker_state_class => 'WorkerState',
   shutdown_timeout => 60*10,
-  max_counts => {custom => 2},
 )->to_cv->recv;
 
 =head1 LICENSE
