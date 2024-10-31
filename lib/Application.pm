@@ -5482,6 +5482,100 @@ sub run_stats ($) {
   return $self->{app}->throw_error (404);
 } # run_stats
 
+my @ShortenChar = ('A'..'Z', 'a'..'z', '0'..'9');
+sub run_shorten ($) {
+  my $self = $_[0];
+
+  if (@{$self->{path}} == 1 and
+      $self->{path}->[0] eq 'get.json') {
+    ## /{app_id}/shorten/get.json - Create a shorten.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|space|)        : The shorten's space.  Required.
+    ##
+    ##   |key| : String        : The shoerten's key.  Required.
+    ##
+    ## Response.
+    ##
+    ##   |data| : JSON object  : The shorten's data.
+    ##
+    ##   |created| : Timestamp : The shorten's created.
+    ##
+    return Promise->all ([
+      $self->new_nobj_list (['space']),
+    ])->then (sub {
+      my ($space) = @{$_[0]->[0]};
+      my $key = $self->{app}->bare_param ('key') // '';
+      return $self->db->select ('shorten', {
+        ($self->app_id_columns),
+        ($space->to_columns ('space')),
+        key => $key,
+      }, source_name => 'master', fields => ['data', 'created'])->then (sub {
+        my $v = $_[0]->first;
+        if (defined $v) {
+          return $self->json ({
+            data => Dongry::Type->parse ('json', $v->{data}),
+            created => $v->{created},
+          });
+        } else {
+          return $self->json ({});
+        }
+      });
+    });
+  } elsif (@{$self->{path}} == 1 and
+           $self->{path}->[0] eq 'create.json') {
+    ## /{app_id}/shorten/create.json - Create a shorten.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|space|)        : The shorten's space.  Required.
+    ##
+    ##   |data| : JSON object  : The shorten's data.  Required.
+    ##
+    ## Response.
+    ##
+    ##   |key| : String        : The shoerten's key.  Required.
+    ##
+    ##   |created| : Timestamp : The shorten's created.
+    ##
+    return Promise->all ([
+      $self->new_nobj_list (['space']),
+    ])->then (sub {
+      my ($space) = @{$_[0]->[0]};
+      my $data = $self->json_object_param ('data');
+      my $time = time;
+      my $key = '';
+      my $i = 0;
+      return promised_wait_until {
+        $key = '';
+        $key .= $ShortenChar[rand @ShortenChar] for 1..8;
+        return $self->db->insert ('shorten', [{
+          ($self->app_id_columns),
+          ($space->to_columns ('space')),
+          key => $key,
+          data => Dongry::Type->serialize ('json', $data),
+          created => $time,
+          updated => $time,
+        }])->then (sub {
+          $self->json ({
+            key => $key,
+            created => $time,
+          });
+          return 'done';
+        }, sub { # duplicate or other errors
+          my $e = $_[0];
+          die $e if $i++ > 10;
+          warn $e;
+          return not 'done';
+        });
+      };
+    });
+  }
+
+  return $self->{app}->throw_error (404);
+} # run_shorten
+
 sub run_nobj ($) {
   my $self = $_[0];
 
@@ -6262,6 +6356,7 @@ sub run ($) {
       $self->{type} eq 'message' or
       $self->{type} eq 'stats' or
       $self->{type} eq 'nobj' or
+      $self->{type} eq 'shorten' or
       $self->{type} eq 'fetch') {
     my $method = 'run_'.$self->{type};
     return $self->$method;
