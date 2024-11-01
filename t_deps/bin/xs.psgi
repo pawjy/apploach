@@ -93,7 +93,21 @@ return sub {
             channel => 'vonage',
             body => encode_web_base64 (perl2json_bytes $status),
           },
-        )->finally (sub {
+        )->then (sub {
+          return unless $status->{status} eq 'submitted';
+          return promised_sleep (1)->then (sub {
+            $status->{status} = 'delivered';
+            return $client->request (
+              method => 'POST',
+              url => $url,
+              bearer => $Bearer,
+              params => {
+                channel => 'vonage',
+                body => encode_web_base64 (perl2json_bytes $status),
+              },
+            );
+          });
+        })->finally (sub {
           return $client->close;
         });
       });

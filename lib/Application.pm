@@ -4640,6 +4640,13 @@ sub run_message ($) {
   return $self->{app}->throw_error (404);
 } # run_message
 
+#XXX run apploach-messages job
+#
+#XXX get routes by data.messages-to, messages-channel
+#    for each route
+#      fire {topic}-route-{hash}
+
+
 sub insert_fetch_jobs ($$;%) {
   my ($self, $jobs, %args) = @_;
   my $now = $args{now} // die;
@@ -4827,7 +4834,8 @@ sub run_fetch_callback_job ($$$$) {
             my $log = Dongry::Type->parse ('json', $req->{callback_log});
             push @{$log->{items} ||= []}, {body => $json};
             my $new_status;
-            if ($new_status == 4) { # fetched
+warn "XXXXXX $req->{status}, $json->{status}";
+            if ($req->{status} == 4) { # fetched
               if (defined $json->{status} and
                   $json->{status} eq 'delivered') {
                 $new_status = 6; # callbacked, success
@@ -5016,6 +5024,8 @@ sub run_fetch ($) {
 ##   are topic subscriotions whose subscriber are them.  Zero or more
 ##   parameters can be specified.  No exclusion by default.
 ##
+## XXX subscriper message to
+##
 ##   |/prefix/nevent_key| : Key : The nevent's key.  If omitted, a new
 ##   random string is assigned.
 ##
@@ -5099,6 +5109,12 @@ sub fire_nevent ($$$;%) {
               } else {
                 return;
               }
+
+              # XXX subscriber is apploach message
+#              if (XXX) {
+#                $data->{ XXX  } = subscriber message to;
+#                $data->{ XXX } = subscriber message channel;
+#              }
 
               $m++;
               return $self->db->insert ('nevent', [{
