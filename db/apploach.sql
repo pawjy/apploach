@@ -457,3 +457,16 @@ create table if not exists `message_routes_excluded` (
   key (`created`),
   key (`updated`)
 ) default charset=binary engine=innodb;
+
+create table if not exists `shorten` (
+  `app_id` bigint unsigned not null,
+  `space_nobj_id` bigint unsigned not null,
+  `key` varbinary(127) not null,
+  `data` mediumblob not null,
+  `created` double not null,
+  `updated` double not null,
+  primary key (`app_id`, `space_nobj_id`, `key`),
+  key (`app_id`, `created`),
+  key (`created`),
+  key (`updated`)
+) default charset=binary engine=innodb;

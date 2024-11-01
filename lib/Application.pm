@@ -4827,7 +4827,7 @@ sub run_fetch_callback_job ($$$$) {
             my $log = Dongry::Type->parse ('json', $req->{callback_log});
             push @{$log->{items} ||= []}, {body => $json};
             my $new_status;
-            if ($new_status == 4) { # fetched
+            if ($req->{status} == 4) { # fetched
               if (defined $json->{status} and
                   $json->{status} eq 'delivered') {
                 $new_status = 6; # callbacked, success
