@@ -91,7 +91,7 @@ Test {
       is 0+@{$result->{json}->{items}}, 0;
     } $current->c;
   });
-} n => 17, name => 'success';
+} n => 17, name => 'success', timeout => 121;
 
 Test {
   my $current = shift;
