@@ -19,7 +19,9 @@ sub start ($%) {
   my ($class, %args) = @_;
   my ($r, $s) = promised_cv;
 
-  my $obj = {config => $Config, clients => {}, dbs => {}};
+  my $ac = AbortController->new;
+  my $obj = {config => $Config, clients => {}, dbs => {},
+             waits => {}, acs => {bg => $ac}};
   $obj->{dbs}->{main} ||= Dongry::Database->new (
     sources => {
       master => {
@@ -29,16 +31,13 @@ sub start ($%) {
     },
   );
   
-  my $ac = new AbortController;
-  my $t = $class->run_jobs ($obj, signal => $ac->signal)->catch (sub { });
   $args{signal}->manakai_onabort (sub {
-    $ac->abort;
-    return $t->then (sub {
-      return Promise->all ([
-        (map { $_->close } values %{$obj->{clients}}),
-        (map { $_->disconnect } values %{$obj->{dbs}}),
-      ]);
-    })->finally ($s);
+    return Promise->all ([
+      (map { $_->close } values %{$obj->{clients}}),
+      (map { $_->disconnect } values %{$obj->{dbs}}),
+      (map { $_->abort } values %{$obj->{acs}}),
+      (values %{$obj->{waits}}),
+    ])->finally ($s);
   });
   return [$obj, $r];
 } # start
@@ -141,11 +140,29 @@ sub run_a_job ($$) {
   });
 } # run_a_job
 
+sub custom ($$) {
+  my ($class, $state) = @_;
+
+  my $ac1 = AbortController->new;
+  $state->data->{acs}->{bg}->signal->manakai_onabort (sub {
+    $ac1->abort;
+  });
+
+  $state->data->{waits}->{custom} = $class->run_jobs
+      ($state->data, signal => $ac1->signal)->catch (sub {
+    my $e = $_[0];
+    return if UNIVERSAL::can ($e, 'name') and $e->name eq 'AbortError';
+    die $e;
+  });
+
+  return undef;
+} # custom
+
 1;
 
 =head1 LICENSE
 
-Copyright 2019-2021 Wakaba <wakaba@suikawiki.org>.
+Copyright 2019-2024 Wakaba <wakaba@suikawiki.org>.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as
