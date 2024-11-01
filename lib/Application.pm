@@ -2856,6 +2856,58 @@ sub _vapid_authorization ($$$) {
   return 'vapid t='.$t.', k='.$k;
 } # _vapid_authorization
 
+sub lock_queued_nevent ($$$) {
+  my ($self, $channel, $limit) = @_;
+  my $now = time;
+  my $max_locked = $now - 10*60;
+  return $self->db->update ('nevent_queue', {
+    locked => $now,
+  }, source_name => 'master', where => {
+    ($self->app_id_columns),
+    ($channel->to_columns ('channel')),
+    timestamp => {'<=', $now},
+    expires => {'>', $now},
+    result_done => 0, # not yet done
+    locked => {'<', $max_locked},
+  }, order => ['timestamp', 'asc'], limit => $limit)->then (sub {
+    my $v = $_[0];
+    return [] unless $v->row_count;
+    return $self->db->execute (q{select
+            `nevent`.`nevent_id` as `nevent_id`,
+            `nevent`.`topic_nobj_id` as `topic_nobj_id`,
+            `nevent`.`subscriber_nobj_id` as `subscriber_nobj_id`,
+            `nevent`.`data` as `data`,
+            `nevent`.`timestamp` as `timestamp`,
+            `nevent`.`expires` as `expires`,
+            `nevent_queue`.`topic_subscription_data` as `topic_subscription_data`
+          from `nevent_queue` inner join `nevent` on
+            `nevent_queue`.`app_id` = `nevent`.`app_id` and
+            `nevent_queue`.`nevent_id` = `nevent`.`nevent_id` and
+            `nevent_queue`.`subscriber_nobj_id` = `nevent`.`subscriber_nobj_id`
+          where
+            `nevent`.`app_id` = :app_id and
+            `nevent_queue`.`locked` = :locked
+          order by `nevent`.`timestamp` asc
+    }, {
+      ($self->app_id_columns),
+      locked => $now,
+    }, source_name => 'master')->then (sub {
+      return $_[0]->all;
+    });
+  }, sub {
+    my $e = $_[0];
+    if (UNIVERSAL::can ($e, 'error_text') and
+        $e->error_text =~ m{^Deadlock found when trying to get lock}) {
+      #Deadlock found when trying to get lock; try restarting transaction
+      return [];
+    }
+    die $e;
+  })->then (sub {
+    my $items = $_[0];
+    return $self->replace_nobj_ids ($items, ['subscriber', 'topic']);
+  });
+} # lock_queued_nevent
+
 sub run_notification ($) {
   my $self = $_[0];
 
@@ -3329,54 +3381,7 @@ sub run_notification ($) {
       return [] if $channel->is_error;
       
       my $limit = 0+($self->{app}->bare_param ('limit') || 10);
-      my $now = time;
-      my $max_locked = $now - 10*60;
-      return $self->db->update ('nevent_queue', {
-        locked => $now,
-      }, source_name => 'master', where => {
-        ($self->app_id_columns),
-        ($channel->to_columns ('channel')),
-        timestamp => {'<=', $now},
-        expires => {'>', $now},
-        result_done => 0, # not yet done
-        locked => {'<', $max_locked},
-      }, order => ['timestamp', 'asc'], limit => $limit)->then (sub {
-        my $v = $_[0];
-        return [] unless $v->row_count;
-        return $self->db->execute (q{select
-            `nevent`.`nevent_id` as `nevent_id`,
-            `nevent`.`topic_nobj_id` as `topic_nobj_id`,
-            `nevent`.`subscriber_nobj_id` as `subscriber_nobj_id`,
-            `nevent`.`data` as `data`,
-            `nevent`.`timestamp` as `timestamp`,
-            `nevent`.`expires` as `expires`,
-            `nevent_queue`.`topic_subscription_data` as `topic_subscription_data`
-          from `nevent_queue` inner join `nevent` on
-            `nevent_queue`.`app_id` = `nevent`.`app_id` and
-            `nevent_queue`.`nevent_id` = `nevent`.`nevent_id` and
-            `nevent_queue`.`subscriber_nobj_id` = `nevent`.`subscriber_nobj_id`
-          where
-            `nevent`.`app_id` = :app_id and
-            `nevent_queue`.`locked` = :locked
-          order by `nevent`.`timestamp` asc
-        }, {
-          ($self->app_id_columns),
-          locked => $now,
-        }, source_name => 'master')->then (sub {
-          return $_[0]->all;
-        });
-      }, sub {
-        my $e = $_[0];
-        if (UNIVERSAL::can ($e, 'error_text') and
-            $e->error_text =~ m{^Deadlock found when trying to get lock}) {
-          #Deadlock found when trying to get lock; try restarting transaction
-          return [];
-        }
-        die $e;
-      });
-    })->then (sub {
-      my $items = $_[0];
-      return $self->replace_nobj_ids ($items, ['subscriber', 'topic']);
+      return $self->lock_queued_nevent ($channel, $limit);
     })->then (sub {
       my $items = $_[0];
       for (@$items) {
