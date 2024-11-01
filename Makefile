@@ -83,14 +83,18 @@ PROVE = ./prove
 
 test: test-deps test-main
 
-test-deps: deps
-test-deps-circleci: deps-circleci
+test-deps: deps local/bin/tesica
+test-deps-circleci: deps-circleci local/bin/tesica
+
+local/bin/tesica:
+	$(CURL) -sSLf https://raw.githubusercontent.com/pawjy/tesica/master/tesica > $@
+	chmod u+x $@
 
 test-main:
 	$(PROVE) t/http/*.t
 
 test-main-circleci:
-	./t_deps/bin/circle-prove t/http/ ""
+	local/bin/tesica t/http
 
 always:
 
