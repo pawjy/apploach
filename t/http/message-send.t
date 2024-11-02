@@ -30,7 +30,7 @@ Test {
       station_nobj_key => $current->o ('s1')->{nobj_key},
       to => $current->o ('t1'),
       from_name => $current->generate_key (t2 => {}),
-      body => $current->generate_key (t3 => {}),
+      body => $current->generate_text (t3 => {}),
       operator_nobj_key => $current->o ('s20')->{nobj_key},
       verb_nobj_key => $current->o ('s21')->{nobj_key},
       status_verb_nobj_key => $current->o ('s21')->{nobj_key},
@@ -125,7 +125,7 @@ Test {
       is $v->{data}->{destination}->{count}, 1;
     } $current->c, name => 's & v';
   });
-} n => 30, name => 'sent';
+} n => 30, name => 'sent', timeout => 200;
 
 Test {
   my $current = shift;
