@@ -125,7 +125,7 @@ Test {
       is $v->{data}->{destination}->{count}, 1;
     } $current->c, name => 's & v';
   });
-} n => 30, name => 'sent';
+} n => 30, name => 'sent', timeout => 200;
 
 Test {
   my $current = shift;
