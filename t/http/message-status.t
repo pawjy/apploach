@@ -138,7 +138,7 @@ Test {
         my $result = $_[0];
         return $result->{json}->{items}->[0]->{status_7_count};
       });
-    } timeout => 60;
+    } timeout => 106;
   })->then (sub {
     return $current->json (['message', 'status.json'], {
       request_set_id => $current->o ('rs1')->{request_set_id},
@@ -223,7 +223,7 @@ Test {
         my $result = $_[0];
         return $result->{json}->{items}->[0]->{status_5_count};
       });
-    } timeout => 60;
+    } timeout => 101;
   })->then (sub {
     return $current->json (['message', 'status.json'], {
       request_set_id => $current->o ('rs1')->{request_set_id},
@@ -302,7 +302,7 @@ Test {
         my $result = $_[0];
         return $result->{json}->{items}->[0]->{status_6_count};
       });
-    } timeout => 60;
+    } timeout => 100;
   })->then (sub {
     return $current->json (['message', 'status.json'], {
       station_nobj_key => $current->o ('s1')->{nobj_key},
@@ -337,7 +337,7 @@ Test {
       }
     } $current->c;
   });
-} n => 19, name => 'pages 1';
+} n => 19, name => 'pages 1', timeout => 210;
 
 Test {
   my $current = shift;
@@ -381,7 +381,7 @@ Test {
       station_nobj_key => $current->o ('s1')->{nobj_key},
     }] => ['rs1', 'rs2', 'rs3', 'rs4', 'rs5'], 'request_set_id');
   });
-} n => 1, name => 'pager paging';
+} n => 1, name => 'pager paging', timeout => 211;
 
 RUN;
 

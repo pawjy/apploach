@@ -292,7 +292,7 @@ Test {
       station_nobj_key => $current->o ('s1')->{nobj_key},
       to => $current->o ('t1'),
       from_name => $current->generate_key (t2 => {}),
-      body => $current->generate_key (t3 => {}),
+      body => $current->generate_text (t3 => {}),
       operator_nobj_key => $current->o ('s20')->{nobj_key},
       verb_nobj_key => $current->o ('s21')->{nobj_key},
       status_verb_nobj_key => $current->o ('s21')->{nobj_key},
