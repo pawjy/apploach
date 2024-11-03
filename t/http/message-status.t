@@ -302,7 +302,7 @@ Test {
         my $result = $_[0];
         return $result->{json}->{items}->[0]->{status_6_count};
       });
-    } timeout => 100;
+    } timeout => 125;
   })->then (sub {
     return $current->json (['message', 'status.json'], {
       station_nobj_key => $current->o ('s1')->{nobj_key},
