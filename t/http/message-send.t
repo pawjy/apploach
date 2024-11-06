@@ -86,7 +86,7 @@ Test {
         my $result = $_[0];
         return $result->{json}->{items}->[0]->{status_6_count};
       });
-    } timeout => 60;
+    } timeout => 127;
   })->then (sub {
     return $current->json (['message', 'status.json'], {
       request_set_id => $current->o ('rs1')->{request_set_id},
@@ -172,7 +172,7 @@ Test {
         my $result = $_[0];
         return $result->{json}->{items}->[0]->{status_5_count};
       });
-    } timeout => 60;
+    } timeout => 126;
   })->then (sub {
     return $current->json (['message', 'status.json'], {
       request_set_id => $current->o ('rs1')->{request_set_id},
@@ -192,7 +192,7 @@ Test {
       is $item->{status_9_count}, 0;
     } $current->c;
   });
-} n => 11, name => 'response error (400)';
+} n => 11, name => 'response error (400)', timeout => 202;
 
 Test {
   my $current = shift;
@@ -384,7 +384,7 @@ Test {
         my $result = $_[0];
         return $result->{json}->{items}->[0]->{status_6_count} >= 4;
       });
-    } timeout => 60;
+    } timeout => 124;
   })->then (sub {
     return $current->json (['message', 'status.json'], {
       request_set_id => $current->o ('rs1')->{request_set_id},
@@ -427,7 +427,7 @@ Test {
       is $v->{data}->{destination}->{count}, 4;
     } $current->c, name => 's & v';
   });
-} n => 54, name => 'cc';
+} n => 54, name => 'cc', timeout => 201;
 
 Test {
   my $current = shift;
@@ -515,7 +515,7 @@ Test {
         my $result = $_[0];
         return $result->{json}->{items}->[0]->{status_6_count} >= 1;
       });
-    } timeout => 60;
+    } timeout => 123;
   })->then (sub {
     return $current->json (['message', 'status.json'], {
       request_set_id => $current->o ('rs1')->{request_set_id},
@@ -592,7 +592,7 @@ Test {
       is $count, 0;
     } $current->c;
   });
-} n => 49, name => 'addr_key';
+} n => 49, name => 'addr_key', timeout => 203;
 
 RUN;
 

@@ -192,6 +192,19 @@ sub _expand_reqs ($$$) {
              name => 'Bad |'.$n.'_nobj_key| (long)'},
           ];
         },
+        new_nobj_opt => sub {
+          my $n = $_[1];
+          return [
+            {p => {$n.'_nobj_key' => ''}, reason => 'Bad |'.$n.'_nobj_key|',
+             name => 'Bad |'.$n.'_nobj_key| (empty)'},
+            {p => {
+               $n.'_nobj_key' => $self->generate_key (rand, {
+                 min_length => 4096, max_length => 4096,
+               }),
+             }, reason => 'Bad |'.$n.'_nobj_key|',
+             name => 'Bad |'.$n.'_nobj_key| (long)'},
+          ];
+        },
         get_nobj => sub {
           my $n = $_[1];
           return [
