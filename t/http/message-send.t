@@ -429,6 +429,171 @@ Test {
   });
 } n => 54, name => 'cc';
 
+Test {
+  my $current = shift;
+  return $current->create (
+    [s1 => nobj => {}],
+    [s10 => nobj => {}],
+    [s11 => nobj => {}],
+    [s20 => nobj => {}],
+    [s21 => nobj => {}],
+    [s22 => nobj => {}],
+  )->then (sub {
+    return $current->json (['message', 'setroutes.json'], {
+      station_nobj_key => $current->o ('s1')->{nobj_key},
+      operator_nobj_key => $current->o ('s10')->{nobj_key},
+      verb_nobj_key => $current->o ('s11')->{nobj_key},
+      channel => 'vonage',
+      table => (perl2json_chars {
+        $current->generate_text (t1 => {}) => {
+          addr => $current->generate_message_addr (a1 => {}),
+          cc_addrs => [
+            $current->generate_message_addr (a2 => {}),
+            $current->generate_message_addr (a3 => {}),
+            $current->generate_message_addr (a4 => {}),
+          ],
+        },
+      }),
+    });
+  })->then (sub {
+    return $current->json (['message', 'send.json'], {
+      station_nobj_key => $current->o ('s1')->{nobj_key},
+      to => $current->o ('t1'),
+      from_name => $current->generate_key (t20 => {}),
+      body => $current->generate_text (t30 => {}),
+      operator_nobj_key => $current->o ('s20')->{nobj_key},
+      verb_nobj_key => $current->o ('s21')->{nobj_key},
+      status_verb_nobj_key => $current->o ('s21')->{nobj_key},
+      addr_key => rand, # no match
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      ok $result->{json}->{request_set_id};
+      like $result->{res}->body_bytes, qr{"request_set_id":"};
+      $current->set_o (rs0 => $result->{json});
+    } $current->c;
+    return $current->json (['message', 'send.json'], {
+      station_nobj_key => $current->o ('s1')->{nobj_key},
+      to => $current->o ('t1'),
+      from_name => $current->generate_key (t2 => {}),
+      body => $current->generate_text (t3 => {}),
+      operator_nobj_key => $current->o ('s20')->{nobj_key},
+      verb_nobj_key => $current->o ('s21')->{nobj_key},
+      status_verb_nobj_key => $current->o ('s21')->{nobj_key},
+      addr_key => sha1_hex (encode_web_utf8 ($current->o ('a4'))),
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      ok $result->{json}->{request_set_id};
+      like $result->{res}->body_bytes, qr{"request_set_id":"};
+      $current->set_o (rs1 => $result->{json});
+    } $current->c;
+    return $current->wait_for_messages ($current->o ('a4'));
+  })->then (sub {
+    my $messages = $_[0];
+    test {
+      my $m = $messages->[0];
+      if (defined $m->{api_key}) {
+        ok $m->{api_key};
+        ok $m->{api_secret};
+      } else {
+        ok $m->{jwt};
+        ok 1;
+      }
+      is $m->{channel}, 'sms';
+      ok $m->{client_ref};
+      is $m->{to}, $current->o ('a4');
+      is $m->{from}, $current->o ('t2');
+      is $m->{text}, $current->o ('t3');
+    } $current->c;
+    return promised_wait_until {
+      return $current->json (['message', 'status.json'], {
+        request_set_id => $current->o ('rs1')->{request_set_id},
+      })->then (sub {
+        my $result = $_[0];
+        return $result->{json}->{items}->[0]->{status_6_count} >= 1;
+      });
+    } timeout => 60;
+  })->then (sub {
+    return $current->json (['message', 'status.json'], {
+      request_set_id => $current->o ('rs1')->{request_set_id},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      my $item = $result->{json}->{items}->[0];
+      ok $item->{updated};
+      is $item->{status_2_count}, 0;
+      is $item->{status_3_count}, 0;
+      is $item->{status_4_count}, 0;
+      is $item->{status_5_count}, 0;
+      is $item->{status_6_count}, 1;
+      is $item->{status_7_count}, 0;
+      is $item->{status_8_count}, 0;
+      is $item->{status_9_count}, 0;
+      is $item->{data}->{channel}, 'vonage';
+      is $item->{data}->{destination}->{to}, $current->o ('t1');
+      is $item->{data}->{destination}->{count}, 1;
+    } $current->c;
+    return $current->json (['nobj', 'logs.json'], {
+      verb_nobj_key => $current->o ('s21')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 2;
+      {
+        my $v = $result->{json}->{items}->[1];
+        is $v->{operator_nobj_key}, $current->o ('s20')->{nobj_key};
+        is $v->{target_nobj_key}, $current->o ('s1')->{nobj_key};
+        is $v->{verb_nobj_key}, $current->o ('s21')->{nobj_key};
+        ok $v->{data}->{timestamp};
+        ok $v->{data}->{expires} > $v->{data}->{timestamp};
+        is $v->{data}->{channel}, 'vonage';
+        is $v->{data}->{size_for_cost}, 1;
+        like $result->{res}->body_bytes, qr{"request_set_id":"};
+        is $v->{data}->{request_set_id}, $current->o ('rs0')->{request_set_id};
+        is $v->{data}->{destination}->{to}, $current->o ('t1');
+        is $v->{data}->{destination}->{count}, 0;
+      }
+      {
+        my $v = $result->{json}->{items}->[0];
+        is $v->{operator_nobj_key}, $current->o ('s20')->{nobj_key};
+        is $v->{target_nobj_key}, $current->o ('s1')->{nobj_key};
+        is $v->{verb_nobj_key}, $current->o ('s21')->{nobj_key};
+        ok $v->{data}->{timestamp};
+        ok $v->{data}->{expires} > $v->{data}->{timestamp};
+        is $v->{data}->{channel}, 'vonage';
+        is $v->{data}->{size_for_cost}, 1;
+        like $result->{res}->body_bytes, qr{"request_set_id":"};
+        is $v->{data}->{request_set_id}, $current->o ('rs1')->{request_set_id};
+        is $v->{data}->{destination}->{to}, $current->o ('t1');
+        is $v->{data}->{destination}->{count}, 1;
+      }
+    } $current->c, name => 's & v';
+    return $current->get_message_count ($current->o ('a1'));
+  })->then (sub {
+    my $count = $_[0];
+    test {
+      is $count, 0;
+    } $current->c;
+    return $current->get_message_count ($current->o ('a2'));
+  })->then (sub {
+    my $count = $_[0];
+    test {
+      is $count, 0;
+    } $current->c;
+    return $current->get_message_count ($current->o ('a3'));
+  })->then (sub {
+    my $count = $_[0];
+    test {
+      is $count, 0;
+    } $current->c;
+  });
+} n => 49, name => 'addr_key';
+
 RUN;
 
 =head1 LICENSE

@@ -14,6 +14,8 @@ use CurrentTest;
 use Test::X1;
 use Test::More;
 use Time::HiRes qw(time);
+use Digest::SHA qw(sha1_hex);
+use Web::Encoding;
 
 our @EXPORT = grep { not /^\$/ } (
   @Test::More::EXPORT,
@@ -21,6 +23,9 @@ our @EXPORT = grep { not /^\$/ } (
   @JSON::PS::EXPORT,
   @Promised::Flow::EXPORT,
   'time',
+  'sha1_hex',
+  'encode_web_utf8',
+  'decode_web_utf8',
 );
 
 sub import ($;@) {

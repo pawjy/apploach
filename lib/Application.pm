@@ -196,14 +196,27 @@ sub error_log ($$$$) {
 ##
 ## Timestamp.  A unix time, represented as a floating-point number.
 
-sub new ($%) {
+#app
+#db
+#config
+#app_id
+#type
+#path
+sub new_for_http ($%) {
   my $class = shift;
-  # app
-  # path
-  # app_id
-  # type
-  return bless {@_}, $class;
-} # new
+  my $self = bless {@_}, $class;
+
+  my $obj = $self->{app}->http->server_state->data;
+  $self->{config} = $obj->{config};
+  $self->{db} = $obj->{dbs}->{main};
+
+  return $self;
+} # new_for_http
+
+sub new_from_obj_and_app_id ($$$) {
+  return bless {config => $_[1]->{config}, db => $_[1]->{dbs}->{main},
+                app_id => $_[2]}, $_[0];
+} # new_from_obj_and_app_id
 
 sub json ($$) {
   my ($self, $data) = @_;
@@ -305,10 +318,7 @@ sub sha ($) {
   return sha1_hex +Dongry::Type->serialize ('text', $_[0]);
 } # sha
 
-sub db ($) {
-  my $self = $_[0];
-  return $self->{app}->http->server_state->data->{dbs}->{main};
-} # db
+sub db ($) { $_[0]->{db} }
 
 sub ids ($$) {
   my ($self, $n) = @_;
@@ -461,7 +471,7 @@ sub nobj_list_set ($$) {
   my @key;
   my $lists = {};
   for my $param (@$params) {
-    $lists->{$param} = $self->{app}->bare_param_list ($param.'_nobj_key');
+    $lists->{$param} = ref $param ? $param : $self->{app}->bare_param_list ($param.'_nobj_key');
     push @key, @{$lists->{$param}};
   }
   return $self->_no (\@key)->then (sub {
@@ -2856,15 +2866,16 @@ sub _vapid_authorization ($$$) {
   return 'vapid t='.$t.', k='.$k;
 } # _vapid_authorization
 
-sub lock_queued_nevent ($$$) {
-  my ($self, $channel, $limit) = @_;
+sub lock_queued_nevent ($$$;%) {
+  my ($self, $channel, $limit, %args) = @_;
   my $now = time;
-  my $max_locked = $now - 10*60;
+  my $max_locked = $now - 10*60; # also in WorkerState.pm
   return $self->db->update ('nevent_queue', {
     locked => $now,
   }, source_name => 'master', where => {
     ($self->app_id_columns),
     ($channel->to_columns ('channel')),
+    (defined $args{subscriber} ? ($args{subscriber}->to_columns ('subscriber')) : ()),
     timestamp => {'<=', $now},
     expires => {'>', $now},
     result_done => 0, # not yet done
@@ -3738,6 +3749,85 @@ sub run_notification ($) {
   return $self->{app}->throw_error (404);
 } # run_notification
 
+sub run_notification_job ($) {
+  my ($self) = @_;
+  my $has = 0;
+  my $msgs;
+  return Promise->all ([
+    $self->new_nobj_list ([\'apploach-messages']),
+  ])->then (sub {
+    ($msgs) = @{$_[0]->[0]};
+    my $limit = 5;
+    return $self->lock_queued_nevent ($msgs, $limit, subscriber => $msgs);
+  })->then (sub {
+    my $items = $_[0];
+    return promised_for {
+      my $item = $_[0];
+      $has = 1;
+      $item->{data} = Dongry::Type->parse ('json', $item->{data});
+
+      my $now = time;
+      my $stname = $item->{data}->{apploach_messages_station_nobj_key};
+      my $mto = $item->{data}->{apploach_messages_to};
+      return Promise->resolve->then (sub {
+        return unless defined $stname and defined $mto;
+        return Promise->all ([
+          $self->new_nobj_list ([\$stname]),
+        ])->then (sub {
+          my ($station) = @{$_[0]->[0]};
+          return $self->db->select ('message_routes', {
+            ($self->app_id_columns),
+            ($station->to_columns ('station')),
+            expires => {'>', $now},
+          }, fields => ['data', 'expires'], source_name => 'master');
+        })->then (sub {
+          my $row = $_[0]->first;
+          my $data = defined $row ? Dongry::Type->parse ('json', $row->{data}) : {};
+          my $channel = $data->{channel};
+          my $addrs = {};
+          my $dest = $data->{table}->{$mto} || {};
+          $addrs->{$dest->{addr}} = 1 if defined $dest->{addr};
+          $addrs->{$_} = 1 for @{$dest->{cc_addrs} or []};
+
+          my @p;
+          for my $addr (keys %$addrs) {
+            my $key = sha1_hex encode_web_utf8 $addr;
+
+            my $topic1 = $item->{topic_nobj_key} . '-messages-' . $channel . '-' . $key;
+            my $topic2 = $item->{topic_nobj_key} . '-messages-' . $channel;
+            my $topic3 = $stname . '-messages-' . $channel;
+
+            push @p, $self->fire_nevent (
+              '',
+              {
+                #data->apploach_messages_station_nobj_key => $stname,
+                channel => $channel,
+                #data->apploach_messages_to => $mto,
+                addr_key => $key,
+                data => $item->{data},
+                # XXX shorten
+              },
+              timestamp => $item->{data}->{timestamp},
+              get => {
+                topic_nobj_key => [$topic1],
+                topic_fallback_nobj_key => [$topic2, $topic3],
+                topic_fallback_nobj_key_template => ['apploach-messages-routes'],
+                #excluded_subscriber_nobj_key => []
+              },
+            );
+          } # $addr
+          
+          return Promise->all (\@p);
+        });
+      })->then (sub {
+        return $self->done_queued_nevent ($msgs, $msgs, $item->{nevent_id}, {});
+      });
+    } $items;
+  })->then (sub {
+    return $has;
+  });
+} # run_notification_job
+
 sub run_alarm ($) {
   my $self = $_[0];
 
@@ -4159,6 +4249,8 @@ sub run_message ($) {
     ##   |to| : String         : An application-specific destination key.
     ##                           Required unless |broadcast| is true.
     ##   |broadcast| : Boolean : If true, all destinations are selected.
+    ##   |addr_key| : String   : If specified, destination whose address'
+    ##                           key equal to the specified value is selected.
     ##   |from_name| : String  : A source name in protocol specific format.
     ##                           Defaulted to the empty string.
     ##   |body| : String       : A text message.  Required.
@@ -4230,6 +4322,14 @@ sub run_message ($) {
           push @$dests, $dest->{addr} if defined $dest->{addr};
           push @$dests, $_ for @{$dest->{cc_addrs} or []};
           $dest_info->{to} = $to;
+
+          my $addr_key = $self->{app}->text_param ('addr_key');
+          if (defined $addr_key) {
+            $dests = [grep {
+              my $key = sha1_hex encode_web_utf8 $_;
+              $key eq $addr_key;
+            } @$dests];
+          }
         }
         $dest_info->{count} = 0+@$dests;
         
@@ -4640,13 +4740,6 @@ sub run_message ($) {
   return $self->{app}->throw_error (404);
 } # run_message
 
-#XXX run apploach-messages job
-#
-#XXX get routes by data.messages-to, messages-channel
-#    for each route
-#      fire {topic}-route-{hash}
-
-
 sub insert_fetch_jobs ($$;%) {
   my ($self, $jobs, %args) = @_;
   my $now = $args{now} // die;
@@ -4834,7 +4927,6 @@ sub run_fetch_callback_job ($$$$) {
             my $log = Dongry::Type->parse ('json', $req->{callback_log});
             push @{$log->{items} ||= []}, {body => $json};
             my $new_status;
-warn "XXXXXX $req->{status}, $json->{status}";
             if ($req->{status} == 4) { # fetched
               if (defined $json->{status} and
                   $json->{status} eq 'delivered') {
@@ -5024,7 +5116,11 @@ sub run_fetch ($) {
 ##   are topic subscriotions whose subscriber are them.  Zero or more
 ##   parameters can be specified.  No exclusion by default.
 ##
-## XXX subscriper message to
+##   NObj (|/prefix/messages_station|)? : The station the nevent is
+##   associated for the purpose of messages API, if any.
+##
+##   |/prefix/messages_to| : String? : The destination the nevent is
+##   associated for the purpose of messages API, if any.
 ##
 ##   |/prefix/nevent_key| : Key : The nevent's key.  If omitted, a new
 ##   random string is assigned.
@@ -5042,24 +5138,28 @@ sub run_fetch ($) {
 ## who and whether the nevent is routed.
 sub fire_nevent ($$$;%) {
   my ($self, $prefix, $data, %args) = @_;
+  my $get = $args{get} ? sub { $args{get}->{$_[0]}->[0] }
+                       : sub { $self->{app}->text_param ($_[0]) };
+  my $get_all = $args{get} ? sub { $args{get}->{$_[0]} || [] }
+                           : sub { $self->{app}->text_param_list ($_[0]) };
   return Promise->resolve if length $prefix and
-      not defined $self->{app}->bare_param ($prefix.'topic_nobj_key');
+      not defined $get->($prefix.'topic_nobj_key');
   my $nevent_id;
   my $now = time;
   my $timestamp = 0+($args{timestamp} || $now);
   my $expires = 0+($args{expires} || ($now + 30*24*60*60));
   my $m = 0;
   return Promise->all ([
-    $self->new_nobj_list ([$prefix.'topic', \'apploach-any-channel']),
-    $self->nobj_list_set ([$prefix.'topic_fallback', $prefix.'excluded_subscriber']),
+    $self->new_nobj_list ([(defined $args{get} ? \($get->($prefix.'topic_nobj_key')) : $prefix.'topic'), \'apploach-any-channel']),
+    $self->nobj_list_set ([$get_all->($prefix.'topic_fallback_nobj_key'),
+                           $get_all->($prefix.'excluded_subscriber_nobj_key')]),
     $self->ids (1),
   ])->then (sub {
     my ($topic, $any_channel) = @{$_[0]->[0]};
     my ($topic_fallbacks, $excluded_subscribers) = @{$_[0]->[1]};
     $nevent_id = $_[0]->[2]->[0];
-    my $nevent_key = $self->{app}->bare_param ($prefix.'nevent_key')
-                   // ('id-' . $nevent_id);
-    my $replace = $self->{app}->bare_param ($prefix.'replace');
+    my $nevent_key = $get->($prefix.'nevent_key') // ('id-' . $nevent_id);
+    my $replace = $get->($prefix.'replace');
     
     my $done_subscribers = {};
     my $undecided_subscribers = {};
@@ -5067,6 +5167,12 @@ sub fire_nevent ($$$;%) {
     my $excluded_ids = [map {
       $_->is_error ? () : ($_->nobj_id);
     } @$excluded_subscribers];
+
+    my $data_params = {};
+    for (qw(messages_to messages_station_nobj_key)) {
+      my $value = $get->($prefix.$_);
+      $data_params->{'apploach_'.$_} = $value if defined $value;
+    }
 
     my $write_for_topic = sub {
       my $current_topic = shift;
@@ -5110,11 +5216,9 @@ sub fire_nevent ($$$;%) {
                 return;
               }
 
-              # XXX subscriber is apploach message
-#              if (XXX) {
-#                $data->{ XXX  } = subscriber message to;
-#                $data->{ XXX } = subscriber message channel;
-#              }
+              for (keys %$data_params) {
+                $data->{$_} = $data_params->{$_};
+              }
 
               $m++;
               return $self->db->insert ('nevent', [{
@@ -5164,8 +5268,7 @@ sub fire_nevent ($$$;%) {
       return ((promised_for {
         return $write_for_topic->($_[0], undef);
       } [$topic, @$topic_fallbacks])->then (sub {
-        my $templates = $self->{app}->bare_param_list
-            ($prefix.'topic_fallback_nobj_key_template');
+        my $templates = $get_all->($prefix.'topic_fallback_nobj_key_template');
         return unless @$templates;
         return unless keys %$undecided_subscribers;
         return $self->_nobj_list_by_ids ($self->db, [keys %$undecided_subscribers])->then (sub {

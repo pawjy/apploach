@@ -44,7 +44,7 @@ sub start ($%) {
 
 my $JobSleep1 = $Config->{fetch_job_interval} || 30;
 my $JobSleep2 = $Config->{fetch_job_sleep} || 60;
-sub run_jobs ($$%) {
+sub run_fetch_jobs ($$%) {
   my ($class, $obj, %args) = @_;
   my $ac1 = new AbortController;
   my $ac2 = new AbortController;
@@ -54,7 +54,7 @@ sub run_jobs ($$%) {
   });
   return promised_wait_until {
     return promised_sleep (rand ($JobSleep1), signal => $ac1->signal)->then (sub {
-      return $class->run_a_job ($obj);
+      return $class->run_a_fetch_job ($obj);
     })->then (sub {
       my $job_found = shift;
       if ($job_found) {
@@ -74,10 +74,63 @@ sub run_jobs ($$%) {
       return not 'done';
     });
   } signal => $ac2->signal;
-} # run_jobs
+} # run_fetch_jobs
+
+sub run_notification_jobs ($$%) {
+  my ($class, $obj, %args) = @_;
+  my $ac1 = new AbortController;
+  my $ac2 = new AbortController;
+  $args{signal}->manakai_onabort (sub {
+    $ac1->abort;
+    $ac2->abort;
+  });
+  return promised_wait_until {
+    return promised_sleep (rand ($JobSleep1), signal => $ac1->signal)->then (sub {
+      my $db = $obj->{dbs}->{main};
+      my $now = time;
+      my $max_locked = $now - 10*60; # also in Applications.pm
+      return $db->select ('nobj', {
+        #($self->app_id_columns),
+        #nobj_key_sha
+        nobj_key => 'apploach-messages',
+      }, fields => ['nobj_id', 'nobj_key'], limit => 1,
+        source_name => 'master',
+      )->then (sub {
+        my $v = $_[0]->first;
+        return 0 unless defined $v;
+        return $db->select ('nevent_queue', {
+          #($self->app_id_columns),
+          #($channel->to_columns ('channel')),
+          subscriber_nobj_id => $v->{nobj_id},
+          timestamp => {'<=', $now},
+          expires => {'>', $now},
+          result_done => 0, # not yet done
+          locked => {'<', $max_locked},
+        }, fields => ['app_id'], limit => 1, source_name => 'master')->then (sub {
+          my $w = $_[0]->first;
+          return 0 unless defined $w;
+
+          my $main = Application->new_from_obj_and_app_id ($obj, $w->{app_id});
+          return $main->run_notification_job;
+        });
+      });
+    })->then (sub {
+      my $job_found = shift;
+      return promised_sleep ($job_found ? $JobSleep1 : $JobSleep2,
+                             signal => $ac1->signal)->then (sub {
+        return not 'done';
+      });
+    }, sub {
+      my $e = $_[0];
+      Application->error_log ($obj->{config}, 'important', $e)
+          unless UNIVERSAL::can ($e, 'name') and $e->name eq 'AbortError';
+      return not 'done';
+    });
+  } signal => $ac2->signal;
+} # run_notification_jobs
 
 my $FetchJobTimeout = 60*5;
-sub run_a_job ($$) {
+sub run_a_fetch_job ($$) {
   my ($class, $obj) = @_;
   my $db = $obj->{dbs}->{main};
 
@@ -138,18 +191,27 @@ sub run_a_job ($$) {
       return 'job found';
     });
   });
-} # run_a_job
+} # run_a_fetch_job
 
 sub custom ($$) {
   my ($class, $state) = @_;
 
   my $ac1 = AbortController->new;
+  my $ac2 = AbortController->new;
   $state->data->{acs}->{bg}->signal->manakai_onabort (sub {
     $ac1->abort;
+    $ac2->abort;
   });
 
-  $state->data->{waits}->{custom} = $class->run_jobs
+  $state->data->{waits}->{fetch} = $class->run_fetch_jobs
       ($state->data, signal => $ac1->signal)->catch (sub {
+    my $e = $_[0];
+    return if UNIVERSAL::can ($e, 'name') and $e->name eq 'AbortError';
+    die $e;
+  });
+
+  $state->data->{waits}->{notifications} = $class->run_notification_jobs
+      ($state->data, signal => $ac2->signal)->catch (sub {
     my $e = $_[0];
     return if UNIVERSAL::can ($e, 'name') and $e->name eq 'AbortError';
     die $e;

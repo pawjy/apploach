@@ -23,6 +23,7 @@ Test {
       }],
       [
         ['new_nobj', 'topic'],
+        ['new_nobj', 'messages_station'],
         ['json', 'data'],
       ],
     );
