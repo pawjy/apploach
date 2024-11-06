@@ -89,30 +89,28 @@ sub run_notification_jobs ($$%) {
       my $db = $obj->{dbs}->{main};
       my $now = time;
       my $max_locked = $now - 10*60; # also in Applications.pm
-      return $db->select ('nobj', {
-        #($self->app_id_columns),
-        #nobj_key_sha
+      return $db->execute ('select
+        `nevent_queue`.`app_id` as `app_id`
+        from `nobj` inner join `nevent_queue`
+        on `nobj`.`nobj_id` = `nevent_queue`.`subscriber_nobj_id` and
+           `nobj`.`app_id` = `nevent_queue`.`app_id`
+        where `nobj`.`nobj_key` = :nobj_key and
+              `nevent_queue`.`timestamp` <= :now and
+              `nevent_queue`.`expires` > :now and
+              `nevent_queue`.`result_done` = 0 and
+              `nevent_queue`.`locked` < :max_locked
+        limit 1
+      ', {
         nobj_key => 'apploach-messages',
-      }, fields => ['nobj_id', 'nobj_key'], limit => 1,
+        now => $now,
+        max_locked => $max_locked,
+      }, 
         source_name => 'master',
       )->then (sub {
         my $v = $_[0]->first;
         return 0 unless defined $v;
-        return $db->select ('nevent_queue', {
-          #($self->app_id_columns),
-          #($channel->to_columns ('channel')),
-          subscriber_nobj_id => $v->{nobj_id},
-          timestamp => {'<=', $now},
-          expires => {'>', $now},
-          result_done => 0, # not yet done
-          locked => {'<', $max_locked},
-        }, fields => ['app_id'], limit => 1, source_name => 'master')->then (sub {
-          my $w = $_[0]->first;
-          return 0 unless defined $w;
-
-          my $main = Application->new_from_obj_and_app_id ($obj, $w->{app_id});
-          return $main->run_notification_job;
-        });
+        my $main = Application->new_from_obj_and_app_id ($obj, $v->{app_id});
+        return $main->run_notification_job;
       });
     })->then (sub {
       my $job_found = shift;
