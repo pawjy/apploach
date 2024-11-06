@@ -22,7 +22,8 @@ Test {
       channel => 'vonage',
       table => (perl2json_chars {
         $current->generate_text (to1 => {}) => {
-          addr => $current->generate_message_addr (a1 => {}),
+          addr => $current->generate_message_addr (a2 => {}),
+          cc_addrs => [$current->generate_message_addr (a1 => {})],
         },
       }),
     });
@@ -45,11 +46,27 @@ Test {
       status => 2, # enabled
     });
   })->then (sub {
+    return $current->json (['notification', 'topic', 'subscribe.json'], {
+      topic_nobj_key => $current->o ('t1')->{nobj_key} . '-messages-vonage-' . sha1_hex (encode_web_utf8 ($current->o ('a2'))),
+      topic_index_nobj_key => 'null',
+      channel_nobj_key => 'vonage',
+      subscriber_nobj_key => 'apploach-messages-routes',
+      data => {foo => 4},
+      status => 3, # disabled
+    });
+  })->then (sub {
     return $current->json (['notification', 'nevent', 'fire.json'], {
       topic_nobj_key => $current->o ('t1')->{nobj_key},
       data => {abv => 774},
       messages_station_nobj_key => $current->o ('s1')->{nobj_key},
       messages_to => $current->o ('to1'),
+    });
+  })->then (sub {
+    return $current->json (['notification', 'nevent', 'fire.json'], {
+      topic_nobj_key => $current->o ('t1')->{nobj_key},
+      data => {abv => 775},
+      messages_station_nobj_key => $current->o ('s1')->{nobj_key},
+      messages_to => $current->generate_text (to2 => {}),
     });
   })->then (sub {
     return promised_wait_until {
@@ -74,9 +91,7 @@ Test {
         is $item->{data}->{channel}, 'vonage';
         is $item->{data}->{data}->{apploach_messages_station_nobj_key}, $current->o ('s1')->{nobj_key};
         is $item->{data}->{data}->{apploach_messages_to}, $current->o ('to1');
-        is $item->{data}->{data}->{apploach_messages_space_nobj_key}, undef;
         is $item->{data}->{data}->{abv}, 774;
-        is $item->{data}->{shorten_key}, undef;
       }
     } $current->c;
     return $current->json (['message', 'send.json'], {
@@ -114,8 +129,14 @@ Test {
       is $v->{verb_nobj_key}, $current->o ('s21')->{nobj_key};
       is $v->{data}->{channel}, 'vonage';
     } $current->c, name => 's & v';
+    return $current->get_message_count ($current->o ('a2'));
+  })->then (sub {
+    my $count = $_[0];
+    test {
+      is $count, 0;
+    } $current->c;
   });
-} n => 20, name => 'sent', timeout => 200;
+} n => 19, name => 'sent and not sent', timeout => 200;
 
 RUN;
 

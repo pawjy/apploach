@@ -24,6 +24,7 @@ Test {
       [
         ['new_nobj', 'topic'],
         ['new_nobj', 'messages_station'],
+        ['new_nobj', 'messages_space'],
         ['json', 'data'],
       ],
     );

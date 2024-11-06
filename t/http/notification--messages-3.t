@@ -14,6 +14,7 @@ Test {
     [s21 => nobj => {}],
     [s22 => nobj => {}],
     [t1 => nobj => {}],
+    [sh1 => nobj => {}],
   )->then (sub {
     return $current->json (['message', 'setroutes.json'], {
       station_nobj_key => $current->o ('s1')->{nobj_key},
@@ -50,6 +51,7 @@ Test {
       data => {abv => 774},
       messages_station_nobj_key => $current->o ('s1')->{nobj_key},
       messages_to => $current->o ('to1'),
+      messages_space_nobj_key => $current->o ('sh1')->{nobj_key},
     });
   })->then (sub {
     return promised_wait_until {
@@ -73,10 +75,10 @@ Test {
         ok $item->{data}->{addr_key};
         is $item->{data}->{channel}, 'vonage';
         is $item->{data}->{data}->{apploach_messages_station_nobj_key}, $current->o ('s1')->{nobj_key};
+        is $item->{data}->{data}->{apploach_messages_space_nobj_key}, $current->o ('sh1')->{nobj_key};
         is $item->{data}->{data}->{apploach_messages_to}, $current->o ('to1');
-        is $item->{data}->{data}->{apploach_messages_space_nobj_key}, undef;
         is $item->{data}->{data}->{abv}, 774;
-        is $item->{data}->{shorten_key}, undef;
+        ok $item->{data}->{shorten_key};
       }
     } $current->c;
     return $current->json (['message', 'send.json'], {
@@ -114,8 +116,20 @@ Test {
       is $v->{verb_nobj_key}, $current->o ('s21')->{nobj_key};
       is $v->{data}->{channel}, 'vonage';
     } $current->c, name => 's & v';
+    return $current->json (['shorten', 'get.json'], {
+      space_nobj_key => $current->o ('sh1')->{nobj_key},
+      key => $current->o ('items')->[0]->{data}->{shorten_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      ok $result->{json}->{created};
+      my $data = $result->{json}->{data};
+      is $data->{addr_key}, $current->o ('items')->[0]->{data}->{addr_key};
+      is $data->{data}->{abv}, 774;
+    } $current->c;
   });
-} n => 20, name => 'sent', timeout => 200;
+} n => 23, name => 'shorten', timeout => 200;
 
 RUN;
 

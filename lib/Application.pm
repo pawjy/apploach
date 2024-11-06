@@ -3769,6 +3769,7 @@ sub run_notification_job ($) {
       my $now = time;
       my $stname = $item->{data}->{apploach_messages_station_nobj_key};
       my $mto = $item->{data}->{apploach_messages_to};
+      my $space_nobj_key = $item->{data}->{apploach_messages_space_nobj_key};
       return Promise->resolve->then (sub {
         return unless defined $stname and defined $mto;
         return Promise->all ([
@@ -3797,24 +3798,41 @@ sub run_notification_job ($) {
             my $topic2 = $item->{topic_nobj_key} . '-messages-' . $channel;
             my $topic3 = $stname . '-messages-' . $channel;
 
-            push @p, $self->fire_nevent (
-              '',
-              {
-                #data->apploach_messages_station_nobj_key => $stname,
-                channel => $channel,
-                #data->apploach_messages_to => $mto,
-                addr_key => $key,
-                data => $item->{data},
-                # XXX shorten
-              },
-              timestamp => $item->{data}->{timestamp},
-              get => {
-                topic_nobj_key => [$topic1],
-                topic_fallback_nobj_key => [$topic2, $topic3],
-                topic_fallback_nobj_key_template => ['apploach-messages-routes'],
-                #excluded_subscriber_nobj_key => []
-              },
-            );
+            push @p, Promise->resolve->then (sub {
+              return undef unless defined $space_nobj_key;
+
+              return Promise->all ([
+                $self->new_nobj_list ([\$space_nobj_key]),
+              ])->then (sub {
+                my ($space) = @{$_[0]->[0]};
+
+                my $shorten_data = {
+                  addr_key => $key,
+                  data => $item->{data},
+                };
+                return $self->create_shorten ($space, $shorten_data);
+              });
+            })->then (sub {
+              my $short = $_[0]; # or undef
+              return $self->fire_nevent (
+                '',
+                {
+                  #data->apploach_messages_station_nobj_key => $stname,
+                  channel => $channel,
+                  #data->apploach_messages_to => $mto,
+                  addr_key => $key,
+                  data => $item->{data},
+                  (defined $short ? (shorten_key => $short->{key}) : ()),
+                },
+                timestamp => $item->{data}->{timestamp},
+                get => {
+                  topic_nobj_key => [$topic1],
+                  topic_fallback_nobj_key => [$topic2, $topic3],
+                  topic_fallback_nobj_key_template => ['apploach-messages-routes'],
+                  #excluded_subscriber_nobj_key => []
+                },
+              );
+            });
           } # $addr
           
           return Promise->all (\@p);
@@ -5119,6 +5137,9 @@ sub run_fetch ($) {
 ##   NObj (|/prefix/messages_station|)? : The station the nevent is
 ##   associated for the purpose of messages API, if any.
 ##
+##   NObj (|/prefix/messages_space|)? : The space for the shorten API
+##   the nevent is associated for the purpose of messages API, if any.
+##
 ##   |/prefix/messages_to| : String? : The destination the nevent is
 ##   associated for the purpose of messages API, if any.
 ##
@@ -5149,11 +5170,22 @@ sub fire_nevent ($$$;%) {
   my $timestamp = 0+($args{timestamp} || $now);
   my $expires = 0+($args{expires} || ($now + 30*24*60*60));
   my $m = 0;
+
+  my $data_params = {};
+  for (qw(messages_to messages_station_nobj_key messages_space_nobj_key)) {
+    my $value = $get->($prefix.$_);
+    $data_params->{'apploach_'.$_} = $value if defined $value;
+  }
+  
   return Promise->all ([
     $self->new_nobj_list ([(defined $args{get} ? \($get->($prefix.'topic_nobj_key')) : $prefix.'topic'), \'apploach-any-channel']),
     $self->nobj_list_set ([$get_all->($prefix.'topic_fallback_nobj_key'),
                            $get_all->($prefix.'excluded_subscriber_nobj_key')]),
     $self->ids (1),
+    (defined $args{get} ? undef : $self->new_nobj_list ([
+      defined $data_params->{apploach_messages_station_nobj_key} ? $prefix.'messages_station' : (),
+      defined $data_params->{apploach_messages_space_nobj_key} ? $prefix.'messages_space' : (),
+    ])), # ensure nobj is valid
   ])->then (sub {
     my ($topic, $any_channel) = @{$_[0]->[0]};
     my ($topic_fallbacks, $excluded_subscribers) = @{$_[0]->[1]};
@@ -5167,12 +5199,6 @@ sub fire_nevent ($$$;%) {
     my $excluded_ids = [map {
       $_->is_error ? () : ($_->nobj_id);
     } @$excluded_subscribers];
-
-    my $data_params = {};
-    for (qw(messages_to messages_station_nobj_key)) {
-      my $value = $get->($prefix.$_);
-      $data_params->{'apploach_'.$_} = $value if defined $value;
-    }
 
     my $write_for_topic = sub {
       my $current_topic = shift;
@@ -5607,6 +5633,39 @@ sub run_stats ($) {
 } # run_stats
 
 my @ShortenChar = ('A'..'Z', 'a'..'z', '0'..'9');
+sub create_shorten ($$$) {
+  my ($self, $space, $data) = @_;
+  my $time = time;
+  my $key = '';
+  my $i = 0;
+  return Promise->resolve->then (sub {
+    return promised_wait_until {
+      $key = '';
+      $key .= $ShortenChar[rand @ShortenChar] for 1..8;
+      return $self->db->insert ('shorten', [{
+        ($self->app_id_columns),
+        ($space->to_columns ('space')),
+        key => $key,
+        data => Dongry::Type->serialize ('json', $data),
+        created => $time,
+        updated => $time,
+      }])->then (sub {
+        return 'done';
+      }, sub { # duplicate or other errors
+        my $e = $_[0];
+        die $e if $i++ > 10;
+        warn $e;
+        return not 'done';
+      });
+    };
+  })->then (sub {
+    return {
+      key => $key,
+      created => $time,
+    };
+  });
+} # create_shorten
+
 sub run_shorten ($) {
   my $self = $_[0];
 
@@ -5668,32 +5727,13 @@ sub run_shorten ($) {
     ])->then (sub {
       my ($space) = @{$_[0]->[0]};
       my $data = $self->json_object_param ('data');
-      my $time = time;
-      my $key = '';
-      my $i = 0;
-      return promised_wait_until {
-        $key = '';
-        $key .= $ShortenChar[rand @ShortenChar] for 1..8;
-        return $self->db->insert ('shorten', [{
-          ($self->app_id_columns),
-          ($space->to_columns ('space')),
-          key => $key,
-          data => Dongry::Type->serialize ('json', $data),
-          created => $time,
-          updated => $time,
-        }])->then (sub {
-          $self->json ({
-            key => $key,
-            created => $time,
-          });
-          return 'done';
-        }, sub { # duplicate or other errors
-          my $e = $_[0];
-          die $e if $i++ > 10;
-          warn $e;
-          return not 'done';
+      return $self->create_shorten ($space, $data)->then (sub {
+        my $r = $_[0];
+        return $self->json ({
+          key => $r->{key},
+          created => $r->{created},
         });
-      };
+      });
     });
   }
 
