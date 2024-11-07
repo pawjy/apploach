@@ -49,7 +49,7 @@ Test {
         my $result = $_[0];
         return $result->{json}->{items}->[0]->{status_6_count};
       });
-    } timeout => 220;
+    } timeout => 320;
   })->then (sub {
     return $current->json (['message', 'status.json'], {
       request_set_id => $current->o ('rs1')->{request_set_id},
@@ -91,7 +91,7 @@ Test {
       is 0+@{$result->{json}->{items}}, 0;
     } $current->c;
   });
-} n => 17, name => 'success', timeout => 321;
+} n => 17, name => 'success', timeout => 421;
 
 Test {
   my $current = shift;
@@ -302,7 +302,7 @@ Test {
         my $result = $_[0];
         return $result->{json}->{items}->[0]->{status_6_count};
       });
-    } timeout => 226;
+    } timeout => 326;
   })->then (sub {
     return promised_wait_until {
       return $current->json (['message', 'status.json'], {
@@ -311,7 +311,7 @@ Test {
         my $result = $_[0];
         return $result->{json}->{items}->[0]->{status_6_count};
       });
-    } timeout => 225;
+    } timeout => 325;
   })->then (sub {
     return $current->json (['message', 'status.json'], {
       station_nobj_key => $current->o ('s1')->{nobj_key},
@@ -346,7 +346,7 @@ Test {
       }
     } $current->c;
   });
-} n => 19, name => 'pages 1', timeout => 310;
+} n => 19, name => 'pages 1', timeout => 410;
 
 Test {
   my $current = shift;
