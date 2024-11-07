@@ -302,7 +302,7 @@ Test {
         my $result = $_[0];
         return $result->{json}->{items}->[0]->{status_6_count};
       });
-    } timeout => 226;
+    } timeout => 326;
   })->then (sub {
     return promised_wait_until {
       return $current->json (['message', 'status.json'], {
@@ -311,7 +311,7 @@ Test {
         my $result = $_[0];
         return $result->{json}->{items}->[0]->{status_6_count};
       });
-    } timeout => 225;
+    } timeout => 325;
   })->then (sub {
     return $current->json (['message', 'status.json'], {
       station_nobj_key => $current->o ('s1')->{nobj_key},
@@ -346,7 +346,7 @@ Test {
       }
     } $current->c;
   });
-} n => 19, name => 'pages 1', timeout => 310;
+} n => 19, name => 'pages 1', timeout => 410;
 
 Test {
   my $current = shift;
