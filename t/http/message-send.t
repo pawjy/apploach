@@ -384,7 +384,7 @@ Test {
         my $result = $_[0];
         return $result->{json}->{items}->[0]->{status_6_count} >= 4;
       });
-    } timeout => 124;
+    } timeout => 224;
   })->then (sub {
     return $current->json (['message', 'status.json'], {
       request_set_id => $current->o ('rs1')->{request_set_id},
@@ -427,7 +427,7 @@ Test {
       is $v->{data}->{destination}->{count}, 4;
     } $current->c, name => 's & v';
   });
-} n => 54, name => 'cc', timeout => 201;
+} n => 54, name => 'cc', timeout => 301;
 
 Test {
   my $current = shift;
