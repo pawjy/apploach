@@ -3821,6 +3821,7 @@ sub run_notification_job ($) {
                   channel => $channel,
                   #data->apploach_messages_to => $mto,
                   addr_key => $key,
+                  topic_nobj_key => $item->{topic_nobj_key},
                   data => $item->{data},
                   (defined $short ? (shorten_key => $short->{key}) : ()),
                 },
