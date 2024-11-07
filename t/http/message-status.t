@@ -297,6 +297,15 @@ Test {
     $current->set_o (rs2 => $result->{json});
     return promised_wait_until {
       return $current->json (['message', 'status.json'], {
+        request_set_id => $current->o ('rs1')->{request_set_id},
+      })->then (sub {
+        my $result = $_[0];
+        return $result->{json}->{items}->[0]->{status_6_count};
+      });
+    } timeout => 226;
+  })->then (sub {
+    return promised_wait_until {
+      return $current->json (['message', 'status.json'], {
         request_set_id => $current->o ('rs2')->{request_set_id},
       })->then (sub {
         my $result = $_[0];
