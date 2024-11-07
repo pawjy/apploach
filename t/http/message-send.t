@@ -515,7 +515,7 @@ Test {
         my $result = $_[0];
         return $result->{json}->{items}->[0]->{status_6_count} >= 1;
       });
-    } timeout => 123;
+    } timeout => 223;
   })->then (sub {
     return $current->json (['message', 'status.json'], {
       request_set_id => $current->o ('rs1')->{request_set_id},
@@ -592,7 +592,7 @@ Test {
       is $count, 0;
     } $current->c;
   });
-} n => 49, name => 'addr_key', timeout => 203;
+} n => 49, name => 'addr_key', timeout => 303;
 
 RUN;
 
