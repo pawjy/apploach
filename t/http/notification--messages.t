@@ -72,6 +72,7 @@ Test {
         is $item->{topic_subscription_data}->{foo}, 2;
         ok $item->{data}->{addr_key};
         is $item->{data}->{channel}, 'vonage';
+        is $item->{data}->{topic_nobj_key}, $current->o ('t1')->{nobj_key};
         is $item->{data}->{data}->{apploach_messages_station_nobj_key}, $current->o ('s1')->{nobj_key};
         is $item->{data}->{data}->{apploach_messages_to}, $current->o ('to1');
         is $item->{data}->{data}->{apploach_messages_space_nobj_key}, undef;
@@ -115,7 +116,7 @@ Test {
       is $v->{data}->{channel}, 'vonage';
     } $current->c, name => 's & v';
   });
-} n => 20, name => 'sent', timeout => 200;
+} n => 21, name => 'sent', timeout => 200;
 
 Test {
   my $current = shift;
