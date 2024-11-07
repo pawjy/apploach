@@ -36,12 +36,11 @@ sub main ($$) {
 
     my $app_id = 0+shift @$path;
     my $type = shift @$path;
-    my $application = Application->new (
-      config => $config,
+    my $application = Application->new_for_http (
       app => $app,
-      path => $path,
       app_id => $app_id,
       type => $type,
+      path => $path,
     );
     return Promise->resolve->then (sub {
       return $application->run;
