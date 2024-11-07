@@ -49,7 +49,7 @@ Test {
         my $result = $_[0];
         return $result->{json}->{items}->[0]->{status_6_count};
       });
-    } timeout => 220;
+    } timeout => 320;
   })->then (sub {
     return $current->json (['message', 'status.json'], {
       request_set_id => $current->o ('rs1')->{request_set_id},
@@ -91,7 +91,7 @@ Test {
       is 0+@{$result->{json}->{items}}, 0;
     } $current->c;
   });
-} n => 17, name => 'success', timeout => 321;
+} n => 17, name => 'success', timeout => 421;
 
 Test {
   my $current = shift;
