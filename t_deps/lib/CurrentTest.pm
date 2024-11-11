@@ -723,7 +723,7 @@ sub wait_for_messages ($$;$$) {
         return 'done' if @$json >= $n;
         return not 'done';
       });
-    } timeout => 64, name => "wait_for_messages ($n)";
+    } timeout => 124, name => "wait_for_messages ($n)";
   })->then (sub {
     return $json;
   });

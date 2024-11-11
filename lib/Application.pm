@@ -3772,10 +3772,11 @@ sub run_notification_job ($) {
       my $space_nobj_key = $item->{data}->{apploach_messages_space_nobj_key};
       return Promise->resolve->then (sub {
         return unless defined $stname and defined $mto;
+        my $station;
         return Promise->all ([
           $self->new_nobj_list ([\$stname]),
         ])->then (sub {
-          my ($station) = @{$_[0]->[0]};
+          ($station) = @{$_[0]->[0]};
           return $self->db->select ('message_routes', {
             ($self->app_id_columns),
             ($station->to_columns ('station')),
@@ -3792,7 +3793,7 @@ sub run_notification_job ($) {
 
           my @p;
           for my $addr (keys %$addrs) {
-            my $key = sha1_hex encode_web_utf8 $addr;
+            my $key = sha join $;, $self->{config}->{hash_key}, $self->{app_id}, $station->nobj_id, $addr;
 
             my $topic1 = $item->{topic_nobj_key} . '-messages-' . $channel . '-' . $key;
             my $topic2 = $item->{topic_nobj_key} . '-messages-' . $channel;
@@ -4345,7 +4346,7 @@ sub run_message ($) {
           my $addr_key = $self->{app}->text_param ('addr_key');
           if (defined $addr_key) {
             $dests = [grep {
-              my $key = sha1_hex encode_web_utf8 $_;
+              my $key = sha join $;, $self->{config}->{hash_key}, $self->{app_id}, $station->nobj_id, $_;
               $key eq $addr_key;
             } @$dests];
           }
@@ -4421,7 +4422,7 @@ sub run_message ($) {
             return promised_for {
               my $dest_addr = shift;
               next if $found->{$dest_addr}++;
-              
+
               ## <https://developer.vonage.com/en/api/messages-olympus>
               my $options = {
                 name => 'message: ' . $self->{app_id} . ': ' . $data->{channel} . ': ' . $request_set_id,
@@ -5259,6 +5260,7 @@ sub fire_nevent ($$$;%) {
                 expires => $expires,
               }], duplicate => ($replace ? 'replace' : 'ignore'))->then (sub {
                 my $w = $_[0];
+
                 unless ($replace) {
                   return $self->db->select ('nevent', {
                     ($self->app_id_columns),
@@ -5672,7 +5674,7 @@ sub run_shorten ($) {
 
   if (@{$self->{path}} == 1 and
       $self->{path}->[0] eq 'get.json') {
-    ## /{app_id}/shorten/get.json - Create a shorten.
+    ## /{app_id}/shorten/get.json - Get a shorten.
     ##
     ## Parameters.
     ##
