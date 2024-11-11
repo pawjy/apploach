@@ -160,8 +160,34 @@ Test {
       status => 2, # enabled
     });
   })->then (sub {
+    return $current->json (['notification', 'nevent', 'fire.json'], {
+      topic_nobj_key => $current->o ('t1')->{nobj_key},
+      data => {abv => 774},
+      messages_station_nobj_key => $current->o ('s1')->{nobj_key},
+      messages_to => $current->o ('to1'),
+    });
+  })->then (sub {
+    return $current->json (['notification', 'nevent', 'fire.json'], {
+      topic_nobj_key => $current->o ('t1')->{nobj_key},
+      data => {abv => 775},
+      messages_station_nobj_key => $current->o ('s1')->{nobj_key},
+      messages_to => $current->generate_text (to2 => {}),
+    });
+  })->then (sub {
+    return promised_wait_until {
+      return $current->json (['notification', 'nevent', 'lockqueued.json'], {
+        channel_nobj_key => 'vonage',
+      })->then (sub {
+        my $result = $_[0];
+        return not 'done' unless @{$result->{json}->{items}};
+        $current->set_o (items0 => $result->{json}->{items});
+        return 'done';
+      });
+    };
+  })->then (sub {
+    my $items = $current->o ('items0');
     return $current->json (['notification', 'topic', 'subscribe.json'], {
-      topic_nobj_key => $current->o ('t1')->{nobj_key} . '-messages-vonage-' . sha1_hex (encode_web_utf8 ($current->o ('a2'))),
+      topic_nobj_key => $current->o ('t1')->{nobj_key} . '-messages-vonage-' . $items->[0]->{data}->{addr_key},
       topic_index_nobj_key => 'null',
       channel_nobj_key => 'vonage',
       subscriber_nobj_key => 'apploach-messages-routes',
@@ -180,7 +206,7 @@ Test {
       topic_nobj_key => $current->o ('t1')->{nobj_key},
       data => {abv => 775},
       messages_station_nobj_key => $current->o ('s1')->{nobj_key},
-      messages_to => $current->generate_text (to2 => {}),
+      messages_to => $current->o ('to2'),
     });
   })->then (sub {
     return promised_wait_until {
@@ -219,16 +245,58 @@ Test {
       addr_key => $items->[0]->{data}->{addr_key},
     });
   })->then (sub {
+    my $result = $_[0];
+    test {
+      ok $result->{json}->{request_set_id};
+      like $result->{res}->body_bytes, qr{"request_set_id":"};
+      $current->set_o (rs1 => $result->{json});
+    } $current->c;
     return $current->wait_for_messages ($current->o ('a1'));
   })->then (sub {
     my $messages = $_[0];
     test {
       my $m = $messages->[0];
+      if (defined $m->{api_key}) {
+        ok $m->{api_key};
+        ok $m->{api_secret};
+      } else {
+        ok $m->{jwt};
+        ok 1;
+      }
       is $m->{channel}, 'sms';
       ok $m->{client_ref};
       is $m->{to}, $current->o ('a1');
       is $m->{from}, $current->o ('t2');
       is $m->{text}, $current->o ('t3');
+    } $current->c;
+    return promised_wait_until {
+      return $current->json (['message', 'status.json'], {
+        request_set_id => $current->o ('rs1')->{request_set_id},
+      })->then (sub {
+        my $result = $_[0];
+        return $result->{json}->{items}->[0]->{status_6_count} >= 1;
+      });
+    } timeout => 323;
+  })->then (sub {
+    return $current->json (['message', 'status.json'], {
+      request_set_id => $current->o ('rs1')->{request_set_id},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      my $item = $result->{json}->{items}->[0];
+      ok $item->{updated};
+      is $item->{status_2_count}, 0;
+      is $item->{status_3_count}, 0;
+      is $item->{status_4_count}, 0;
+      is $item->{status_5_count}, 0;
+      is $item->{status_6_count}, 1;
+      is $item->{status_7_count}, 0;
+      is $item->{status_8_count}, 0;
+      is $item->{status_9_count}, 0;
+      is $item->{data}->{channel}, 'vonage';
+      is $item->{data}->{destination}->{to}, $current->o ('to1');
+      is $item->{data}->{destination}->{count}, 1;
     } $current->c;
     return $current->json (['nobj', 'logs.json'], {
       verb_nobj_key => $current->o ('s21')->{nobj_key},
@@ -250,7 +318,7 @@ Test {
       is $count, 0;
     } $current->c;
   });
-} n => 19, name => 'sent and not sent', timeout => 200;
+} n => 35, name => 'sent and not sent', timeout => 200;
 
 Test {
   my $current = shift;
