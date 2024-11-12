@@ -139,6 +139,9 @@ Test {
           addr => $current->generate_message_addr (a2 => {}),
           cc_addrs => [$current->generate_message_addr (a1 => {})],
         },
+        $current->generate_text (to3 => {}) => {
+          addr => $current->o ('a2'),
+        },
       }),
     });
   })->then (sub {
@@ -162,16 +165,9 @@ Test {
   })->then (sub {
     return $current->json (['notification', 'nevent', 'fire.json'], {
       topic_nobj_key => $current->o ('t1')->{nobj_key},
-      data => {abv => 774},
+      data => {abv => 776},
       messages_station_nobj_key => $current->o ('s1')->{nobj_key},
-      messages_to => $current->o ('to1'),
-    });
-  })->then (sub {
-    return $current->json (['notification', 'nevent', 'fire.json'], {
-      topic_nobj_key => $current->o ('t1')->{nobj_key},
-      data => {abv => 775},
-      messages_station_nobj_key => $current->o ('s1')->{nobj_key},
-      messages_to => $current->generate_text (to2 => {}),
+      messages_to => $current->o ('to3'),
     });
   })->then (sub {
     return promised_wait_until {
@@ -206,7 +202,7 @@ Test {
       topic_nobj_key => $current->o ('t1')->{nobj_key},
       data => {abv => 775},
       messages_station_nobj_key => $current->o ('s1')->{nobj_key},
-      messages_to => $current->o ('to2'),
+      messages_to => $current->generate_text (to2 => {}),
     });
   })->then (sub {
     return promised_wait_until {
@@ -319,6 +315,199 @@ Test {
     } $current->c;
   });
 } n => 35, name => 'sent and not sent', timeout => 200;
+
+Test {
+  my $current = shift;
+  return $current->create (
+    [s1 => nobj => {}],
+    [s10 => nobj => {}],
+    [s11 => nobj => {}],
+    [s20 => nobj => {}],
+    [s21 => nobj => {}],
+    [s22 => nobj => {}],
+    [t1 => nobj => {}],
+    [t2 => nobj => {}],
+  )->then (sub {
+    return $current->json (['message', 'setroutes.json'], {
+      station_nobj_key => $current->o ('s1')->{nobj_key},
+      operator_nobj_key => $current->o ('s10')->{nobj_key},
+      verb_nobj_key => $current->o ('s11')->{nobj_key},
+      channel => 'vonage',
+      table => (perl2json_chars {
+        $current->generate_text (to1 => {}) => {
+          addr => $current->generate_message_addr (a2 => {}),
+          cc_addrs => [$current->generate_message_addr (a1 => {})],
+        },
+        $current->generate_text (to3 => {}) => {
+          addr => $current->o ('a2'),
+        },
+      }),
+    });
+  })->then (sub {
+    return $current->json (['notification', 'topic', 'subscribe.json'], {
+      topic_nobj_key => $current->o ('t1')->{nobj_key},
+      topic_index_nobj_key => 'null',
+      channel_nobj_key => 'apploach-messages',
+      subscriber_nobj_key => 'apploach-messages',
+      data => {foo => 3},
+      status => 2, # enabled
+    });
+  })->then (sub {
+    return $current->json (['notification', 'topic', 'subscribe.json'], {
+      topic_nobj_key => $current->o ('s1')->{nobj_key} . '-messages-vonage',
+      topic_index_nobj_key => 'null',
+      channel_nobj_key => 'vonage',
+      subscriber_nobj_key => 'apploach-messages-routes',
+      data => {foo => 2},
+      status => 2, # enabled
+    });
+  })->then (sub {
+    return $current->json (['notification', 'nevent', 'fire.json'], {
+      topic_nobj_key => $current->o ('t1')->{nobj_key},
+      data => {abv => 776},
+      messages_station_nobj_key => $current->o ('s1')->{nobj_key},
+      messages_to => $current->o ('to3'),
+    });
+  })->then (sub {
+    return promised_wait_until {
+      return $current->json (['notification', 'nevent', 'lockqueued.json'], {
+        channel_nobj_key => 'vonage',
+      })->then (sub {
+        my $result = $_[0];
+        return not 'done' unless @{$result->{json}->{items}};
+        $current->set_o (items0 => $result->{json}->{items});
+        return 'done';
+      });
+    };
+  })->then (sub {
+    my $items = $current->o ('items0');
+    return $current->json (['notification', 'topic', 'subscribe.json'], {
+      topic_nobj_key => $current->o ('t2')->{nobj_key} . '-messages-vonage-' . $items->[0]->{data}->{addr_key},
+      topic_index_nobj_key => 'null',
+      channel_nobj_key => 'vonage',
+      subscriber_nobj_key => 'apploach-messages-routes',
+      data => {foo => 4},
+      status => 3, # disabled
+    });
+  })->then (sub {
+    return $current->json (['notification', 'nevent', 'fire.json'], {
+      topic_nobj_key => $current->o ('t1')->{nobj_key},
+      data => {abv => 774},
+      messages_station_nobj_key => $current->o ('s1')->{nobj_key},
+      messages_to => $current->o ('to1'),
+      messages_topic_nobj_key => $current->o ('t2')->{nobj_key},
+    });
+  })->then (sub {
+    return promised_wait_until {
+      return $current->json (['notification', 'nevent', 'lockqueued.json'], {
+        channel_nobj_key => 'vonage',
+      })->then (sub {
+        my $result = $_[0];
+        return not 'done' unless @{$result->{json}->{items}};
+        $current->set_o (items => $result->{json}->{items});
+        return 'done';
+      });
+    };
+  })->then (sub {
+    my $items = $current->o ('items');
+    test {
+      is 0+@$items, 1;
+      {
+        my $item = $items->[0];
+        is $item->{subscriber_nobj_key}, 'apploach-messages-routes';
+        is $item->{topic_subscription_data}->{foo}, 2;
+        ok $item->{data}->{addr_key};
+        is $item->{data}->{channel}, 'vonage';
+        is $item->{data}->{data}->{apploach_messages_station_nobj_key}, $current->o ('s1')->{nobj_key};
+        is $item->{data}->{data}->{apploach_messages_to}, $current->o ('to1');
+        is $item->{data}->{data}->{abv}, 774;
+      }
+    } $current->c;
+    return $current->json (['message', 'send.json'], {
+      from_name => $current->generate_key (t2 => {}),
+      body => $current->generate_text (t3 => {}),
+      operator_nobj_key => $current->o ('s20')->{nobj_key},
+      verb_nobj_key => $current->o ('s21')->{nobj_key},
+      status_verb_nobj_key => $current->o ('s21')->{nobj_key},
+      station_nobj_key => $items->[0]->{data}->{data}->{apploach_messages_station_nobj_key},
+      to => $items->[0]->{data}->{data}->{apploach_messages_to},
+      addr_key => $items->[0]->{data}->{addr_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      ok $result->{json}->{request_set_id};
+      like $result->{res}->body_bytes, qr{"request_set_id":"};
+      $current->set_o (rs1 => $result->{json});
+    } $current->c;
+    return $current->wait_for_messages ($current->o ('a1'));
+  })->then (sub {
+    my $messages = $_[0];
+    test {
+      my $m = $messages->[0];
+      if (defined $m->{api_key}) {
+        ok $m->{api_key};
+        ok $m->{api_secret};
+      } else {
+        ok $m->{jwt};
+        ok 1;
+      }
+      is $m->{channel}, 'sms';
+      ok $m->{client_ref};
+      is $m->{to}, $current->o ('a1');
+      is $m->{from}, $current->o ('t2');
+      is $m->{text}, $current->o ('t3');
+    } $current->c;
+    return promised_wait_until {
+      return $current->json (['message', 'status.json'], {
+        request_set_id => $current->o ('rs1')->{request_set_id},
+      })->then (sub {
+        my $result = $_[0];
+        return $result->{json}->{items}->[0]->{status_6_count} >= 1;
+      });
+    } timeout => 323;
+  })->then (sub {
+    return $current->json (['message', 'status.json'], {
+      request_set_id => $current->o ('rs1')->{request_set_id},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      my $item = $result->{json}->{items}->[0];
+      ok $item->{updated};
+      is $item->{status_2_count}, 0;
+      is $item->{status_3_count}, 0;
+      is $item->{status_4_count}, 0;
+      is $item->{status_5_count}, 0;
+      is $item->{status_6_count}, 1;
+      is $item->{status_7_count}, 0;
+      is $item->{status_8_count}, 0;
+      is $item->{status_9_count}, 0;
+      is $item->{data}->{channel}, 'vonage';
+      is $item->{data}->{destination}->{to}, $current->o ('to1');
+      is $item->{data}->{destination}->{count}, 1;
+    } $current->c;
+    return $current->json (['nobj', 'logs.json'], {
+      verb_nobj_key => $current->o ('s21')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $v = $result->{json}->{items}->[0];
+      is $v->{operator_nobj_key}, $current->o ('s20')->{nobj_key};
+      is $v->{target_nobj_key}, $current->o ('s1')->{nobj_key};
+      is $v->{verb_nobj_key}, $current->o ('s21')->{nobj_key};
+      is $v->{data}->{channel}, 'vonage';
+    } $current->c, name => 's & v';
+    return $current->get_message_count ($current->o ('a2'));
+  })->then (sub {
+    my $count = $_[0];
+    test {
+      is $count, 0;
+    } $current->c;
+  });
+} n => 35, name => 'sent and not sent with custom topic', timeout => 200;
 
 Test {
   my $current = shift;
