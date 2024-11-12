@@ -3769,6 +3769,7 @@ sub run_notification_job ($) {
       my $now = time;
       my $stname = $item->{data}->{apploach_messages_station_nobj_key};
       my $mto = $item->{data}->{apploach_messages_to};
+      my $mtop = $item->{data}->{apploach_messages_topic_nobj_key} // $item->{topic_nobj_key};
       my $space_nobj_key = $item->{data}->{apploach_messages_space_nobj_key};
       return Promise->resolve->then (sub {
         return unless defined $stname and defined $mto;
@@ -3795,8 +3796,8 @@ sub run_notification_job ($) {
           for my $addr (keys %$addrs) {
             my $key = sha join $;, $self->{config}->{hash_key}, $self->{app_id}, $station->nobj_id, $addr;
 
-            my $topic1 = $item->{topic_nobj_key} . '-messages-' . $channel . '-' . $key;
-            my $topic2 = $item->{topic_nobj_key} . '-messages-' . $channel;
+            my $topic1 = $mtop . '-messages-' . $channel . '-' . $key;
+            my $topic2 = $mtop . '-messages-' . $channel;
             my $topic3 = $stname . '-messages-' . $channel;
 
             push @p, Promise->resolve->then (sub {
@@ -5136,6 +5137,10 @@ sub run_fetch ($) {
 ##   are topic subscriotions whose subscriber are them.  Zero or more
 ##   parameters can be specified.  No exclusion by default.
 ##
+##   NObj (|/prefix/messages_topic|)? : The topic the nevent is
+##   associated for the purpose of messages API, if any.  Defaulted to
+##   the nevent's topic.
+##
 ##   NObj (|/prefix/messages_station|)? : The station the nevent is
 ##   associated for the purpose of messages API, if any.
 ##
@@ -5174,7 +5179,8 @@ sub fire_nevent ($$$;%) {
   my $m = 0;
 
   my $data_params = {};
-  for (qw(messages_to messages_station_nobj_key messages_space_nobj_key)) {
+  for (qw(messages_to messages_station_nobj_key messages_space_nobj_key
+          messages_topic_nobj_key)) {
     my $value = $get->($prefix.$_);
     $data_params->{'apploach_'.$_} = $value if defined $value;
   }
