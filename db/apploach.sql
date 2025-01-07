@@ -446,6 +446,9 @@ create table if not exists `message_routes` (
   key (`expires`)
 ) default charset=binary engine=innodb;
 
+alter table `message_routes`
+  add column `notes` mediumblob not null;
+
 create table if not exists `message_routes_excluded` (
   `app_id` bigint unsigned not null,
   `station_nobj_id` bigint unsigned not null,
