@@ -4526,6 +4526,7 @@ sub run_message ($) {
     ##       |cc_addrs| : Array? :
     ##         String          : The messaging-channel specific destination
     ##                           addresses.
+    ##   |notes| : Object?     : The optional notes, if any.
     ##   |no_new_table| : Boolean : If true, |table| is ignored.
     ##                           Either |table| or |no_new_table| is required.
     ##   |expires| : Timestamp : The expiration time.  Defaulted to 7 days
@@ -4578,6 +4579,7 @@ sub run_message ($) {
       my $expires = 0+($self->{app}->bare_param ('expires') || 0);
       $expires = $now + 7*24*60*60 if $expires < $now + 7*24*60*60;
 
+      my $notes = $self->optional_json_object_param ('notes');
       return $self->db->insert ('message_routes', [{
         ($self->app_id_columns),
         ($station->to_columns ('station')),
@@ -4585,11 +4587,13 @@ sub run_message ($) {
           channel => $channel,
           table => $table,
         }) : '{}'),
+        notes => (defined $notes ? Dongry::Type->serialize ('json', $notes) : '{}'),
         expires => $expires,
         created => $now,
         updated => $now,
       }], duplicate => {
         (defined $table ? (data => $self->db->bare_sql_fragment ('VALUES(`data`)')) : ()),
+        (defined $notes ? (notes => $self->db->bare_sql_fragment ('VALUES(`notes`)')) : ()),
         updated => $self->db->bare_sql_fragment ('VALUES(`updated`)'),
         expires => $self->db->bare_sql_fragment ('VALUES(`expires`)'),
       })->then (sub {
@@ -4755,6 +4759,53 @@ sub run_message ($) {
       });
     });
   } # status.json
+
+  if (@{$self->{path}} == 1 and
+      $self->{path}->[0] eq 'getnote.json') {
+    ## /{app_id}/message/getnote.json - Get a destination note.
+    ##
+    ## Parameters.
+    ##
+    ##   NObj (|station|)      : The messaging station.  Required.
+    ##   |to| : String         : An application-specific destination key.
+    ##                           Required.
+    ##
+    ## Returns,
+    ##
+    ##   |destination| : Object : The destination.
+    ##     |addr| : String?     : The destination address, if any.
+    ##     |cc_addrs| : Array   : The CC destination addresses.
+    ##   |note| : Object        : The note for the destination.
+    ##
+    return Promise->all ([
+      $self->nobj ('station'),
+    ])->then (sub {
+      my ($station) = @{$_[0]};
+      return $self->throw ({reason => 'Bad |station_nobj_key|'})
+          if $station->is_error;
+
+      my $now = time;
+      return Promise->all ([
+        $self->db->select ('message_routes', {
+          ($self->app_id_columns),
+          ($station->to_columns ('station')),
+          expires => {'>', $now},
+        }, fields => ['data', 'notes', 'expires'], source_name => 'master'),
+      ])->then (sub {
+        my $row = $_[0]->[0]->first;
+        my $data = defined $row ? Dongry::Type->parse ('json', $row->{data}) : {};
+        my $notes = defined $row ? Dongry::Type->parse ('json', $row->{notes}) // {} : {};
+
+        my $to = $self->{app}->text_param ('to') // '';
+
+        my $dest = $data->{table}->{$to} // {};
+        $dest->{cc_addrs} //= [];
+        my $note = $notes->{$to} // {};
+
+        return $self->json ({destination => $dest, note => $note});
+      });
+    });
+  } # getnote.json
 
   # XXX failure list API
   
@@ -6547,7 +6598,7 @@ sub close ($) {
 
 =head1 LICENSE
 
-Copyright 2018-2023 Wakaba <wakaba@suikawiki.org>.
+Copyright 2018-2025 Wakaba <wakaba@suikawiki.org>.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as

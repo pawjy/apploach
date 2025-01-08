@@ -47,6 +47,7 @@ Test {
         ['new_nobj', 'operator'],
         ['new_nobj', 'verb'],
         ['json', 'table'],
+        ['json_opt', 'notes'],
         {p => {channel => rand}, status => 400},
         {p => {table => (perl2json_chars [])}, status => 400},
         {p => {table => (perl2json_chars [{
