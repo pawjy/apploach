@@ -3974,14 +3974,14 @@ sub run_alarm ($) {
               'started', 'latest', 'ended',
             ], order => [
               'created', 'asc',
-            ], limit => 100, offset => $offset)->then (sub {
+            ], limit => 50, offset => $offset)->then (sub {
               my @v = $_[0]->all->to_list;
               return 'done' unless @v;
               for (@v) {
                 $current->{$_->{target_nobj_id}, $_->{type_nobj_id}} = $_;
               }
               $offset += @v;
-              return not 'done' if @v == 100;
+              return not 'done' if @v == 50;
               return 'done';
             });
           };
