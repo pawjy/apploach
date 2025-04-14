@@ -42,8 +42,8 @@ sub start ($%) {
   return [$obj, $r];
 } # start
 
-my $JobSleep1 = $Config->{fetch_job_interval} || 30;
-my $JobSleep2 = $Config->{fetch_job_sleep} || 60;
+my $JobSleep1 = $Config->{fetch_job_interval} || 50;
+my $JobSleep2 = $Config->{fetch_job_sleep} || 80;
 sub run_fetch_jobs ($$%) {
   my ($class, $obj, %args) = @_;
   my $ac1 = new AbortController;
