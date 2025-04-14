@@ -13,12 +13,12 @@ Sarze->run (
   psgi_file_name => path (__FILE__)->parent->child ('server.psgi'),
   worker_state_class => 'WorkerState',
   shutdown_timeout => 60*10,
-  max_counts => {custom => 2},
+  max_counts => {custom => 3},
 )->to_cv->recv;
 
 =head1 LICENSE
 
-Copyright 2018-2020 Wakaba <wakaba@suikawiki.org>.
+Copyright 2018-2025 Wakaba <wakaba@suikawiki.org>.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as
