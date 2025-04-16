@@ -183,6 +183,8 @@ sub run_a_fetch_job ($$) {
             });
             ## row_count = 0 if $job is canceled during the execution.
           }
+        })->finally (sub {
+          return promised_sleep 1;
         });
       } $jobs;
     })->then (sub {
