@@ -4422,7 +4422,7 @@ sub run_message ($) {
             my $found = {};
             return promised_for {
               my $dest_addr = shift;
-              next if $found->{$dest_addr}++;
+              return if $found->{$dest_addr}++;
 
               ## <https://developer.vonage.com/en/api/messages-olympus>
               my $options = {
