@@ -5,7 +5,7 @@ AnyEvent::Fork~1.32
 Bytes::Random::Secure::Tiny~1.011
 Call::Context~0.05
 Canary::Stability~2013
-Carp::Heavy~1.50
+Carp~1.50
 Class::Accessor::Fast~0.51
 Convert::ASN1~0.34
 Crypt::Format~0.12
@@ -35,7 +35,7 @@ Path::Class~0.37
 Path::Tiny~0.148
 Proc::FastSpawn~1.2
 Scalar::Util~1.69
-Socket~2.039
+Socket~2.040
 Sub::Uplevel~0.2800
 Symbol::Get~0.12
 Term::ANSIColor~5.01
