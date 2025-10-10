@@ -125,6 +125,8 @@ Test {
       is $m->{from}, $current->o ('t5');
       is $m->{text}, $current->o ('t4');
     } $current->c;
+    return $current->wait_for_messages ($current->o ('a2'), 2);
+  })->then (sub {
     return $current->get_message_count ($current->o ('a2'));
   })->then (sub {
     my $count = $_[0];

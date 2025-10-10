@@ -429,11 +429,168 @@ Test {
   });
 } n => 54, name => 'cc', timeout => 401;
 
+Test {
+  my $current = shift;
+  return $current->create (
+    [s1 => nobj => {}],
+    [s10 => nobj => {}],
+    [s11 => nobj => {}],
+    [s20 => nobj => {}],
+    [s21 => nobj => {}],
+    [s22 => nobj => {}],
+  )->then (sub {
+    return $current->json (['message', 'setroutes.json'], {
+      station_nobj_key => $current->o ('s1')->{nobj_key},
+      operator_nobj_key => $current->o ('s10')->{nobj_key},
+      verb_nobj_key => $current->o ('s11')->{nobj_key},
+      channel => 'vonage',
+      table => (perl2json_chars {
+        $current->generate_text (t1 => {}) => {
+          addr => $current->generate_message_addr (a1 => {}),
+        },
+        $current->generate_text (t2 => {}) => {
+          addr => $current->o ('a1'),
+        },
+        $current->generate_text (t3 => {}) => {
+          addr => $current->generate_message_addr (a3 => {}),
+        },
+        $current->generate_text (t4 => {}) => {
+          addr => $current->generate_message_addr (a4 => {}),
+        },
+        $current->generate_text (t5 => {}) => {
+          addr => $current->o ('a4'),
+        },
+      }),
+    });
+  })->then (sub {
+    return $current->json (['message', 'send.json'], {
+      station_nobj_key => $current->o ('s1')->{nobj_key},
+      broadcast => 1,
+      from_name => $current->generate_key (t2 => {}),
+      body => $current->generate_text (t3 => {}),
+      operator_nobj_key => $current->o ('s20')->{nobj_key},
+      verb_nobj_key => $current->o ('s21')->{nobj_key},
+      status_verb_nobj_key => $current->o ('s21')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      ok $result->{json}->{request_set_id};
+      like $result->{res}->body_bytes, qr{"request_set_id":"};
+      $current->set_o (rs1 => $result->{json});
+    } $current->c;
+  })->then (sub {
+    return $current->wait_for_messages ($current->o ('a1'));
+  })->then (sub {
+    my $messages = $_[0];
+    test {
+      my $m = $messages->[0];
+      if (defined $m->{api_key}) {
+        ok $m->{api_key};
+        ok $m->{api_secret};
+      } else {
+        ok $m->{jwt};
+        ok 1;
+      }
+      is $m->{channel}, 'sms';
+      ok $m->{client_ref};
+      is $m->{to}, $current->o ('a1');
+      is $m->{from}, $current->o ('t2');
+      is $m->{text}, $current->o ('t3');
+    } $current->c;
+    return $current->wait_for_messages ($current->o ('a3'));
+  })->then (sub {
+    my $messages = $_[0];
+    test {
+      my $m = $messages->[0];
+      if (defined $m->{api_key}) {
+        ok $m->{api_key};
+        ok $m->{api_secret};
+      } else {
+        ok $m->{jwt};
+        ok 1;
+      }
+      is $m->{channel}, 'sms';
+      ok $m->{client_ref};
+      is $m->{to}, $current->o ('a3');
+      is $m->{from}, $current->o ('t2');
+      is $m->{text}, $current->o ('t3');
+    } $current->c;
+    return $current->wait_for_messages ($current->o ('a4'));
+  })->then (sub {
+    my $messages = $_[0];
+    test {
+      my $m = $messages->[0];
+      if (defined $m->{api_key}) {
+        ok $m->{api_key};
+        ok $m->{api_secret};
+      } else {
+        ok $m->{jwt};
+        ok 1;
+      }
+      is $m->{channel}, 'sms';
+      ok $m->{client_ref};
+      is $m->{to}, $current->o ('a4');
+      is $m->{from}, $current->o ('t2');
+      is $m->{text}, $current->o ('t3');
+    } $current->c;
+    return promised_wait_until {
+      return $current->json (['message', 'status.json'], {
+        request_set_id => $current->o ('rs1')->{request_set_id},
+      })->then (sub {
+        my $result = $_[0];
+        return $result->{json}->{items}->[0]->{status_6_count} >= 3;
+      });
+    } timeout => 324;
+  })->then (sub {
+    return $current->json (['message', 'status.json'], {
+      request_set_id => $current->o ('rs1')->{request_set_id},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      my $item = $result->{json}->{items}->[0];
+      ok $item->{updated};
+      is $item->{status_2_count}, 0;
+      is $item->{status_3_count}, 0;
+      is $item->{status_4_count}, 0;
+      is $item->{status_5_count}, 0;
+      is $item->{status_6_count}, 3;
+      is $item->{status_7_count}, 0;
+      is $item->{status_8_count}, 0;
+      is $item->{status_9_count}, 0;
+      is $item->{data}->{channel}, 'vonage';
+      is $item->{data}->{destination}->{to}, undef;
+      is $item->{data}->{destination}->{count}, 5;
+    } $current->c;
+    return $current->json (['nobj', 'logs.json'], {
+      verb_nobj_key => $current->o ('s21')->{nobj_key},
+    });
+  })->then (sub {
+    my $result = $_[0];
+    test {
+      is 0+@{$result->{json}->{items}}, 1;
+      my $v = $result->{json}->{items}->[0];
+      is $v->{operator_nobj_key}, $current->o ('s20')->{nobj_key};
+      is $v->{target_nobj_key}, $current->o ('s1')->{nobj_key};
+      is $v->{verb_nobj_key}, $current->o ('s21')->{nobj_key};
+      ok $v->{data}->{timestamp};
+      ok $v->{data}->{expires} > $v->{data}->{timestamp};
+      is $v->{data}->{channel}, 'vonage';
+      is $v->{data}->{size_for_cost}, 1;
+      like $result->{res}->body_bytes, qr{"request_set_id":"};
+      is $v->{data}->{request_set_id}, $current->o ('rs1')->{request_set_id};
+      is $v->{data}->{destination}->{to}, undef;
+      is $v->{data}->{destination}->{count}, 5;
+    } $current->c, name => 's & v';
+  });
+} n => 47, name => 'has dups', timeout => 401;
+
 RUN;
 
 =head1 LICENSE
 
-Copyright 2024 Wakaba <wakaba@suikawiki.org>.
+Copyright 2024-2025 Wakaba <wakaba@suikawiki.org>.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as
