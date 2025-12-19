@@ -22,7 +22,7 @@ use Web::DateTime::Clock;
 use Web::DateTime::Parser;
 use Web::Transport::BasicClient;
 use Crypt::Perl::ECDSA::Parse;
-use Crypt::OpenSSL::RSA;
+use Crypt::PK::RSA;
 
 use NObj;
 use Pager;
@@ -4456,10 +4456,8 @@ sub run_message ($) {
                     (encode_web_base64url perl2json_bytes $header) . '.' .
                     (encode_web_base64url perl2json_bytes $payload);
                 
-                my $key = Crypt::OpenSSL::RSA->new_private_key ($pk);
-                $key->use_sha256_hash;
-
-                my $sig = $key->sign ($token);
+                my $key = Crypt::PK::RSA->new (\$pk);
+                my $sig = $key->sign_message ($token, 'SHA256');
                 my $jwt = $token . "." . encode_web_base64url $sig;
                 $options->{headers}->{authorization} = 'Bearer ' . $jwt;
               } else {

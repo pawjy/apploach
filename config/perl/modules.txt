@@ -3,4 +3,4 @@ Digest::SHA
 Path::Tiny
 Time::HiRes
 POSIX
-Crypt::OpenSSL::RSA
+Crypt::PK::RSA
