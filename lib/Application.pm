@@ -4457,7 +4457,7 @@ sub run_message ($) {
                     (encode_web_base64url perl2json_bytes $payload);
                 
                 my $key = Crypt::PK::RSA->new (\$pk);
-                my $sig = $key->sign_message ($token, 'SHA256');
+                my $sig = $key->sign_message ($token, 'SHA256', 'v1.5');
                 my $jwt = $token . "." . encode_web_base64url $sig;
                 $options->{headers}->{authorization} = 'Bearer ' . $jwt;
               } else {
