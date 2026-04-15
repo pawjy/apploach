@@ -116,6 +116,89 @@ return sub {
       $http->send_response_body_as_ref (\perl2json_bytes [grep { $_->{to} eq $to } @$Messages]);
       return $http->close_response_body;
     }
+
+    if ($path =~ m{^/soracom(?:-invalid)?/v1/auth$}) {
+      if ($path =~ /invalid/) {
+        $http->set_status (404);
+        return $http->close_response_body;
+      }
+      my $json = json_bytes2perl ${ $http->request_body_as_ref };
+      if ($json->{authKeyId} eq 'test_auth_key_id' and
+          $json->{authKey} eq 'test_auth_key') {
+        $http->set_status (200);
+        $http->send_response_body_as_ref (\perl2json_bytes {
+          apiKey => 'test_api_key',
+          token => 'test_token',
+          operatorId => 'OP001',
+        });
+      } else {
+        $http->set_status (401);
+        $http->send_response_body_as_ref (\perl2json_bytes {
+          code => 'AUTH_FAILED',
+          message => 'Authentication failed',
+        });
+      }
+      return $http->close_response_body;
+    }
+
+    if ($path =~ m{^/soracom/v1/subscribers/([0-9]+)$}) {
+      my $imsi = $1;
+      if ($http->get_request_header ('x-soracom-api-key') eq 'test_api_key' and
+          $http->get_request_header ('x-soracom-token') eq 'test_token') {
+        if ($imsi eq '123456789012345') {
+          $http->set_status (200);
+          $http->send_response_body_as_ref (\perl2json_bytes {
+            imsi => $imsi,
+            previousSession => {imei => '123456789012345'},
+            status => 'active',
+          });
+        } elsif ($imsi eq '111111111111111') {
+          $http->set_status (200);
+          $http->send_response_body_as_ref (\perl2json_bytes {
+            imsi => $imsi,
+            # imei missing
+            status => 'active',
+          });
+        } elsif ($imsi eq '222222222222222') {
+          $http->set_status (200);
+          $http->send_response_body_as_ref (\perl2json_bytes {
+            imsi => $imsi,
+            sessionStatus => {imei => 'mismatch_imei'},
+            status => 'active',
+          });
+        } elsif ($imsi eq '500500500500500') {
+          $http->set_status (500);
+          $http->send_response_body_as_ref (\perl2json_bytes {
+            code => 'SERVER_ERROR',
+            message => 'Simulated server error',
+          });
+        } else {
+          $http->set_status (404);
+          $http->send_response_body_as_ref (\perl2json_bytes {
+            code => 'SUBSCRIBER_NOT_FOUND',
+            message => 'Subscriber not found',
+          });
+        }
+      } else {
+        $http->set_status (401);
+      }
+      return $http->close_response_body;
+    }
+
+    if ($path =~ m{^/soracom/v1/subscribers/([0-9]+)/(activate|deactivate|terminate)$}) {
+      my ($imsi, $mode) = ($1, $2);
+      if ($http->get_request_header ('x-soracom-api-key') eq 'test_api_key' and
+          $http->get_request_header ('x-soracom-token') eq 'test_token') {
+        $http->set_status (200);
+        $http->send_response_body_as_ref (\perl2json_bytes {
+          imsi => $imsi,
+          status => $mode eq 'terminate' ? 'terminated' : ($mode eq 'activate' ? 'active' : 'inactive'),
+        });
+      } else {
+        $http->set_status (401);
+      }
+      return $http->close_response_body;
+    }
     
     $http->set_status (404);
     return $http->close_response_body;
@@ -124,7 +207,7 @@ return sub {
 
 =head1 LICENSE
 
-Copyright 2018-2019 Wakaba <wakaba@suikawiki.org>.
+Copyright 2018-2026 Wakaba <wakaba@suikawiki.org>.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU Affero General Public License as

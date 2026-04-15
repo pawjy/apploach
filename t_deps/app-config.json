@@ -14,5 +14,9 @@
   "fetch_job_interval": 3,
   "fetch_job_sleep": 6,
 
+  "devices_soracom_endpoints": ["http://xs.server.test/soracom-invalid", "http://xs.server.test/soracom"],
+  "devices_soracom_auth_key_id": "test_auth_key_id",
+  "devices_soracom_auth_key": "test_auth_key",
+
   "": null
 }
