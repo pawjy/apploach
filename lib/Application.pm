@@ -24,6 +24,8 @@ use Web::Transport::BasicClient;
 use Crypt::Perl::ECDSA::Parse;
 use Crypt::PK::RSA;
 
+use Devices;
+
 use NObj;
 use Pager;
 
@@ -6582,6 +6584,11 @@ sub run ($) {
       $self->{type} eq 'fetch') {
     my $method = 'run_'.$self->{type};
     return $self->$method;
+  }
+  
+  if ($self->{type} eq 'devices') {
+    bless $self, 'Devices';
+    return $self->Devices::run_devices;
   }
   
   return $self->{app}->throw_error (404);
