@@ -16,7 +16,7 @@ Crypt::PK::RSA~0.088
 Cwd~3.75
 Data::Dumper~2.183
 Digest::SHA~6.04
-Encode~3.23
+Encode~3.24
 Exporter::Lite~0.09
 File::Path~2.18
 File::Slurp~9999.32
@@ -41,11 +41,11 @@ Socket~2.041
 Sub::Uplevel~0.2800
 Symbol::Get~0.12
 Term::ANSIColor~5.01
-Test::Builder~1.302219
 Test::Class~0.52
 Test::Deep~1.205
 Test::Exception~0.43
 Test::FailWarnings~0.008
+Test::More~1.302219
 Time::HiRes~1.9764
 Time::Local~1.35
 Try::Tiny~0.32
