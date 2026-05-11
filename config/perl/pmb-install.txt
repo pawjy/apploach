@@ -12,7 +12,7 @@ Crypt::Format~0.12
 Crypt::OpenSSL::Bignum~0.09
 Crypt::OpenSSL::RSA~0.41
 Crypt::OpenSSL::Random~0.17
-Crypt::PK::RSA~0.088
+Crypt::PK::RSA~0.089
 Cwd~3.75
 Data::Dumper~2.183
 Digest::SHA~6.04
