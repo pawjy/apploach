@@ -112,8 +112,8 @@ Test {
       my $log = $result->{json}->{items}->[0];
       is $log->{data}->{imsi}, $imsi;
       is $log->{data}->{responses}->[-1]->{step}, 'verify_imei';
-      is $log->{data}->{responses}->[-1]->{expected}, 'mismatch_imei';
-      is $log->{data}->{responses}->[-1]->{actual}, $imei;
+      is $log->{data}->{responses}->[-1]->{expected}, $imei;
+      is $log->{data}->{responses}->[-1]->{actual}, 'mismatch_imei';
     } $current->c;
   });
 } n => 7, name => 'IMEI mismatch';

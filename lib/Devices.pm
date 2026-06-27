@@ -147,12 +147,14 @@ sub run_devices_soracom ($) {
         });
       }
 
-      my $sub_imei = eval { ($resolved->{subscriber}->{sessionStatus} || $resolved->{subscriber}->{previousSession})->{imei} };
+      my $sub_imei = eval {
+        ($resolved->{subscriber}->{sessionStatus} || {})->{imei} ||
+        ($resolved->{subscriber}->{previousSession} || {})->{imei} };
       push @{$log_data->{responses}}, {
         step => 'verify_imei',
         status => $resolved->{status},
-        expected => $sub_imei,
-        actual => $imei,
+        actual => $sub_imei,
+        expected => $imei,
       };
 
       if (not defined $sub_imei) {
@@ -164,8 +166,8 @@ sub run_devices_soracom ($) {
       if ($sub_imei ne $imei) {
         return $self->throw ({
           reason => 'IMEI_MISMATCH',
-          expected => $sub_imei,
-          actual => $imei,
+          actual => $sub_imei,
+          expected => $imei,
         });
       }
 
