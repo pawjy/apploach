@@ -4125,17 +4125,28 @@ sub run_alarm ($) {
             timestamp => $time,
           } if @$logs or @$removed;
           
-          return Promise->all ([
-            (@$new ? $tr->insert ('alarm_status', $new, duplicate => {
-              level_nobj_id => $self->db->bare_sql_fragment ('values(`level_nobj_id`)'),
-              data => $self->db->bare_sql_fragment ('values(`data`)'),
-              started => $self->db->bare_sql_fragment ('values(`started`)'),
-              latest => $self->db->bare_sql_fragment ('values(`latest`)'),
-              ended => $self->db->bare_sql_fragment ('values(`ended`)'),
-            }) : ()),
-            (@$new2 ? $tr->insert ('alarm_status', $new2, duplicate => {
-              ended => $self->db->bare_sql_fragment ('values(`ended`)'),
-            }) : ()),
+          my @wait;
+          if (@$new) {
+            while (@$new) {
+              my $batch = [splice @$new, 0, 500];
+              push @wait, $tr->insert ('alarm_status', $batch, duplicate => {
+                level_nobj_id => $self->db->bare_sql_fragment ('values(`level_nobj_id`)'),
+                data => $self->db->bare_sql_fragment ('values(`data`)'),
+                started => $self->db->bare_sql_fragment ('values(`started`)'),
+                latest => $self->db->bare_sql_fragment ('values(`latest`)'),
+                ended => $self->db->bare_sql_fragment ('values(`ended`)'),
+              });
+            }
+          }
+          if (@$new2) {
+            while (@$new2) {
+              my $batch = [splice @$new2, 0, 500];
+              push @wait, $tr->insert ('alarm_status', $batch, duplicate => {
+                ended => $self->db->bare_sql_fragment ('values(`ended`)'),
+              });
+            }
+          }
+          push @wait,
             $self->_nobj_ids_to_nobj ($tr, $removed, [
               'target', 'target_index', 'type', 'level',
             ])->then (sub {
@@ -4150,8 +4161,8 @@ sub run_alarm ($) {
                   ended => $time,
                 }];
               }
-            }),
-          ]);
+            });
+          return Promise->all (\@wait);
         })->then (sub {
           return promised_for {
             return $self->write_log ($tr, $operator, @{$_[0]});
