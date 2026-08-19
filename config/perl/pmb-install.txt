@@ -37,7 +37,7 @@ Path::Class~0.37
 Path::Tiny~0.150
 Proc::FastSpawn~1.2
 Scalar::Util~1.70
-Socket~2.042
+Socket~2.043
 Sub::Uplevel~0.2800
 Symbol::Get~0.12
 Term::ANSIColor~5.01
