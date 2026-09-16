@@ -4859,6 +4859,25 @@ sub insert_fetch_jobs ($$;%) {
   });
 } # insert_fetch_jobs
 
+sub _message_status_transaction ($$$) {
+  my ($db, $code, $retries) = @_;
+  return $db->transaction->then (sub {
+    my $tr = $_[0];
+    return Promise->resolve->then (sub { return $code->($tr) })->then (sub {
+      return $tr->commit;
+    }, sub {
+      my $error = $_[0];
+      return $tr->rollback->then (sub {
+        # Retry only rolled-back status bookkeeping, never the HTTP request.
+        die $error unless $retries > 0 and
+            UNIVERSAL::isa ($error, 'Dongry::Database::Executed') and
+            ($error->error_text // '') =~ /\(Error code 1213\)\z/;
+        return _message_status_transaction ($db, $code, $retries - 1);
+      });
+    });
+  });
+} # _message_status_transaction
+
 sub run_fetch_job ($$$$) {
   my ($class, $obj, $job, $db) = @_;
   if ($job->{options}->{is_callback}) {
@@ -4928,8 +4947,9 @@ sub run_fetch_job ($$$$) {
     if (defined $job->{options}->{request_id}) {
       my $result = $_[0];
       $result->{time} = $now;
-      return $db->transaction->then (sub {
+      return _message_status_transaction ($db, sub {
         my $tr = $_[0];
+        delete $ret->{retry_after};
         return $tr->select ('request_status', {
           app_id => $job->{app_id},
           request_id => 0+$job->{options}->{request_id},
@@ -4968,10 +4988,8 @@ sub run_fetch_job ($$$$) {
             return $class->update_request_set_stats
                 ($tr, $job->{app_id}, $req->{request_set_id}, $now);
           });
-        })->then (sub {
-          return $tr->commit;
         });
-      });
+      }, 2);
     }
   })->catch (sub {
     my $error = $_[0];
@@ -4997,7 +5015,7 @@ sub run_fetch_callback_job ($$$$) {
           $json->{client_ref} =~ m{^r[0-9]+$}) {
         my $request_id = $json->{client_ref};
         $request_id =~ s/^r//;
-        return $db->transaction->then (sub {
+        return _message_status_transaction ($db, sub {
           my $tr = $_[0];
           return $tr->select ('request_status', {
             app_id => $job->{app_id},
@@ -5032,10 +5050,8 @@ sub run_fetch_callback_job ($$$$) {
               return $class->update_request_set_stats
                   ($tr, $job->{app_id}, $req->{request_set_id}, $now);
             });
-          })->then (sub {
-            return $tr->commit;
           });
-        });
+        }, 2);
       } else {
         die "Bad vonage callback";
       }
@@ -5053,22 +5069,25 @@ sub run_fetch_callback_job ($$$$) {
 
 sub update_request_set_stats ($$$$$) {
   my ($class, $db, $app_id, $request_set_id, $now) = @_;
-  return $db->execute (q{
-    update `request_set` set
-    status_2_count = (select count(*) from request_status where app_id = :app_id and request_set_id = :request_set_id and status = 2),
-    status_3_count = (select count(*) from request_status where app_id = :app_id and request_set_id = :request_set_id and status = 3),
-    status_4_count = (select count(*) from request_status where app_id = :app_id and request_set_id = :request_set_id and status = 4),
-    status_5_count = (select count(*) from request_status where app_id = :app_id and request_set_id = :request_set_id and status = 5),
-    status_6_count = (select count(*) from request_status where app_id = :app_id and request_set_id = :request_set_id and status = 6),
-    status_7_count = (select count(*) from request_status where app_id = :app_id and request_set_id = :request_set_id and status = 7),
-    status_8_count = (select count(*) from request_status where app_id = :app_id and request_set_id = :request_set_id and status = 8),
-    status_9_count = (select count(*) from request_status where app_id = :app_id and request_set_id = :request_set_id and status = 9),
-    updated = :updated
-    where `app_id` = :app_id and request_set_id = :request_set_id
-  }, {
+  my $where = {
     app_id => $app_id,
     request_set_id => $request_set_id,
-    updated => $now,
+  };
+  # Serialize snapshots of the same request set without locking other messages.
+  return $db->select ('request_set', $where,
+                     fields => ['request_set_id'], lock => 'update')->then (sub {
+    return $db->execute (q{
+      select status, count(*) as item_count from request_status
+      where app_id = :app_id and request_set_id = :request_set_id
+      group by status
+    }, $where);
+  })->then (sub {
+    my $counts = {map {('status_'.$_.'_count' => 0)} 2..9};
+    for my $row (@{$_[0]->all}) {
+      next unless $row->{status} >= 2 and $row->{status} <= 9;
+      $counts->{'status_'.$row->{status}.'_count'} = 0+$row->{item_count};
+    }
+    return $db->update ('request_set', {%$counts, updated => $now}, where => $where);
   });
 } # update_request_set_stats
 
