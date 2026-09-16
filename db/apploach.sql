@@ -298,6 +298,10 @@ create table if not exists `nevent_queue` (
   key (`expires`)
 ) default charset=binary engine=innodb;
 
+alter table `nevent_queue`
+  add column `lock_id` bigint unsigned not null default 0,
+  add key (`app_id`, `lock_id`);
+
 create table if not exists `nevent_list` (
   `app_id` bigint unsigned not null,
   `subscriber_nobj_id` bigint unsigned not null,

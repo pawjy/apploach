@@ -2872,17 +2872,23 @@ sub lock_queued_nevent ($$$;%) {
   my ($self, $channel, $limit, %args) = @_;
   my $now = time;
   my $max_locked = $now - 10*60; # also in WorkerState.pm
-  return $self->db->update ('nevent_queue', {
-    locked => $now,
-  }, source_name => 'master', where => {
-    ($self->app_id_columns),
-    ($channel->to_columns ('channel')),
-    (defined $args{subscriber} ? ($args{subscriber}->to_columns ('subscriber')) : ()),
-    timestamp => {'<=', $now},
-    expires => {'>', $now},
-    result_done => 0, # not yet done
-    locked => {'<', $max_locked},
-  }, order => ['timestamp', 'asc'], limit => $limit)->then (sub {
+  my $lock_id;
+  return $self->ids (1)->then (sub {
+    $lock_id = $_[0]->[0];
+    # The timestamp controls expiry, but cannot identify a unique claim.
+    return $self->db->update ('nevent_queue', {
+      locked => $now,
+      lock_id => $lock_id,
+    }, source_name => 'master', where => {
+      ($self->app_id_columns),
+      ($channel->to_columns ('channel')),
+      (defined $args{subscriber} ? ($args{subscriber}->to_columns ('subscriber')) : ()),
+      timestamp => {'<=', $now},
+      expires => {'>', $now},
+      result_done => 0, # not yet done
+      locked => {'<', $max_locked},
+    }, order => ['timestamp', 'asc'], limit => $limit);
+  })->then (sub {
     my $v = $_[0];
     return [] unless $v->row_count;
     return $self->db->execute (q{select
@@ -2899,11 +2905,13 @@ sub lock_queued_nevent ($$$;%) {
             `nevent_queue`.`subscriber_nobj_id` = `nevent`.`subscriber_nobj_id`
           where
             `nevent`.`app_id` = :app_id and
-            `nevent_queue`.`locked` = :locked
+            `nevent_queue`.`channel_nobj_id` = :channel_nobj_id and
+            `nevent_queue`.`lock_id` = :lock_id
           order by `nevent`.`timestamp` asc
     }, {
       ($self->app_id_columns),
-      locked => $now,
+      ($channel->to_columns ('channel')),
+      lock_id => $lock_id,
     }, source_name => 'master')->then (sub {
       return $_[0]->all;
     });
